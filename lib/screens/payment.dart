@@ -3,39 +3,6 @@ import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../widgets/lang_switcher.dart';
 
-const Map<String, List<String>> flavorNames = {
-  'ru': [
-    'Лимон',
-    'Вишня',
-    'Хвоя',
-    'Лаванда',
-    'Океан',
-    'Кофе',
-    'Ваниль',
-    'Мята',
-  ],
-  'en': [
-    'Lemon',
-    'Cherry',
-    'Pine',
-    'Lavender',
-    'Ocean',
-    'Coffee',
-    'Vanilla',
-    'Mint',
-  ],
-  'et': [
-    'Sidrun',
-    'Kirss',
-    'Mänd',
-    'Lavendel',
-    'Ookean',
-    'Kohv',
-    'Vanilje',
-    'Münt',
-  ],
-};
-
 const Map<String, Map<String, String>> i18n = {
   'ru': {
     'title': 'ОПЛАТА',
@@ -75,7 +42,7 @@ class PaymentScreen extends StatelessWidget {
     final lang = notifier.lang;
     final t = i18n[lang]!;
     final flavorIndex = notifier.selectedFlavor ?? 0;
-    final flavorName = flavorNames[lang]![flavorIndex];
+    final flavorName = notifier.config.flavorNames[lang]![flavorIndex];
     final price = notifier.config.servicePriceEur;
     final paid = notifier.amountPaid;
 

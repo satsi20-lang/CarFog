@@ -3,40 +3,6 @@ import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../widgets/lang_switcher.dart';
 
-// Названия ароматов на трёх языках
-const Map<String, List<String>> flavorNames = {
-  'ru': [
-    'Лимон',
-    'Вишня',
-    'Хвоя',
-    'Лаванда',
-    'Океан',
-    'Кофе',
-    'Ваниль',
-    'Мята',
-  ],
-  'en': [
-    'Lemon',
-    'Cherry',
-    'Pine',
-    'Lavender',
-    'Ocean',
-    'Coffee',
-    'Vanilla',
-    'Mint',
-  ],
-  'et': [
-    'Sidrun',
-    'Kirss',
-    'Mänd',
-    'Lavendel',
-    'Ookean',
-    'Kohv',
-    'Vanilje',
-    'Münt',
-  ],
-};
-
 const Map<String, Map<String, String>> i18n = {
   'ru': {
     'title': 'ВЫБЕРИТЕ АРОМАТ',
@@ -66,7 +32,7 @@ class SelectFlavorScreen extends StatelessWidget {
     final notifier = context.watch<AppNotifier>();
     final lang = notifier.lang;
     final levels = notifier.levels;
-    final names = flavorNames[lang]!;
+    final names = notifier.config.flavorNames[lang]!;
     final t = i18n[lang]!;
 
     return Scaffold(
