@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/config_service.dart';
 
 // ============================================================
 // КОНФИГ (редактируется через сервисное меню)
@@ -7,11 +8,17 @@ import 'package:flutter/material.dart';
 class AppConfig {
   double servicePriceEur;
   int treatmentDurationS;
+  String servicePin;
+  int compressorPurgeS;
+  int pumpAfterHeaterS;
   Map<String, List<String>> flavorNames;
 
   AppConfig({
     this.servicePriceEur = 5.0,
     this.treatmentDurationS = 40,
+    this.servicePin = '1234',
+    this.compressorPurgeS = 5,
+    this.pumpAfterHeaterS = 5,
     Map<String, List<String>>? flavorNames,
   }) : flavorNames =
            flavorNames ??
@@ -92,6 +99,10 @@ class AppNotifier extends ChangeNotifier {
   double _amountPaid = 0.0;
   double get amountPaid => _amountPaid;
 
+  // --- Код текущей ошибки (см. AppState.error) ---
+  String? _errorCode;
+  String? get errorCode => _errorCode;
+
   // --- Уровни канистр (8 штук, true = есть жидкость) ---
   List<bool> _levels = List.filled(8, true);
   List<bool> get levels => _levels;
@@ -102,8 +113,14 @@ class AppNotifier extends ChangeNotifier {
 
   void transition(AppState newState) {
     debugPrint('STATE: $_state → $newState (lang=$_lang)');
+    if (newState != AppState.error) _errorCode = null;
     _state = newState;
     notifyListeners();
+  }
+
+  void goToError(String code) {
+    _errorCode = code;
+    transition(AppState.error);
   }
 
   // ============================================================
@@ -154,6 +171,7 @@ class AppNotifier extends ChangeNotifier {
   void resetSession() {
     _selectedFlavor = null;
     _amountPaid = 0.0;
+    _errorCode = null;
     _state = AppState.standby;
     notifyListeners();
   }
@@ -165,5 +183,11 @@ class AppNotifier extends ChangeNotifier {
   void updateConfig(AppConfig newConfig) {
     config = newConfig;
     notifyListeners();
+  }
+
+  Future<void> saveConfig(AppConfig newConfig) async {
+    config = newConfig;
+    notifyListeners();
+    await ConfigService.save(newConfig);
   }
 }

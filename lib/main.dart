@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -8,14 +9,29 @@ import 'screens/select_flavor.dart';
 import 'screens/payment.dart';
 import 'screens/preparing.dart';
 import 'screens/treating.dart';
+import 'screens/finished.dart';
+import 'screens/error.dart';
+import 'screens/service/service_pin.dart';
+import 'screens/service/service_menu.dart';
+import 'services/config_service.dart';
+import 'services/modbus_service.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  final config = await ConfigService.load();
+
+  // Безопасное выключение всего при старте — не блокирует показ UI,
+  // если железо ещё не подключено или порт не совпал.
+  unawaited(() async {
+    await ModbusService.open(); // порт уточнить после find_port.py
+    await ModbusService.safeAllOff();
+  }());
+
   runApp(
     ChangeNotifierProvider(
-      create: (_) => AppNotifier(),
+      create: (_) => AppNotifier()..config = config,
       child: const DryFogApp(),
     ),
   );
@@ -59,28 +75,19 @@ class AppRouter extends StatelessWidget {
       case AppState.preparing:
         return const PreparingScreen();
       case AppState.compressorStartup:
-        // Убираем дубликат, оставляем один вариант
-        return const Scaffold(
-          body: Center(
-            child: Text(
-              'ЗАПУСК КОМПРЕССОРА...',
-              style: TextStyle(color: Color(0xFFFFAA00), fontSize: 20),
-            ),
-          ),
-        );
+        return const TreatingScreen();
       case AppState.treating:
         return const TreatingScreen();
       case AppState.shutdown:
         return const TreatingScreen();
-      default:
-        return const Scaffold(
-          body: Center(
-            child: Text(
-              'Экран в разработке...',
-              style: TextStyle(color: Colors.white),
-            ),
-          ),
-        );
+      case AppState.finished:
+        return const FinishedScreen();
+      case AppState.error:
+        return const ErrorScreen();
+      case AppState.servicePinEntry:
+        return const ServicePinScreen();
+      case AppState.serviceMenu:
+        return const ServiceMenuScreen();
     }
   }
 }

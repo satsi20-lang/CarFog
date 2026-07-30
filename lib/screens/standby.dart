@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
 import '../models/app_state.dart';
+import '../widgets/lang_switcher.dart';
 
 class StandbyScreen extends StatefulWidget {
   const StandbyScreen({super.key});
@@ -91,7 +92,7 @@ class _StandbyScreenState extends State<StandbyScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final notifier = context.read<AppNotifier>();
+    final notifier = context.watch<AppNotifier>();
 
     return GestureDetector(
       onTap: () => notifier.transition(AppState.selectFlavor),
@@ -115,7 +116,21 @@ class _StandbyScreenState extends State<StandbyScreen> {
               _buildPlaceholder(),
 
             // Переключатель языка в правом верхнем углу
-            const Positioned(top: 16, right: 16, child: _LangSwitcher()),
+            Positioned(
+              top: 16,
+              right: 16,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: LangSwitcher(
+                  current: notifier.lang,
+                  onChanged: notifier.setLanguage,
+                ),
+              ),
+            ),
 
             // Подсказка внизу
             Positioned(
@@ -144,6 +159,18 @@ class _StandbyScreenState extends State<StandbyScreen> {
                 ),
               ),
             ),
+
+            // Невидимая зона долгого нажатия — левый верхний угол
+            Positioned(
+              left: 0,
+              top: 0,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onLongPress: () =>
+                    context.read<AppNotifier>().transition(AppState.servicePinEntry),
+                child: const SizedBox(width: 80, height: 80),
+              ),
+            ),
           ],
         ),
       ),
@@ -160,7 +187,7 @@ class _StandbyScreenState extends State<StandbyScreen> {
             Image.asset(
               'assets/logo.png',
               width: 160,
-              errorBuilder: (_, __, ___) => const Icon(
+              errorBuilder: (_, _, _) => const Icon(
                 Icons.local_car_wash,
                 size: 100,
                 color: Color(0xFF2EC4B6),
@@ -181,61 +208,6 @@ class _StandbyScreenState extends State<StandbyScreen> {
               style: TextStyle(color: Colors.white70, fontSize: 14),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _LangSwitcher extends StatelessWidget {
-  const _LangSwitcher();
-
-  @override
-  Widget build(BuildContext context) {
-    final notifier = context.watch<AppNotifier>();
-    final currentLang = notifier.lang;
-
-    return GestureDetector(
-      onTap: () {},
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        decoration: BoxDecoration(
-          color: Colors.black54,
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: ['et', 'en', 'ru'].map((lang) {
-            final isActive = lang == currentLang;
-            return GestureDetector(
-              onTap: () => notifier.setLanguage(lang),
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 4),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: isActive
-                      ? const Color(0xFF2EC4B6)
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(
-                    color: const Color(0xFF2EC4B6),
-                    width: isActive ? 0 : 1,
-                  ),
-                ),
-                child: Text(
-                  lang.toUpperCase(),
-                  style: TextStyle(
-                    color: isActive ? Colors.black : Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                  ),
-                ),
-              ),
-            );
-          }).toList(),
         ),
       ),
     );

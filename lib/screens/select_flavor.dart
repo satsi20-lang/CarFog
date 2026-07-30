@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
+import '../widgets/lang_switcher.dart';
 
 // Названия ароматов на трёх языках
 const Map<String, List<String>> flavorNames = {
@@ -87,7 +88,7 @@ class SelectFlavorScreen extends StatelessWidget {
                       ),
                     ),
                   ),
-                  _LangSwitcher(),
+                  LangSwitcher(current: lang, onChanged: notifier.setLanguage),
                 ],
               ),
             ),
@@ -185,40 +186,6 @@ class SelectFlavorScreen extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _LangSwitcher extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    final notifier = context.watch<AppNotifier>();
-    final currentLang = notifier.lang;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: ['et', 'en', 'ru'].map((lang) {
-        final isActive = lang == currentLang;
-        return GestureDetector(
-          onTap: () => notifier.setLanguage(lang),
-          child: Container(
-            margin: const EdgeInsets.only(left: 6),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: isActive ? const Color(0xFF2EC4B6) : Colors.transparent,
-              borderRadius: BorderRadius.circular(4),
-              border: Border.all(color: const Color(0xFF2EC4B6), width: 1),
-            ),
-            child: Text(
-              lang.toUpperCase(),
-              style: TextStyle(
-                color: isActive ? Colors.black : Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 12,
-              ),
-            ),
-          ),
-        );
-      }).toList(),
     );
   }
 }

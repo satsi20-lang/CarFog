@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
+import '../widgets/lang_switcher.dart';
 
 const Map<String, Map<String, String>> i18n = {
   'ru': {
@@ -10,6 +11,7 @@ const Map<String, Map<String, String>> i18n = {
     'hint1': '1. Вставьте шланг в приоткрытое окно автомобиля',
     'hint2': '2. Включите внутреннюю рециркуляцию воздуха',
     'hint3': '3. Закройте все двери и ожидайте снаружи',
+    'hint4': '4. После завершения обработки насос ещё {s} сек будет распылять — не трогайте шланг',
     'temp': 'Температура испарителя',
     'target': 'Цель',
   },
@@ -19,6 +21,7 @@ const Map<String, Map<String, String>> i18n = {
     'hint1': '1. Insert the hose through a slightly open window',
     'hint2': '2. Turn on cabin air recirculation',
     'hint3': '3. Close all doors and wait outside',
+    'hint4': '4. After treatment ends, the pump keeps spraying for {s} more sec — do not touch the hose',
     'temp': 'Evaporator temperature',
     'target': 'Target',
   },
@@ -28,6 +31,7 @@ const Map<String, Map<String, String>> i18n = {
     'hint1': '1. Sisesta voolik veidi avatud autoaknasse',
     'hint2': '2. Lülita sisse salongi õhu ringlus',
     'hint3': '3. Sulge kõik uksed ja oota väljas',
+    'hint4': '4. Pärast töötluse lõppu pihustab pump veel {s} sek — ära puuduta voolikut',
     'temp': 'Aurusti temperatuur',
     'target': 'Sihtmärk',
   },
@@ -75,14 +79,14 @@ class _PreparingScreenState extends State<PreparingScreen> {
       // Аварийный потолок
       if (_currentTemp >= _abortTemp) {
         _timer?.cancel();
-        context.read<AppNotifier>().transition(AppState.error);
+        context.read<AppNotifier>().goToError('overheat');
         return;
       }
 
       // Таймаут (не достигли цели за 3 минуты)
       if (_elapsedS >= _maxDurationS) {
         _timer?.cancel();
-        context.read<AppNotifier>().transition(AppState.error);
+        context.read<AppNotifier>().goToError('timeout');
         return;
       }
 
@@ -108,7 +112,8 @@ class _PreparingScreenState extends State<PreparingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final lang = context.watch<AppNotifier>().lang;
+    final notifier = context.watch<AppNotifier>();
+    final lang = notifier.lang;
     final t = i18n[lang]!;
     final percent = (_progress * 100).toStringAsFixed(0);
 
@@ -132,7 +137,7 @@ class _PreparingScreenState extends State<PreparingScreen> {
                       ),
                     ),
                   ),
-                  _LangSwitcher(),
+                  LangSwitcher(current: lang, onChanged: notifier.setLanguage),
                 ],
               ),
 
@@ -196,6 +201,11 @@ class _PreparingScreenState extends State<PreparingScreen> {
               _HintRow(text: t['hint2']!),
               const SizedBox(height: 12),
               _HintRow(text: t['hint3']!),
+              const SizedBox(height: 12),
+              _HintRow(
+                text: t['hint4']!.replaceAll(
+                    '{s}', '${notifier.config.pumpAfterHeaterS}'),
+              ),
             ],
           ),
         ),
@@ -226,40 +236,6 @@ class _HintRow extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _LangSwitcher extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    final notifier = context.watch<AppNotifier>();
-    final currentLang = notifier.lang;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: ['et', 'en', 'ru'].map((lang) {
-        final isActive = lang == currentLang;
-        return GestureDetector(
-          onTap: () => notifier.setLanguage(lang),
-          child: Container(
-            margin: const EdgeInsets.only(left: 6),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: isActive ? const Color(0xFF2EC4B6) : Colors.transparent,
-              borderRadius: BorderRadius.circular(4),
-              border: Border.all(color: const Color(0xFF2EC4B6), width: 1),
-            ),
-            child: Text(
-              lang.toUpperCase(),
-              style: TextStyle(
-                color: isActive ? Colors.black : Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 12,
-              ),
-            ),
-          ),
-        );
-      }).toList(),
     );
   }
 }

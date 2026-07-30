@@ -23,6 +23,9 @@ macos/.symlinks/
 # VS Code
 .vscode/
 
+# Claude Code (local tool config, machine/session-specific)
+.claude/
+
 # OS
 .DS_Store
 Thumbs.db
