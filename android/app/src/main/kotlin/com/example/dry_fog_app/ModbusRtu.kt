@@ -1,40 +1,84 @@
 package com.example.dry_fog_app
 
-import com.fazecast.jSerialComm.SerialPort
 import android.util.Log
+import java.io.FileInputStream
+import java.io.FileOutputStream
+import java.io.RandomAccessFile
+import java.util.concurrent.TimeUnit
 
-class ModbusRtu(private val portName: String, private val baudRate: Int = 9600) {
+class ModbusRtu {
 
-    private var port: SerialPort? = null
+    private var raf: RandomAccessFile? = null
+    private var inputStream: FileInputStream? = null
+    private var outputStream: FileOutputStream? = null
 
-    // Открыть порт
-    fun open(): Boolean {
+    // Открыть порт: настроить линию через stty, затем открыть один
+    // файловый дескриптор через RandomAccessFile (O_RDWR) и получить
+    // из него оба потока — вместо двух независимых open() на один
+    // и тот же character device.
+    fun open(port: String, baud: Int): Boolean {
         return try {
-            port = SerialPort.getCommPort(portName)
-            port!!.baudRate = baudRate
-            port!!.numDataBits = 8
-            port!!.numStopBits = SerialPort.ONE_STOP_BIT
-            port!!.parity = SerialPort.NO_PARITY
-            port!!.setComPortTimeouts(
-                SerialPort.TIMEOUT_READ_BLOCKING,
-                500, 500
-            )
-            port!!.openPort()
+            if (!configurePort(port, baud)) {
+                return false
+            }
+
+            val f = RandomAccessFile(port, "rwd")
+            raf = f
+            inputStream = FileInputStream(f.fd)
+            outputStream = FileOutputStream(f.fd)
+            true
         } catch (e: Throwable) {
-            // Throwable, не Exception: сюда же попадает UnsatisfiedLinkError,
-            // если нативная библиотека jSerialComm не загрузилась на устройстве —
-            // без этого краш уходил выше catch(Exception) и убивал всё приложение.
+            // Throwable, не Exception: не даём одиночному сбою настройки/открытия
+            // порта уйти выше по стеку и уронить всё приложение.
             Log.e("ModbusRtu", "open error: $e")
             false
         }
     }
 
-    fun close() {
-        port?.closePort()
-        port = null
+    // stty может отсутствовать в PATH, доступном exec()'у приложения —
+    // перебираем известные расположения бинарника по очереди.
+    private fun configurePort(port: String, baud: Int): Boolean {
+        val sttyCandidates = listOf("/system/bin/stty", "/system/xbin/stty", "stty")
+        for (sttyPath in sttyCandidates) {
+            try {
+                val cmd = arrayOf(
+                    sttyPath, "-F", port, baud.toString(),
+                    "cs8", "-cstopb", "-parenb", "raw", "-echo"
+                )
+                val process = Runtime.getRuntime().exec(cmd)
+                val exited = process.waitFor(2, TimeUnit.SECONDS)
+                if (!exited) {
+                    process.destroy()
+                    Log.d("ModbusRtu", "stty '$sttyPath' -> timed out")
+                    continue
+                }
+                val exitCode = process.exitValue()
+                val stderr = process.errorStream.bufferedReader().use { it.readText() }.trim()
+                Log.d("ModbusRtu", "stty '$sttyPath' -> exit=$exitCode stderr='$stderr'")
+                if (exitCode == 0) return true
+            } catch (e: Exception) {
+                Log.d("ModbusRtu", "stty '$sttyPath' -> exec failed: $e")
+            }
+        }
+        Log.e("ModbusRtu", "stty failed, port may be misconfigured")
+        return false
     }
 
-    fun isOpen() = port?.isOpen == true
+    fun close() {
+        // inputStream/outputStream делят дескриптор с raf — закрываем
+        // только raf, иначе повторное закрытие того же fd через них
+        // может выбросить исключение.
+        try {
+            raf?.close()
+        } catch (e: Exception) {
+            Log.e("ModbusRtu", "close error: $e")
+        }
+        raf = null
+        inputStream = null
+        outputStream = null
+    }
+
+    fun isOpen() = inputStream != null && outputStream != null
 
     // FC02: Read Discrete Inputs (DI — датчики уровня, монетоприёмник)
     fun readDiscreteInputs(slaveId: Int, startAddr: Int, count: Int): BooleanArray? {
@@ -74,7 +118,10 @@ class ModbusRtu(private val portName: String, private val baudRate: Int = 9600) 
             (coilVal shr 8).toByte(), coilVal.toByte()
         )
         val reqWithCrc = appendCrc(req)
-        val resp = sendAndReceive(reqWithCrc, 8) ?: return false
+        // Ответ FC05 — эхо запроса: 6 байт данных + 2 CRC, добавляемых внутри
+        // sendAndReceive. Раньше здесь передавалось 8 (уже с CRC), из-за чего
+        // ожидалось 10 байт вместо реальных 8 и запись всегда считалась неудачной.
+        val resp = sendAndReceive(reqWithCrc, 6) ?: return false
         return validateResponse(resp, slaveId, 0x05)
     }
 
@@ -105,18 +152,18 @@ class ModbusRtu(private val portName: String, private val baudRate: Int = 9600) 
     }
 
     private fun sendAndReceive(request: ByteArray, expectedBytes: Int): ByteArray? {
-        val p = port ?: return null
+        val out = outputStream ?: return null
+        if (inputStream == null) return null
         return try {
-            p.outputStream.write(request)
-            p.outputStream.flush()
+            out.write(request)
+            out.flush()
             Thread.sleep(20) // межфреймовая пауза
-            val buf = ByteArray(expectedBytes + 2) // +2 CRC
-            val read = p.inputStream.read(buf)
-            if (read < expectedBytes + 2) {
-                Log.w("ModbusRtu", "short response: $read bytes")
+
+            val resp = readWithTimeout(expectedBytes + 2) // +2 CRC
+            if (resp.size < expectedBytes + 2) {
+                Log.w("ModbusRtu", "short response: ${resp.size} bytes")
                 return null
             }
-            val resp = buf.copyOf(read)
             if (!checkCrc(resp)) {
                 Log.w("ModbusRtu", "CRC error")
                 return null
@@ -126,6 +173,29 @@ class ModbusRtu(private val portName: String, private val baudRate: Int = 9600) 
             Log.e("ModbusRtu", "sendAndReceive error: $e")
             null
         }
+    }
+
+    // FileInputStream.read() на символьном устройстве блокируется без таймаута
+    // (в отличие от jSerialComm с setComPortTimeouts), а один вызов read()
+    // может вернуть лишь часть кадра, если ОС ещё не успела доставить все
+    // байты разом — поэтому копим байты в цикле, пока не наберём нужное
+    // количество или не истечёт таймаут.
+    private fun readWithTimeout(expectedBytes: Int, timeoutMs: Long = 500): ByteArray {
+        val inp = inputStream ?: return ByteArray(0)
+        val deadline = System.currentTimeMillis() + timeoutMs
+        val buffer = mutableListOf<Byte>()
+        while (System.currentTimeMillis() < deadline) {
+            val available = inp.available()
+            if (available > 0) {
+                val chunk = ByteArray(available)
+                val read = inp.read(chunk)
+                if (read > 0) buffer.addAll(chunk.take(read).toList())
+                if (buffer.size >= expectedBytes) break
+            } else {
+                Thread.sleep(5)
+            }
+        }
+        return buffer.toByteArray()
     }
 
     private fun validateResponse(resp: ByteArray, slaveId: Int, fc: Int): Boolean {

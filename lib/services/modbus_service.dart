@@ -6,8 +6,8 @@ class ModbusService {
   static bool _open = false;
 
   // Открыть порт. Вызывать один раз при старте.
-  // port: '/dev/ttyS3' — уточнить после запуска find_port.py
-  static Future<bool> open({String port = '/dev/ttyS3', int baud = 9600}) async {
+  // port: '/dev/ttyS5' — уточнить после запуска find_port.py
+  static Future<bool> open({String port = '/dev/ttyS5', int baud = 9600}) async {
     try {
       final ok = await _channel.invokeMethod<bool>('open', {'port': port, 'baud': baud});
       _open = ok == true;

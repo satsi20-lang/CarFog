@@ -43,7 +43,3 @@ kotlin {
 flutter {
     source = "../.."
 }
-
-dependencies {
-    implementation("com.fazecast:jSerialComm:[2.0,3.0)")
-}

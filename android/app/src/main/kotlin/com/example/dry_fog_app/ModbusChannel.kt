@@ -22,10 +22,10 @@ class ModbusChannel(private val channel: MethodChannel) :
         when (call.method) {
 
             "open" -> {
-                val port = call.argument<String>("port") ?: "/dev/ttyS3"
+                val port = call.argument<String>("port") ?: "/dev/ttyS5"
                 val baud = call.argument<Int>("baud") ?: 9600
-                modbus = ModbusRtu(port, baud)
-                result.success(modbus!!.open())
+                modbus = ModbusRtu()
+                result.success(modbus!!.open(port, baud))
             }
 
             "close" -> {
