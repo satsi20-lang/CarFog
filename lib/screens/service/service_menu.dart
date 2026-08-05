@@ -35,6 +35,12 @@ const Map<String, Map<String, String>> _i18n = {
     'heater': 'ТЭН испарителя',
     'all_on': 'Включить всё',
     'all_off': 'Выключить всё',
+    'tab_sensors': 'Датчики',
+    'sensors_read': 'Читать датчики',
+    'sensors_reading': 'Чтение…',
+    'sensor_label': 'Датчик',
+    'sensor_has_fluid': 'Есть жидкость',
+    'sensor_error': 'Ошибка чтения',
   },
   'en': {
     'menu_title': 'Service menu',
@@ -65,6 +71,12 @@ const Map<String, Map<String, String>> _i18n = {
     'heater': 'Evaporator heater',
     'all_on': 'Turn everything on',
     'all_off': 'Turn everything off',
+    'tab_sensors': 'Sensors',
+    'sensors_read': 'Read sensors',
+    'sensors_reading': 'Reading…',
+    'sensor_label': 'Sensor',
+    'sensor_has_fluid': 'Liquid present',
+    'sensor_error': 'Read error',
   },
   'et': {
     'menu_title': 'Teenindusmenüü',
@@ -95,6 +107,12 @@ const Map<String, Map<String, String>> _i18n = {
     'heater': 'Aurusti küttekeha',
     'all_on': 'Lülita kõik sisse',
     'all_off': 'Lülita kõik välja',
+    'tab_sensors': 'Andurid',
+    'sensors_read': 'Loe andureid',
+    'sensors_reading': 'Loen…',
+    'sensor_label': 'Andur',
+    'sensor_has_fluid': 'Vedelik olemas',
+    'sensor_error': 'Lugemisviga',
   },
 };
 
@@ -106,7 +124,7 @@ class ServiceMenuScreen extends StatefulWidget {
 }
 
 class _ServiceMenuScreenState extends State<ServiceMenuScreen> {
-  int _tab = 0; // 0=Настройки, 1=Ароматы, 2=Диагностика
+  int _tab = 0; // 0=Настройки, 1=Ароматы, 2=Диагностика, 3=Датчики
 
   @override
   Widget build(BuildContext context) {
@@ -114,7 +132,12 @@ class _ServiceMenuScreenState extends State<ServiceMenuScreen> {
     final lang = notifier.lang;
     final t = _i18n[lang]!;
 
-    final tabs = [t['tab_settings']!, t['tab_flavors']!, t['tab_diagnostics']!];
+    final tabs = [
+      t['tab_settings']!,
+      t['tab_flavors']!,
+      t['tab_diagnostics']!,
+      t['tab_sensors']!,
+    ];
 
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E1A),
@@ -191,7 +214,9 @@ class _ServiceMenuScreenState extends State<ServiceMenuScreen> {
                   ? _SettingsTab()
                   : _tab == 1
                       ? _FlavorsTab()
-                      : const _DiagnosticsTab(),
+                      : _tab == 2
+                          ? const _DiagnosticsTab()
+                          : const _SensorsTab(),
             ),
           ],
         ),
@@ -685,6 +710,148 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
           ],
         ),
       ],
+    );
+  }
+}
+
+// ============================================================
+// ВКЛАДКА: ДАТЧИКИ
+// ============================================================
+
+class _SensorsTab extends StatefulWidget {
+  const _SensorsTab();
+
+  @override
+  State<_SensorsTab> createState() => _SensorsTabState();
+}
+
+class _SensorsTabState extends State<_SensorsTab> {
+  List<bool>? _levels;
+  bool _loading = false;
+  String? _error;
+
+  Future<void> _readSensors() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final levels = await ModbusService.readLevels();
+      if (!mounted) return;
+      setState(() {
+        _levels = levels;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = _i18n[context.watch<AppNotifier>().lang]!;
+
+    return ListView(
+      padding: const EdgeInsets.all(24),
+      children: [
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: _loading ? null : _readSensors,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF00C6B2),
+              foregroundColor: Colors.black,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ),
+            child: Text(
+              _loading ? t['sensors_reading']! : t['sensors_read']!,
+              style:
+                  const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+          ),
+        ),
+        if (_error != null) ...[
+          const SizedBox(height: 16),
+          Text(
+            '${t['sensor_error']}: $_error',
+            style: const TextStyle(color: Color(0xFFE53935), fontSize: 13),
+          ),
+        ],
+        const SizedBox(height: 20),
+        ...List.generate(8, (i) {
+          final value =
+              _levels != null && _levels!.length > i ? _levels![i] : null;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: _SensorRow(index: i, value: value, t: t),
+          );
+        }),
+      ],
+    );
+  }
+}
+
+class _SensorRow extends StatelessWidget {
+  final int index;
+  // null = ещё не прочитано; true = жидкость есть; false = пусто
+  // (совпадает с соглашением ModbusService.readLevels() и _LevelBadge)
+  final bool? value;
+  final Map<String, String> t;
+
+  const _SensorRow({
+    required this.index,
+    required this.value,
+    required this.t,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    Color dotColor;
+    String label;
+    if (value == null) {
+      dotColor = const Color(0xFF556677);
+      label = '—';
+    } else if (value == true) {
+      dotColor = const Color(0xFF00C6B2);
+      label = t['sensor_has_fluid']!;
+    } else {
+      dotColor = const Color(0xFFE53935);
+      label = t['empty_level']!;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF141B29),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 14,
+            height: 14,
+            decoration:
+                BoxDecoration(color: dotColor, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            '${t['sensor_label']} $index',
+            style: const TextStyle(color: Colors.white, fontSize: 14),
+          ),
+          const Spacer(),
+          Text(
+            label,
+            style: TextStyle(
+                color: dotColor, fontWeight: FontWeight.bold, fontSize: 13),
+          ),
+        ],
+      ),
     );
   }
 }
