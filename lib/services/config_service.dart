@@ -36,7 +36,7 @@ class ConfigService {
   }
 
   static Map<String, dynamic> _toJson(AppConfig c) => {
-        'servicePriceEur': c.servicePriceEur,
+        'treatmentPriceCents': c.treatmentPriceCents,
         'treatmentDurationS': c.treatmentDurationS,
         'servicePin': c.servicePin,
         'compressorPurgeS': c.compressorPurgeS,
@@ -45,7 +45,7 @@ class ConfigService {
       };
 
   static AppConfig _fromJson(Map<String, dynamic> j) => AppConfig(
-        servicePriceEur: (j['servicePriceEur'] as num?)?.toDouble() ?? 5.0,
+        treatmentPriceCents: (j['treatmentPriceCents'] as int?) ?? 200,
         treatmentDurationS: (j['treatmentDurationS'] as int?) ?? 40,
         servicePin: (j['servicePin'] as String?) ?? '1234',
         compressorPurgeS: (j['compressorPurgeS'] as int?) ?? 5,

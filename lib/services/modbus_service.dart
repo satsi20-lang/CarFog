@@ -103,4 +103,82 @@ class ModbusService {
       return 0.0;
     }
   }
+
+  // Читает данные счётчика энергии DDS6619: voltage (В), current (А),
+  // power (Вт), totalEnergy (кВт⋅ч, общий накопленный расход).
+  static Future<Map<String, double>> readEnergy() async {
+    const fallback = {
+      'voltage': 0.0,
+      'current': 0.0,
+      'power': 0.0,
+      'totalEnergy': 0.0,
+    };
+    try {
+      final result = await _channel.invokeMethod<Map>('readEnergy');
+      if (result == null) return fallback;
+      return result.map((k, v) => MapEntry(k as String, (v as num).toDouble()));
+    } catch (e) {
+      debugPrint('ModbusService.readEnergy error: $e');
+      return fallback;
+    }
+  }
+
+  // Расход за текущий календарный месяц (кВт⋅ч).
+  static Future<double> getMonthlyEnergy() async {
+    try {
+      return await _channel.invokeMethod<double>('getMonthlyEnergy') ?? 0.0;
+    } catch (e) {
+      debugPrint('ModbusService.getMonthlyEnergy error: $e');
+      return 0.0;
+    }
+  }
+
+  // Расход за прошлый (уже завершившийся) календарный месяц (кВт⋅ч).
+  static Future<double> getPreviousMonthEnergy() async {
+    try {
+      return await _channel.invokeMethod<double>('getPreviousMonthEnergy') ?? 0.0;
+    } catch (e) {
+      debugPrint('ModbusService.getPreviousMonthEnergy error: $e');
+      return 0.0;
+    }
+  }
+
+  // История расхода по месяцам: JSON-строка вида
+  // [{"year":2026,"month":7,"kwh":12.34}, ...], не более 12 записей.
+  static Future<String> getEnergyHistory() async {
+    try {
+      return await _channel.invokeMethod<String>('getEnergyHistory') ?? '[]';
+    } catch (e) {
+      debugPrint('ModbusService.getEnergyHistory error: $e');
+      return '[]';
+    }
+  }
+
+  // Запускает фоновый счётчик импульсов монетоприёмника (экран оплаты).
+  static Future<void> startPaymentCoinCounting() async {
+    try {
+      await _channel.invokeMethod('startPaymentCoinCounting');
+    } catch (e) {
+      debugPrint('ModbusService.startPaymentCoinCounting error: $e');
+    }
+  }
+
+  // Останавливает фоновый счётчик — обязательно вызывать при уходе с экрана оплаты.
+  static Future<void> stopPaymentCoinCounting() async {
+    try {
+      await _channel.invokeMethod('stopPaymentCoinCounting');
+    } catch (e) {
+      debugPrint('ModbusService.stopPaymentCoinCounting error: $e');
+    }
+  }
+
+  // Номинал последней принятой монеты в центах (0 = новой монеты нет).
+  static Future<int> getLastCoinCents() async {
+    try {
+      return await _channel.invokeMethod<int>('getLastCoinCents') ?? 0;
+    } catch (e) {
+      debugPrint('ModbusService.getLastCoinCents error: $e');
+      return 0;
+    }
+  }
 }

@@ -5,12 +5,22 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.RandomAccessFile
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.ReentrantLock
 
 class ModbusRtu {
 
     private var raf: RandomAccessFile? = null
     private var inputStream: FileInputStream? = null
     private var outputStream: FileOutputStream? = null
+
+    // fair=true: гарантирует порядок FIFO среди ожидающих поток. Обычный
+    // synchronized (или nonfair-лок) не даёт такой гарантии — быстро
+    // переопрашивающий поток (например, счётчик монет) может раз за разом
+    // перехватывать лок раньше редко обращающихся потоков, фактически
+    // блокируя их на неопределённое время (проверено на практике: без
+    // fair-лока энергия/уровни переставали отвечать вовсе, пока опрос монет
+    // работал в фоне).
+    private val ioLock = ReentrantLock(true)
 
     // Открыть порт: настроить линию через stty, затем открыть один
     // файловый дескриптор через RandomAccessFile (O_RDWR) и получить
@@ -81,9 +91,12 @@ class ModbusRtu {
     fun isOpen() = inputStream != null && outputStream != null
 
     // FC02: Read Discrete Inputs (DI — датчики уровня, монетоприёмник)
-    fun readDiscreteInputs(slaveId: Int, startAddr: Int, count: Int): BooleanArray? {
+    // timeoutMs — таймаут ожидания ответа (см. sendAndReceive/readWithTimeout);
+    // по умолчанию 500мс, но опрос монетоприёмника использует укороченный,
+    // чтобы не задерживать остальных на общей шине при отсутствии ответа.
+    fun readDiscreteInputs(slaveId: Int, startAddr: Int, count: Int, timeoutMs: Long = 500): BooleanArray? {
         val req = buildRequest(slaveId, 0x02, startAddr, count)
-        val resp = sendAndReceive(req, 3 + ((count + 7) / 8)) ?: return null
+        val resp = sendAndReceive(req, 3 + ((count + 7) / 8), timeoutMs) ?: return null
         if (!validateResponse(resp, slaveId, 0x02)) return null
         val result = BooleanArray(count)
         for (i in 0 until count) {
@@ -125,11 +138,57 @@ class ModbusRtu {
         return validateResponse(resp, slaveId, 0x05)
     }
 
-    // FC03: Read Holding Registers (термопары, счётчик энергии)
+    // FC06: Write Single Register (используется для смены адреса счётчика DDS6619)
+    fun writeSingleRegister(slaveId: Int, addr: Int, value: Int): Boolean {
+        val req = byteArrayOf(
+            slaveId.toByte(),
+            0x06,
+            (addr shr 8).toByte(), addr.toByte(),
+            (value shr 8).toByte(), value.toByte()
+        )
+        val reqWithCrc = appendCrc(req)
+        // Ответ FC06 — эхо запроса: 6 байт данных + 2 CRC (как FC05)
+        val resp = sendAndReceive(reqWithCrc, 6) ?: return false
+        return validateResponse(resp, slaveId, 0x06)
+    }
+
+    // FC16: Write Multiple Registers (запись float/составных значений)
+    fun writeMultipleRegisters(slaveId: Int, startAddr: Int, data: ByteArray): Boolean {
+        val quantity = data.size / 2
+        val req = byteArrayOf(
+            slaveId.toByte(),
+            0x10,
+            (startAddr shr 8).toByte(), startAddr.toByte(),
+            (quantity shr 8).toByte(), quantity.toByte(),
+            data.size.toByte()
+        ) + data
+        val reqWithCrc = appendCrc(req)
+        // Ответ FC16 — эхо slave+fc+addr+quantity (без данных): 6 байт + 2 CRC
+        val resp = sendAndReceive(reqWithCrc, 6) ?: return false
+        return validateResponse(resp, slaveId, 0x10)
+    }
+
+    // FC03: Read Holding Registers (термопары)
     fun readHoldingRegisters(slaveId: Int, startAddr: Int, count: Int): IntArray? {
         val req = buildRequest(slaveId, 0x03, startAddr, count)
         val resp = sendAndReceive(req, 3 + count * 2) ?: return null
         if (!validateResponse(resp, slaveId, 0x03)) return null
+        val byteCount = resp[2].toInt() and 0xFF
+        if (byteCount < count * 2) return null
+        return IntArray(count) { i ->
+            ((resp[3 + i * 2].toInt() and 0xFF) shl 8) or
+            (resp[4 + i * 2].toInt() and 0xFF)
+        }
+    }
+
+    // FC04: Read Input Registers (счётчик энергии DDS6619 — живые измерения;
+    // на этом устройстве FC03 отдаёт статичные конфигурационные значения,
+    // а реальные показания идут именно через FC04). Логика идентична
+    // readHoldingRegisters, отличается только function code.
+    fun readInputRegisters(slaveId: Int, startAddr: Int, count: Int): IntArray? {
+        val req = buildRequest(slaveId, 0x04, startAddr, count)
+        val resp = sendAndReceive(req, 3 + count * 2) ?: return null
+        if (!validateResponse(resp, slaveId, 0x04)) return null
         val byteCount = resp[2].toInt() and 0xFF
         if (byteCount < count * 2) return null
         return IntArray(count) { i ->
@@ -151,27 +210,37 @@ class ModbusRtu {
         return appendCrc(req)
     }
 
-    private fun sendAndReceive(request: ByteArray, expectedBytes: Int): ByteArray? {
-        val out = outputStream ?: return null
-        if (inputStream == null) return null
-        return try {
-            out.write(request)
-            out.flush()
-            Thread.sleep(20) // межфреймовая пауза
+    // ioLock: единая точка, через которую проходят все Modbus-транзакции
+    // (readCoils/readDiscreteInputs/readHoldingRegisters/readInputRegisters/
+    // writeSingleCoil/writeSingleRegister/writeMultipleRegisters). Порт RS485
+    // полудуплексный и общий на всех — без блокировки конкурентные вызовы с
+    // разных потоков перемешивали бы байты запросов/ответов друг друга.
+    private fun sendAndReceive(request: ByteArray, expectedBytes: Int, timeoutMs: Long = 500): ByteArray? {
+        ioLock.lock()
+        try {
+            val out = outputStream ?: return null
+            if (inputStream == null) return null
+            return try {
+                out.write(request)
+                out.flush()
+                Thread.sleep(20) // межфреймовая пауза
 
-            val resp = readWithTimeout(expectedBytes + 2) // +2 CRC
-            if (resp.size < expectedBytes + 2) {
-                Log.w("ModbusRtu", "short response: ${resp.size} bytes")
-                return null
+                val resp = readWithTimeout(expectedBytes + 2, timeoutMs) // +2 CRC
+                if (resp.size < expectedBytes + 2) {
+                    Log.w("ModbusRtu", "short response: ${resp.size} bytes")
+                    return null
+                }
+                if (!checkCrc(resp)) {
+                    Log.w("ModbusRtu", "CRC error")
+                    return null
+                }
+                resp
+            } catch (e: Exception) {
+                Log.e("ModbusRtu", "sendAndReceive error: $e")
+                null
             }
-            if (!checkCrc(resp)) {
-                Log.w("ModbusRtu", "CRC error")
-                return null
-            }
-            resp
-        } catch (e: Exception) {
-            Log.e("ModbusRtu", "sendAndReceive error: $e")
-            null
+        } finally {
+            ioLock.unlock()
         }
     }
 

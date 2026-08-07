@@ -6,7 +6,7 @@ import '../services/config_service.dart';
 // ============================================================
 
 class AppConfig {
-  double servicePriceEur;
+  int treatmentPriceCents;
   int treatmentDurationS;
   String servicePin;
   int compressorPurgeS;
@@ -14,7 +14,7 @@ class AppConfig {
   Map<String, List<String>> flavorNames;
 
   AppConfig({
-    this.servicePriceEur = 5.0,
+    this.treatmentPriceCents = 200,
     this.treatmentDurationS = 40,
     this.servicePin = '1234',
     this.compressorPurgeS = 5,
@@ -95,10 +95,6 @@ class AppNotifier extends ChangeNotifier {
   int? _selectedFlavor;
   int? get selectedFlavor => _selectedFlavor;
 
-  // --- Оплата ---
-  double _amountPaid = 0.0;
-  double get amountPaid => _amountPaid;
-
   // --- Код текущей ошибки (см. AppState.error) ---
   String? _errorCode;
   String? get errorCode => _errorCode;
@@ -142,20 +138,6 @@ class AppNotifier extends ChangeNotifier {
   }
 
   // ============================================================
-  // ОПЛАТА
-  // ============================================================
-
-  void addPayment(double amount) {
-    _amountPaid += amount;
-    notifyListeners();
-  }
-
-  void resetPayment() {
-    _amountPaid = 0.0;
-    notifyListeners();
-  }
-
-  // ============================================================
   // УРОВНИ КАНИСТР
   // ============================================================
 
@@ -170,7 +152,6 @@ class AppNotifier extends ChangeNotifier {
 
   void resetSession() {
     _selectedFlavor = null;
-    _amountPaid = 0.0;
     _errorCode = null;
     _state = AppState.standby;
     notifyListeners();

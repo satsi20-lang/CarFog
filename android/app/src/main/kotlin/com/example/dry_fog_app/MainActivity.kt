@@ -26,7 +26,7 @@ class MainActivity : FlutterActivity() {
             StandardMethodCodec.INSTANCE,
             taskQueue
         )
-        modbusChannel = ModbusChannel(channel)
+        modbusChannel = ModbusChannel(channel, this)
     }
 
     override fun onDestroy() {

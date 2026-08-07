@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -12,12 +14,12 @@ const Map<String, Map<String, String>> _i18n = {
     'tab_flavors': 'Ароматы',
     'tab_diagnostics': 'Диагностика',
     'exit': 'Выход',
-    'price_label': 'Цена услуги (EUR)',
+    'price_label': 'Цена обработки',
     'duration_label': 'Длительность обработки (сек)',
     'pin_label': 'PIN сервисного меню (4 цифры)',
     'save': 'Сохранить',
     'saved': 'Сохранено',
-    'err_price': 'Неверная цена',
+    'err_price': 'Цена: минимум 0.50 €',
     'err_duration': 'Длительность: 10–120 сек',
     'err_pin': 'PIN — 4 цифры',
     'compressor_purge_label': 'Продувка компрессора до включения насосов и ТЭНа (сек)',
@@ -27,6 +29,9 @@ const Map<String, Map<String, String>> _i18n = {
     'available': 'Есть',
     'empty_level': 'Пусто',
     'flavor_fallback': 'Аромат',
+    'coin_label': 'Монета',
+    'coin_yes': 'ДА',
+    'coin_no': 'НЕТ',
     'diag_levels': 'Уровни канистр',
     'diag_manual': 'Ручное управление',
     'diag_manual_warning': 'Осторожно: прямое управление оборудованием, минуя обычную логику работы аппарата',
@@ -41,6 +46,18 @@ const Map<String, Map<String, String>> _i18n = {
     'sensor_label': 'Датчик',
     'sensor_has_fluid': 'Есть жидкость',
     'sensor_error': 'Ошибка чтения',
+    'diag_energy': 'Счётчик энергии',
+    'energy_voltage': 'Напряжение',
+    'energy_current': 'Ток',
+    'energy_power': 'Мощность',
+    'refresh': 'Обновить',
+    'unit_v': 'В',
+    'unit_a': 'А',
+    'unit_w': 'Вт',
+    'energy_total': 'Общий счётчик',
+    'energy_monthly': 'За текущий месяц',
+    'energy_previous_month': 'За прошлый месяц',
+    'unit_kwh': 'кВт⋅ч',
   },
   'en': {
     'menu_title': 'Service menu',
@@ -48,12 +65,12 @@ const Map<String, Map<String, String>> _i18n = {
     'tab_flavors': 'Fragrances',
     'tab_diagnostics': 'Diagnostics',
     'exit': 'Exit',
-    'price_label': 'Service price (EUR)',
+    'price_label': 'Treatment price',
     'duration_label': 'Treatment duration (sec)',
     'pin_label': 'Service menu PIN (4 digits)',
     'save': 'Save',
     'saved': 'Saved',
-    'err_price': 'Invalid price',
+    'err_price': 'Price: minimum 0.50 €',
     'err_duration': 'Duration: 10–120 sec',
     'err_pin': 'PIN must be 4 digits',
     'compressor_purge_label': 'Compressor purge before pumps/heater turn on (sec)',
@@ -63,6 +80,9 @@ const Map<String, Map<String, String>> _i18n = {
     'available': 'OK',
     'empty_level': 'Empty',
     'flavor_fallback': 'Fragrance',
+    'coin_label': 'Coin',
+    'coin_yes': 'YES',
+    'coin_no': 'NO',
     'diag_levels': 'Canister levels',
     'diag_manual': 'Manual control',
     'diag_manual_warning': 'Caution: direct hardware control, bypassing normal machine logic',
@@ -77,6 +97,18 @@ const Map<String, Map<String, String>> _i18n = {
     'sensor_label': 'Sensor',
     'sensor_has_fluid': 'Liquid present',
     'sensor_error': 'Read error',
+    'diag_energy': 'Energy meter',
+    'energy_voltage': 'Voltage',
+    'energy_current': 'Current',
+    'energy_power': 'Power',
+    'refresh': 'Refresh',
+    'unit_v': 'V',
+    'unit_a': 'A',
+    'unit_w': 'W',
+    'energy_total': 'Total meter',
+    'energy_monthly': 'This month',
+    'energy_previous_month': 'Previous month',
+    'unit_kwh': 'kWh',
   },
   'et': {
     'menu_title': 'Teenindusmenüü',
@@ -84,12 +116,12 @@ const Map<String, Map<String, String>> _i18n = {
     'tab_flavors': 'Lõhnad',
     'tab_diagnostics': 'Diagnostika',
     'exit': 'Välju',
-    'price_label': 'Teenuse hind (EUR)',
+    'price_label': 'Töötluse hind',
     'duration_label': 'Töötluse kestus (sek)',
     'pin_label': 'Teenindusmenüü PIN (4 numbrit)',
     'save': 'Salvesta',
     'saved': 'Salvestatud',
-    'err_price': 'Vale hind',
+    'err_price': 'Hind: minimaalselt 0.50 €',
     'err_duration': 'Kestus: 10–120 sek',
     'err_pin': 'PIN peab olema 4 numbrit',
     'compressor_purge_label': 'Kompressori puhastus enne pumpade/küttekeha sisselülitamist (sek)',
@@ -98,6 +130,9 @@ const Map<String, Map<String, String>> _i18n = {
     'err_pump_after_heater': 'Pump pärast küttekeha: 1–30 sek',
     'available': 'Olemas',
     'empty_level': 'Tühi',
+    'coin_label': 'Münt',
+    'coin_yes': 'JAH',
+    'coin_no': 'EI',
     'flavor_fallback': 'Lõhn',
     'diag_levels': 'Kanistrite tasemed',
     'diag_manual': 'Käsijuhtimine',
@@ -113,6 +148,18 @@ const Map<String, Map<String, String>> _i18n = {
     'sensor_label': 'Andur',
     'sensor_has_fluid': 'Vedelik olemas',
     'sensor_error': 'Lugemisviga',
+    'diag_energy': 'Energiamõõtja',
+    'energy_voltage': 'Pinge',
+    'energy_current': 'Vool',
+    'energy_power': 'Võimsus',
+    'refresh': 'Värskenda',
+    'unit_v': 'V',
+    'unit_a': 'A',
+    'unit_w': 'W',
+    'energy_total': 'Koguarvesti',
+    'energy_monthly': 'Sel kuul',
+    'energy_previous_month': 'Eelmisel kuul',
+    'unit_kwh': 'kWh',
   },
 };
 
@@ -235,7 +282,7 @@ class _SettingsTab extends StatefulWidget {
 }
 
 class _SettingsTabState extends State<_SettingsTab> {
-  late TextEditingController _priceCtrl;
+  late int _priceCents;
   late TextEditingController _durationCtrl;
   late TextEditingController _pinCtrl;
   late TextEditingController _compressorPurgeCtrl;
@@ -245,8 +292,7 @@ class _SettingsTabState extends State<_SettingsTab> {
   void initState() {
     super.initState();
     final config = context.read<AppNotifier>().config;
-    _priceCtrl = TextEditingController(
-        text: config.servicePriceEur.toStringAsFixed(2));
+    _priceCents = config.treatmentPriceCents;
     _durationCtrl =
         TextEditingController(text: config.treatmentDurationS.toString());
     _pinCtrl = TextEditingController(text: config.servicePin);
@@ -258,7 +304,6 @@ class _SettingsTabState extends State<_SettingsTab> {
 
   @override
   void dispose() {
-    _priceCtrl.dispose();
     _durationCtrl.dispose();
     _pinCtrl.dispose();
     _compressorPurgeCtrl.dispose();
@@ -266,16 +311,21 @@ class _SettingsTabState extends State<_SettingsTab> {
     super.dispose();
   }
 
+  void _changePrice(int deltaCents) {
+    setState(() {
+      _priceCents = (_priceCents + deltaCents).clamp(50, 999999);
+    });
+  }
+
   void _save() {
     final notifier = context.read<AppNotifier>();
     final t = _i18n[notifier.lang]!;
-    final price = double.tryParse(_priceCtrl.text);
     final duration = int.tryParse(_durationCtrl.text);
     final pin = _pinCtrl.text.trim();
     final compressorPurge = int.tryParse(_compressorPurgeCtrl.text);
     final pumpAfterHeater = int.tryParse(_pumpAfterHeaterCtrl.text);
 
-    if (price == null || price <= 0) {
+    if (_priceCents < 50) {
       _snack(t['err_price']!);
       return;
     }
@@ -297,7 +347,7 @@ class _SettingsTabState extends State<_SettingsTab> {
     }
 
     final updated = AppConfig(
-      servicePriceEur: price,
+      treatmentPriceCents: _priceCents,
       treatmentDurationS: duration,
       servicePin: pin,
       compressorPurgeS: compressorPurge,
@@ -321,14 +371,10 @@ class _SettingsTabState extends State<_SettingsTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _Field(
+          _PriceStepper(
             label: t['price_label']!,
-            controller: _priceCtrl,
-            keyboardType:
-                const TextInputType.numberWithOptions(decimal: true),
-            inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))
-            ],
+            priceCents: _priceCents,
+            onChanged: _changePrice,
           ),
           const SizedBox(height: 16),
           _Field(
@@ -428,7 +474,7 @@ class _FlavorsTabState extends State<_FlavorsTab> {
           List.generate(8, (i) => _ctrls[i][li].text.trim());
     }
     final updated = AppConfig(
-      servicePriceEur: notifier.config.servicePriceEur,
+      treatmentPriceCents: notifier.config.treatmentPriceCents,
       treatmentDurationS: notifier.config.treatmentDurationS,
       servicePin: notifier.config.servicePin,
       compressorPurgeS: notifier.config.compressorPurgeS,
@@ -545,6 +591,52 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
   bool _heaterOn = false;
   bool _busy = false;
 
+  Map<String, double> _energy = {
+    'voltage': 0.0,
+    'current': 0.0,
+    'power': 0.0,
+    'totalEnergy': 0.0,
+  };
+  double _monthlyEnergy = 0.0;
+  double _previousMonthEnergy = 0.0;
+  Timer? _energyTimer;
+
+  bool _coinDetected = false;
+  Timer? _coinTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _readEnergy();
+    _energyTimer = Timer.periodic(const Duration(seconds: 3), (_) => _readEnergy());
+    _coinTimer = Timer.periodic(const Duration(milliseconds: 500), (_) => _readCoin());
+  }
+
+  @override
+  void dispose() {
+    _energyTimer?.cancel();
+    _coinTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _readCoin() async {
+    final detected = await ModbusService.readCoin();
+    if (mounted) setState(() => _coinDetected = detected);
+  }
+
+  Future<void> _readEnergy() async {
+    final energy = await ModbusService.readEnergy();
+    final monthly = await ModbusService.getMonthlyEnergy();
+    final previousMonth = await ModbusService.getPreviousMonthEnergy();
+    if (mounted) {
+      setState(() {
+        _energy = energy;
+        _monthlyEnergy = monthly;
+        _previousMonthEnergy = previousMonth;
+      });
+    }
+  }
+
   Future<void> _setPump(int i, bool value) async {
     setState(() => _pumpOn[i] = value);
     final ok = await ModbusService.setPump(i, value);
@@ -623,6 +715,31 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
             ),
           );
         }),
+        const SizedBox(height: 4),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF141B29),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              Text('${t['coin_label']}:',
+                  style: const TextStyle(color: Colors.white, fontSize: 14)),
+              const SizedBox(width: 8),
+              Text(
+                _coinDetected ? t['coin_yes']! : t['coin_no']!,
+                style: TextStyle(
+                  color: _coinDetected
+                      ? const Color(0xFF00C6B2)
+                      : const Color(0xFF556677),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+        ),
 
         const SizedBox(height: 24),
         const Divider(color: Color(0xFF1A2233)),
@@ -709,6 +826,118 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
             ),
           ],
         ),
+
+        const SizedBox(height: 24),
+        const Divider(color: Color(0xFF1A2233)),
+        const SizedBox(height: 12),
+
+        Row(
+          children: [
+            Text(t['diag_energy']!,
+                style: const TextStyle(
+                    color: Color(0xFF556677),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13)),
+            const Spacer(),
+            TextButton(
+              onPressed: _readEnergy,
+              child: Text(t['refresh']!,
+                  style: const TextStyle(color: Color(0xFF00C6B2))),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFF141B29),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: _EnergyMetric(
+                  label: t['energy_voltage']!,
+                  value: _energy['voltage'] ?? 0.0,
+                  unit: t['unit_v']!,
+                ),
+              ),
+              Expanded(
+                child: _EnergyMetric(
+                  label: t['energy_current']!,
+                  value: _energy['current'] ?? 0.0,
+                  unit: t['unit_a']!,
+                ),
+              ),
+              Expanded(
+                child: _EnergyMetric(
+                  label: t['energy_power']!,
+                  value: _energy['power'] ?? 0.0,
+                  unit: t['unit_w']!,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFF141B29),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${t['energy_total']}: '
+                '${(_energy['totalEnergy'] ?? 0.0).toStringAsFixed(2)} ${t['unit_kwh']}',
+                style: const TextStyle(color: Colors.white, fontSize: 14),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '${t['energy_monthly']}: '
+                '${_monthlyEnergy.toStringAsFixed(2)} ${t['unit_kwh']}',
+                style: const TextStyle(color: Colors.white, fontSize: 14),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '${t['energy_previous_month']}: '
+                '${_previousMonthEnergy.toStringAsFixed(2)} ${t['unit_kwh']}',
+                style: const TextStyle(color: Colors.white, fontSize: 14),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _EnergyMetric extends StatelessWidget {
+  final String label;
+  final double value;
+  final String unit;
+
+  const _EnergyMetric({
+    required this.label,
+    required this.value,
+    required this.unit,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label,
+            style: const TextStyle(color: Color(0xFF8899AA), fontSize: 12)),
+        const SizedBox(height: 4),
+        Text('${value.toStringAsFixed(1)} $unit',
+            style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 16)),
       ],
     );
   }
@@ -943,6 +1172,83 @@ class _LevelBadge extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ============================================================
+// ВСПОМОГАТЕЛЬНЫЙ ВИДЖЕТ: степпер цены (±50 центов)
+// ============================================================
+
+class _PriceStepper extends StatelessWidget {
+  final String label;
+  final int priceCents;
+  final ValueChanged<int> onChanged;
+
+  const _PriceStepper({
+    required this.label,
+    required this.priceCents,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label,
+            style: const TextStyle(color: Color(0xFF8899AA), fontSize: 13)),
+        const SizedBox(height: 6),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1A2233),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(
+            children: [
+              _StepButton(
+                icon: Icons.remove,
+                onPressed: () => onChanged(-50),
+              ),
+              Expanded(
+                child: Text(
+                  '${(priceCents / 100).toStringAsFixed(2)} €',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold),
+                ),
+              ),
+              _StepButton(
+                icon: Icons.add,
+                onPressed: () => onChanged(50),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _StepButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onPressed;
+
+  const _StepButton({required this.icon, required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      onPressed: onPressed,
+      icon: Icon(icon, color: const Color(0xFF00C6B2)),
+      style: IconButton.styleFrom(
+        backgroundColor: const Color(0xFF0A0E1A),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8)),
       ),
     );
   }
