@@ -346,14 +346,12 @@ class _SettingsTabState extends State<_SettingsTab> {
       return;
     }
 
-    final updated = AppConfig(
+    final updated = notifier.config.copyWith(
       treatmentPriceCents: _priceCents,
       treatmentDurationS: duration,
       servicePin: pin,
       compressorPurgeS: compressorPurge,
       pumpAfterHeaterS: pumpAfterHeater,
-      deviceId: notifier.config.deviceId,
-      flavorNames: notifier.config.flavorNames,
     );
     notifier.saveConfig(updated);
     _snack(t['saved']!);
@@ -474,15 +472,7 @@ class _FlavorsTabState extends State<_FlavorsTab> {
       newNames[_langs[li]] =
           List.generate(8, (i) => _ctrls[i][li].text.trim());
     }
-    final updated = AppConfig(
-      treatmentPriceCents: notifier.config.treatmentPriceCents,
-      treatmentDurationS: notifier.config.treatmentDurationS,
-      servicePin: notifier.config.servicePin,
-      compressorPurgeS: notifier.config.compressorPurgeS,
-      pumpAfterHeaterS: notifier.config.pumpAfterHeaterS,
-      deviceId: notifier.config.deviceId,
-      flavorNames: newNames,
-    );
+    final updated = notifier.config.copyWith(flavorNames: newNames);
     notifier.saveConfig(updated);
     final t = _i18n[notifier.lang]!;
     ScaffoldMessenger.of(context)

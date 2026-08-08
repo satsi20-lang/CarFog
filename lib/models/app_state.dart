@@ -56,6 +56,26 @@ class AppConfig {
                'Münt',
              ],
            };
+
+  AppConfig copyWith({
+    int? treatmentPriceCents,
+    int? treatmentDurationS,
+    String? servicePin,
+    int? compressorPurgeS,
+    int? pumpAfterHeaterS,
+    String? deviceId,
+    Map<String, List<String>>? flavorNames,
+  }) {
+    return AppConfig(
+      treatmentPriceCents: treatmentPriceCents ?? this.treatmentPriceCents,
+      treatmentDurationS: treatmentDurationS ?? this.treatmentDurationS,
+      servicePin: servicePin ?? this.servicePin,
+      compressorPurgeS: compressorPurgeS ?? this.compressorPurgeS,
+      pumpAfterHeaterS: pumpAfterHeaterS ?? this.pumpAfterHeaterS,
+      deviceId: deviceId ?? this.deviceId,
+      flavorNames: flavorNames ?? this.flavorNames,
+    );
+  }
 }
 
 // ============================================================
