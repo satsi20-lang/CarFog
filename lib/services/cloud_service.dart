@@ -129,13 +129,17 @@ class CloudService {
   static const _queueKey = 'cloud_event_queue';
   static const _maxQueue = 500;
 
-  // Записать событие в очередь и попытаться отправить.
+  static const _historyKey = 'cloud_event_history';
+  static const _maxHistory = 200;
+
+  // Записать событие в очередь на отправку и в историю, затем попытаться отправить.
   static Future<void> report(
     String type, {
     Map<String, dynamic>? data,
   }) async {
     final event = CloudEvent(type: type, data: data);
     await _enqueue(event);
+    await _appendHistory(event);
     await flush();
   }
 
@@ -170,6 +174,45 @@ class CloudService {
   static Future<void> clearQueue() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_queueKey);
+  }
+
+  // Полная история событий аппарата, новые в конце.
+  // Не зависит от того, доставлены события в облако или нет.
+  static Future<List<CloudEvent>> history() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getStringList(_historyKey) ?? [];
+      return raw
+          .map((s) => CloudEvent.fromJson(jsonDecode(s) as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      debugPrint('CloudService.history error: $e');
+      return [];
+    }
+  }
+
+  static Future<void> clearHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_historyKey);
+  }
+
+  // Сколько событий ждёт отправки в облако.
+  static Future<int> pendingCount() async => (await events()).length;
+
+  static Future<void> _appendHistory(CloudEvent event) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getStringList(_historyKey) ?? [];
+      raw.add(jsonEncode(event.toJson()));
+
+      while (raw.length > _maxHistory) {
+        raw.removeAt(0);
+      }
+
+      await prefs.setStringList(_historyKey, raw);
+    } catch (e) {
+      debugPrint('CloudService._appendHistory error: $e');
+    }
   }
 
   static Future<void> _enqueue(CloudEvent event) async {

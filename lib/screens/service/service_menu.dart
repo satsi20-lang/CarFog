@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../models/app_state.dart';
 import '../../widgets/lang_switcher.dart';
+import '../../services/cloud_service.dart';
 import '../../services/modbus_service.dart';
 
 const Map<String, Map<String, String>> _i18n = {
@@ -13,6 +15,7 @@ const Map<String, Map<String, String>> _i18n = {
     'tab_settings': 'Настройки',
     'tab_flavors': 'Ароматы',
     'tab_diagnostics': 'Диагностика',
+    'tab_journal': 'Журнал',
     'exit': 'Выход',
     'price_label': 'Цена обработки',
     'duration_label': 'Длительность обработки (сек)',
@@ -64,6 +67,7 @@ const Map<String, Map<String, String>> _i18n = {
     'tab_settings': 'Settings',
     'tab_flavors': 'Fragrances',
     'tab_diagnostics': 'Diagnostics',
+    'tab_journal': 'Log',
     'exit': 'Exit',
     'price_label': 'Treatment price',
     'duration_label': 'Treatment duration (sec)',
@@ -115,6 +119,7 @@ const Map<String, Map<String, String>> _i18n = {
     'tab_settings': 'Seaded',
     'tab_flavors': 'Lõhnad',
     'tab_diagnostics': 'Diagnostika',
+    'tab_journal': 'Logi',
     'exit': 'Välju',
     'price_label': 'Töötluse hind',
     'duration_label': 'Töötluse kestus (sek)',
@@ -171,7 +176,22 @@ class ServiceMenuScreen extends StatefulWidget {
 }
 
 class _ServiceMenuScreenState extends State<ServiceMenuScreen> {
-  int _tab = 0; // 0=Настройки, 1=Ароматы, 2=Диагностика, 3=Датчики
+  int _tab = 0; // 0=Настройки, 1=Ароматы, 2=Диагностика, 3=Датчики, 4=Журнал
+
+  Widget _buildTab() {
+    switch (_tab) {
+      case 0:
+        return _SettingsTab();
+      case 1:
+        return _FlavorsTab();
+      case 2:
+        return const _DiagnosticsTab();
+      case 3:
+        return const _SensorsTab();
+      default:
+        return _JournalTab();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -184,6 +204,7 @@ class _ServiceMenuScreenState extends State<ServiceMenuScreen> {
       t['tab_flavors']!,
       t['tab_diagnostics']!,
       t['tab_sensors']!,
+      t['tab_journal']!,
     ];
 
     return Scaffold(
@@ -256,15 +277,7 @@ class _ServiceMenuScreenState extends State<ServiceMenuScreen> {
             ),
 
             // Содержимое вкладки
-            Expanded(
-              child: _tab == 0
-                  ? _SettingsTab()
-                  : _tab == 1
-                      ? _FlavorsTab()
-                      : _tab == 2
-                          ? const _DiagnosticsTab()
-                          : const _SensorsTab(),
-            ),
+            Expanded(child: _buildTab()),
           ],
         ),
       ),
@@ -1289,6 +1302,310 @@ class _Field extends StatelessWidget {
             ),
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ============================================================
+// ВКЛАДКА: ЖУРНАЛ СОБЫТИЙ
+// ============================================================
+
+class _JournalTab extends StatefulWidget {
+  @override
+  State<_JournalTab> createState() => _JournalTabState();
+}
+
+class _JournalTabState extends State<_JournalTab> {
+  List<CloudEvent> _events = [];
+  int _pending = 0;
+  bool _loading = true;
+
+  static const _eventLabels = {
+    'app_started': 'Запуск приложения',
+    'service_login_ok': 'Вход в сервисное меню',
+    'unauthorized_access': 'Несанкционированный доступ',
+    'master_code_used': 'Использован мастер-код',
+    'factory_reset': 'Сброс к заводским',
+    'low_liquid': 'Заканчивается жидкость',
+    'session_complete': 'Сессия завершена',
+    'hardware_error': 'Ошибка оборудования',
+    'energy_reading': 'Показания энергии',
+  };
+
+  static const _alarmTypes = {
+    'unauthorized_access',
+    'master_code_used',
+    'factory_reset',
+    'hardware_error',
+  };
+
+  static const _warnTypes = {
+    'low_liquid',
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    final list = await CloudService.history();
+    final pending = await CloudService.pendingCount();
+    if (!mounted) return;
+    setState(() {
+      _events = list.reversed.toList(); // новые сверху
+      _pending = pending;
+      _loading = false;
+    });
+  }
+
+  Future<void> _confirmClear() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFF1A2233),
+        title: const Text(
+          'Очистить журнал?',
+          style: TextStyle(color: Colors.white, fontSize: 18),
+        ),
+        content: const Text(
+          'История событий на аппарате будет удалена. '
+          'События, уже отправленные в облако, там останутся.',
+          style: TextStyle(color: Color(0xFF8899AA), fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text(
+              'Отмена',
+              style: TextStyle(color: Color(0xFF556677)),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text(
+              'Очистить',
+              style: TextStyle(
+                color: Color(0xFFE53935),
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await CloudService.clearHistory();
+      await _load();
+    }
+  }
+
+  Future<void> _flushNow() async {
+    await CloudService.flush();
+    await _load();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Отправка выполнена')),
+    );
+  }
+
+  Color _colorFor(String type) {
+    if (_alarmTypes.contains(type)) return const Color(0xFFE53935);
+    if (_warnTypes.contains(type)) return const Color(0xFFFFAA00);
+    return const Color(0xFF00C6B2);
+  }
+
+  IconData _iconFor(String type) {
+    if (_alarmTypes.contains(type)) return Icons.warning_amber_rounded;
+    if (_warnTypes.contains(type)) return Icons.opacity;
+    return Icons.check_circle_outline;
+  }
+
+  String _formatTs(DateTime ts) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(ts.day)}.${two(ts.month)} '
+        '${two(ts.hour)}:${two(ts.minute)}:${two(ts.second)}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Center(
+        child: CircularProgressIndicator(color: Color(0xFF00C6B2)),
+      );
+    }
+
+    return Column(
+      children: [
+        // Шапка: аппарат + очередь отправки
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          child: Row(
+            children: [
+              Text(
+                CloudService.deviceId,
+                style: const TextStyle(
+                  color: Color(0xFF00C6B2),
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Событий: ${_events.length}',
+                style: const TextStyle(
+                  color: Color(0xFF556677),
+                  fontSize: 12,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _pending > 0
+                      ? const Color(0xFFFFAA00).withValues(alpha: 0.15)
+                      : const Color(0xFF00C6B2).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  _pending > 0 ? 'Не отправлено: $_pending' : 'Всё отправлено',
+                  style: TextStyle(
+                    color: _pending > 0
+                        ? const Color(0xFFFFAA00)
+                        : const Color(0xFF00C6B2),
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // Список событий
+        Expanded(
+          child: _events.isEmpty
+              ? const Center(
+                  child: Text(
+                    'Журнал пуст',
+                    style: TextStyle(color: Color(0xFF556677), fontSize: 15),
+                  ),
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: _events.length,
+                  separatorBuilder: (_, _) =>
+                      const Divider(color: Color(0xFF1A2233), height: 1),
+                  itemBuilder: (_, i) {
+                    final e = _events[i];
+                    final color = _colorFor(e.type);
+                    final label = _eventLabels[e.type] ?? e.type;
+
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(_iconFor(e.type), color: color, size: 20),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  label,
+                                  style: TextStyle(
+                                    color: color,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  _formatTs(e.ts),
+                                  style: const TextStyle(
+                                    color: Color(0xFF556677),
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                if (e.data.isNotEmpty) ...[
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    jsonEncode(e.data),
+                                    style: const TextStyle(
+                                      color: Color(0xFF8899AA),
+                                      fontSize: 11,
+                                      height: 1.3,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+        ),
+
+        // Кнопки
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _load,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF00C6B2),
+                    side: const BorderSide(color: Color(0xFF00C6B2)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: const Text('Обновить'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _flushNow,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF00C6B2),
+                    side: const BorderSide(color: Color(0xFF00C6B2)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: const Text('Отправить'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _confirmClear,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFFE53935),
+                    side: const BorderSide(color: Color(0xFFE53935)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: const Text('Очистить'),
+                ),
+              ),
+            ],
           ),
         ),
       ],
