@@ -11,6 +11,7 @@ class AppConfig {
   String servicePin;
   int compressorPurgeS;
   int pumpAfterHeaterS;
+  String deviceId;
   Map<String, List<String>> flavorNames;
 
   AppConfig({
@@ -19,6 +20,7 @@ class AppConfig {
     this.servicePin = '1234',
     this.compressorPurgeS = 5,
     this.pumpAfterHeaterS = 5,
+    this.deviceId = 'CARFOG-001',
     Map<String, List<String>>? flavorNames,
   }) : flavorNames =
            flavorNames ??

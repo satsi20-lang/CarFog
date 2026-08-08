@@ -352,6 +352,7 @@ class _SettingsTabState extends State<_SettingsTab> {
       servicePin: pin,
       compressorPurgeS: compressorPurge,
       pumpAfterHeaterS: pumpAfterHeater,
+      deviceId: notifier.config.deviceId,
       flavorNames: notifier.config.flavorNames,
     );
     notifier.saveConfig(updated);
@@ -479,6 +480,7 @@ class _FlavorsTabState extends State<_FlavorsTab> {
       servicePin: notifier.config.servicePin,
       compressorPurgeS: notifier.config.compressorPurgeS,
       pumpAfterHeaterS: notifier.config.pumpAfterHeaterS,
+      deviceId: notifier.config.deviceId,
       flavorNames: newNames,
     );
     notifier.saveConfig(updated);

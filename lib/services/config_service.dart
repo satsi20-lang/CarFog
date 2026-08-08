@@ -41,6 +41,7 @@ class ConfigService {
         'servicePin': c.servicePin,
         'compressorPurgeS': c.compressorPurgeS,
         'pumpAfterHeaterS': c.pumpAfterHeaterS,
+        'deviceId': c.deviceId,
         'flavorNames': c.flavorNames,
       };
 
@@ -50,6 +51,7 @@ class ConfigService {
         servicePin: (j['servicePin'] as String?) ?? '1234',
         compressorPurgeS: (j['compressorPurgeS'] as int?) ?? 5,
         pumpAfterHeaterS: (j['pumpAfterHeaterS'] as int?) ?? 5,
+        deviceId: (j['deviceId'] as String?) ?? 'CARFOG-001',
         flavorNames: (j['flavorNames'] as Map<String, dynamic>?)?.map(
           (k, v) => MapEntry(k, List<String>.from(v)),
         ),

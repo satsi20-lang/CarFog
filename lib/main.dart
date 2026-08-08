@@ -13,6 +13,7 @@ import 'screens/finished.dart';
 import 'screens/error.dart';
 import 'screens/service/service_pin.dart';
 import 'screens/service/service_menu.dart';
+import 'services/cloud_service.dart';
 import 'services/config_service.dart';
 import 'services/modbus_service.dart';
 
@@ -21,6 +22,12 @@ void main() async {
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   final config = await ConfigService.load();
+
+  // Облачный слой. Пока транспорт — локальный лог.
+  // Когда бэкенд будет готов, заменить на:
+  // CloudService.transport = HttpCloudTransport(baseUrl: '...', apiKey: '...');
+  CloudService.deviceId = config.deviceId;
+  unawaited(CloudService.report(CloudEventType.appStarted));
 
   // Безопасное выключение всего при старте — не блокирует показ UI,
   // если железо ещё не подключено или порт не совпал.
