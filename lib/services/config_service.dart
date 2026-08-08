@@ -42,6 +42,10 @@ class ConfigService {
         'compressorPurgeS': c.compressorPurgeS,
         'pumpAfterHeaterS': c.pumpAfterHeaterS,
         'deviceId': c.deviceId,
+        'cloudUrl': c.cloudUrl,
+        'cloudAnonKey': c.cloudAnonKey,
+        'cloudToken': c.cloudToken,
+        'cloudEnabled': c.cloudEnabled,
         'flavorNames': c.flavorNames,
       };
 
@@ -52,6 +56,10 @@ class ConfigService {
         compressorPurgeS: (j['compressorPurgeS'] as int?) ?? 5,
         pumpAfterHeaterS: (j['pumpAfterHeaterS'] as int?) ?? 5,
         deviceId: (j['deviceId'] as String?) ?? 'CARFOG-001',
+        cloudUrl: (j['cloudUrl'] as String?) ?? '',
+        cloudAnonKey: (j['cloudAnonKey'] as String?) ?? '',
+        cloudToken: (j['cloudToken'] as String?) ?? '',
+        cloudEnabled: (j['cloudEnabled'] as bool?) ?? false,
         flavorNames: (j['flavorNames'] as Map<String, dynamic>?)?.map(
           (k, v) => MapEntry(k, List<String>.from(v)),
         ),

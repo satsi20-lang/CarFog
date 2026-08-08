@@ -12,6 +12,10 @@ class AppConfig {
   int compressorPurgeS;
   int pumpAfterHeaterS;
   String deviceId;
+  String cloudUrl;
+  String cloudAnonKey;
+  String cloudToken;
+  bool cloudEnabled;
   Map<String, List<String>> flavorNames;
 
   AppConfig({
@@ -21,6 +25,10 @@ class AppConfig {
     this.compressorPurgeS = 5,
     this.pumpAfterHeaterS = 5,
     this.deviceId = 'CARFOG-001',
+    this.cloudUrl = '',
+    this.cloudAnonKey = '',
+    this.cloudToken = '',
+    this.cloudEnabled = false,
     Map<String, List<String>>? flavorNames,
   }) : flavorNames =
            flavorNames ??
@@ -64,6 +72,10 @@ class AppConfig {
     int? compressorPurgeS,
     int? pumpAfterHeaterS,
     String? deviceId,
+    String? cloudUrl,
+    String? cloudAnonKey,
+    String? cloudToken,
+    bool? cloudEnabled,
     Map<String, List<String>>? flavorNames,
   }) {
     return AppConfig(
@@ -73,6 +85,10 @@ class AppConfig {
       compressorPurgeS: compressorPurgeS ?? this.compressorPurgeS,
       pumpAfterHeaterS: pumpAfterHeaterS ?? this.pumpAfterHeaterS,
       deviceId: deviceId ?? this.deviceId,
+      cloudUrl: cloudUrl ?? this.cloudUrl,
+      cloudAnonKey: cloudAnonKey ?? this.cloudAnonKey,
+      cloudToken: cloudToken ?? this.cloudToken,
+      cloudEnabled: cloudEnabled ?? this.cloudEnabled,
       flavorNames: flavorNames ?? this.flavorNames,
     );
   }

@@ -61,6 +61,17 @@ const Map<String, Map<String, String>> _i18n = {
     'energy_monthly': 'За текущий месяц',
     'energy_previous_month': 'За прошлый месяц',
     'unit_kwh': 'кВт⋅ч',
+    'tab_cloud': 'Облако',
+    'cloud_enabled': 'Отправлять данные в облако',
+    'cloud_device_id': 'Номер аппарата',
+    'cloud_url': 'Адрес сервера',
+    'cloud_key': 'Публичный ключ (anon)',
+    'cloud_token': 'Токен аппарата',
+    'cloud_test': 'Проверить связь',
+    'cloud_testing': 'Проверка…',
+    'cloud_ok': 'Связь есть, событие отправлено',
+    'cloud_fail': 'Связи нет — проверь адрес, ключ и токен',
+    'cloud_hint': 'Аппарат работает и без облака. Если выключено — события пишутся только в локальный журнал.',
   },
   'en': {
     'menu_title': 'Service menu',
@@ -113,6 +124,17 @@ const Map<String, Map<String, String>> _i18n = {
     'energy_monthly': 'This month',
     'energy_previous_month': 'Previous month',
     'unit_kwh': 'kWh',
+    'tab_cloud': 'Cloud',
+    'cloud_enabled': 'Send data to the cloud',
+    'cloud_device_id': 'Device ID',
+    'cloud_url': 'Server URL',
+    'cloud_key': 'Public key (anon)',
+    'cloud_token': 'Device token',
+    'cloud_test': 'Test connection',
+    'cloud_testing': 'Testing…',
+    'cloud_ok': 'Connected, test event sent',
+    'cloud_fail': 'No connection — check URL, key and token',
+    'cloud_hint': 'The machine works without the cloud. When disabled, events are stored in the local log only.',
   },
   'et': {
     'menu_title': 'Teenindusmenüü',
@@ -165,6 +187,17 @@ const Map<String, Map<String, String>> _i18n = {
     'energy_monthly': 'Sel kuul',
     'energy_previous_month': 'Eelmisel kuul',
     'unit_kwh': 'kWh',
+    'tab_cloud': 'Pilv',
+    'cloud_enabled': 'Saada andmed pilve',
+    'cloud_device_id': 'Seadme number',
+    'cloud_url': 'Serveri aadress',
+    'cloud_key': 'Avalik võti (anon)',
+    'cloud_token': 'Seadme luba',
+    'cloud_test': 'Kontrolli ühendust',
+    'cloud_testing': 'Kontrollin…',
+    'cloud_ok': 'Ühendus olemas, sündmus saadetud',
+    'cloud_fail': 'Ühendust pole — kontrolli aadressi, võtit ja luba',
+    'cloud_hint': 'Seade töötab ka ilma pilveta. Väljalülitatuna salvestatakse sündmused ainult kohalikku logisse.',
   },
 };
 
@@ -176,7 +209,7 @@ class ServiceMenuScreen extends StatefulWidget {
 }
 
 class _ServiceMenuScreenState extends State<ServiceMenuScreen> {
-  int _tab = 0; // 0=Настройки, 1=Ароматы, 2=Диагностика, 3=Датчики, 4=Журнал
+  int _tab = 0; // 0=Настройки, 1=Ароматы, 2=Диагностика, 3=Датчики, 4=Журнал, 5=Облако
 
   Widget _buildTab() {
     switch (_tab) {
@@ -188,8 +221,10 @@ class _ServiceMenuScreenState extends State<ServiceMenuScreen> {
         return const _DiagnosticsTab();
       case 3:
         return const _SensorsTab();
-      default:
+      case 4:
         return _JournalTab();
+      default:
+        return _CloudTab();
     }
   }
 
@@ -205,6 +240,7 @@ class _ServiceMenuScreenState extends State<ServiceMenuScreen> {
       t['tab_diagnostics']!,
       t['tab_sensors']!,
       t['tab_journal']!,
+      t['tab_cloud']!,
     ];
 
     return Scaffold(
@@ -240,14 +276,16 @@ class _ServiceMenuScreenState extends State<ServiceMenuScreen> {
             ),
 
             // Вкладки
-            Row(
-              children: List.generate(tabs.length, (i) {
-                final active = _tab == i;
-                return Expanded(
-                  child: GestureDetector(
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: List.generate(tabs.length, (i) {
+                  final active = _tab == i;
+                  return GestureDetector(
                     onTap: () => setState(() => _tab = i),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 12, horizontal: 18),
                       decoration: BoxDecoration(
                         border: Border(
                           bottom: BorderSide(
@@ -265,15 +303,14 @@ class _ServiceMenuScreenState extends State<ServiceMenuScreen> {
                           color: active
                               ? const Color(0xFF00C6B2)
                               : const Color(0xFF556677),
-                          fontWeight: active
-                              ? FontWeight.bold
-                              : FontWeight.normal,
+                          fontWeight:
+                              active ? FontWeight.bold : FontWeight.normal,
                         ),
                       ),
                     ),
-                  ),
-                );
-              }),
+                  );
+                }),
+              ),
             ),
 
             // Содержимое вкладки
@@ -1609,6 +1646,201 @@ class _JournalTabState extends State<_JournalTab> {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ============================================================
+// ВКЛАДКА: ОБЛАКО
+// ============================================================
+
+class _CloudTab extends StatefulWidget {
+  @override
+  State<_CloudTab> createState() => _CloudTabState();
+}
+
+class _CloudTabState extends State<_CloudTab> {
+  late TextEditingController _deviceIdCtrl;
+  late TextEditingController _urlCtrl;
+  late TextEditingController _keyCtrl;
+  late TextEditingController _tokenCtrl;
+  late bool _enabled;
+  bool _testing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final config = context.read<AppNotifier>().config;
+    _deviceIdCtrl = TextEditingController(text: config.deviceId);
+    _urlCtrl = TextEditingController(text: config.cloudUrl);
+    _keyCtrl = TextEditingController(text: config.cloudAnonKey);
+    _tokenCtrl = TextEditingController(text: config.cloudToken);
+    _enabled = config.cloudEnabled;
+  }
+
+  @override
+  void dispose() {
+    _deviceIdCtrl.dispose();
+    _urlCtrl.dispose();
+    _keyCtrl.dispose();
+    _tokenCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final notifier = context.read<AppNotifier>();
+    final t = _i18n[notifier.lang]!;
+
+    final updated = notifier.config.copyWith(
+      deviceId: _deviceIdCtrl.text.trim(),
+      cloudUrl: _urlCtrl.text.trim(),
+      cloudAnonKey: _keyCtrl.text.trim(),
+      cloudToken: _tokenCtrl.text.trim(),
+      cloudEnabled: _enabled,
+    );
+
+    await notifier.saveConfig(updated);
+
+    CloudService.configure(
+      deviceId: updated.deviceId,
+      enabled: updated.cloudEnabled,
+      url: updated.cloudUrl,
+      anonKey: updated.cloudAnonKey,
+      token: updated.cloudToken,
+    );
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(t['saved']!)));
+  }
+
+  Future<void> _test() async {
+    setState(() => _testing = true);
+    await _save();
+
+    final ok = await CloudService.transport.send(
+      CloudService.deviceId,
+      [CloudEvent(type: CloudEventType.appStarted, data: const {'test': true})],
+    );
+
+    if (!mounted) return;
+    final t = _i18n[context.read<AppNotifier>().lang]!;
+    setState(() => _testing = false);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ok ? t['cloud_ok']! : t['cloud_fail']!),
+        backgroundColor:
+            ok ? const Color(0xFF00C6B2) : const Color(0xFFE53935),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = _i18n[context.watch<AppNotifier>().lang]!;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  t['cloud_enabled']!,
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                ),
+              ),
+              Switch(
+                value: _enabled,
+                onChanged: (v) => setState(() => _enabled = v),
+                activeThumbColor: const Color(0xFF00C6B2),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            t['cloud_hint']!,
+            style: const TextStyle(color: Color(0xFF8899AA), fontSize: 12),
+          ),
+
+          const SizedBox(height: 20),
+
+          _Field(
+            label: t['cloud_device_id']!,
+            controller: _deviceIdCtrl,
+            keyboardType: TextInputType.text,
+            inputFormatters: const [],
+          ),
+          const SizedBox(height: 16),
+          _Field(
+            label: t['cloud_url']!,
+            controller: _urlCtrl,
+            keyboardType: TextInputType.url,
+            inputFormatters: const [],
+          ),
+          const SizedBox(height: 16),
+          _Field(
+            label: t['cloud_key']!,
+            controller: _keyCtrl,
+            keyboardType: TextInputType.text,
+            inputFormatters: const [],
+          ),
+          const SizedBox(height: 16),
+          _Field(
+            label: t['cloud_token']!,
+            controller: _tokenCtrl,
+            keyboardType: TextInputType.text,
+            inputFormatters: const [],
+            obscure: true,
+          ),
+
+          const SizedBox(height: 28),
+
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: _testing ? null : _save,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF00C6B2),
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: Text(
+                    t['save']!,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _testing ? null : _test,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF00C6B2),
+                    side: const BorderSide(color: Color(0xFF00C6B2)),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: Text(
+                    _testing ? t['cloud_testing']! : t['cloud_test']!,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

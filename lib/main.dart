@@ -23,10 +23,15 @@ void main() async {
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   final config = await ConfigService.load();
 
-  // Облачный слой. Пока транспорт — локальный лог.
-  // Когда бэкенд будет готов, заменить на:
-  // CloudService.transport = HttpCloudTransport(baseUrl: '...', apiKey: '...');
-  CloudService.deviceId = config.deviceId;
+  // Облачный слой. Транспорт выбирается по сохранённым настройкам —
+  // если облако не настроено/выключено, работает локальный лог.
+  CloudService.configure(
+    deviceId: config.deviceId,
+    enabled: config.cloudEnabled,
+    url: config.cloudUrl,
+    anonKey: config.cloudAnonKey,
+    token: config.cloudToken,
+  );
   unawaited(CloudService.report(CloudEventType.appStarted));
 
   // Безопасное выключение всего при старте — не блокирует показ UI,

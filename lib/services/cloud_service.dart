@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 // ============================================================
@@ -94,27 +95,95 @@ class LocalLogTransport implements CloudTransport {
   Future<List<CloudCommand>> fetchCommands(String deviceId) async => [];
 }
 
-// Боевая реализация. Заполнить, когда бэкенд будет готов.
-class HttpCloudTransport implements CloudTransport {
-  final String baseUrl;
-  final String apiKey;
+// ============================================================
+// ТРАНСПОРТ SUPABASE
+// ============================================================
 
-  HttpCloudTransport({required this.baseUrl, required this.apiKey});
+class SupabaseTransport implements CloudTransport {
+  final String baseUrl; // https://xxxx.supabase.co
+  final String anonKey; // публичный ключ anon
+  final String deviceToken; // секретный токен этого аппарата
+
+  SupabaseTransport({
+    required this.baseUrl,
+    required this.anonKey,
+    required this.deviceToken,
+  });
+
+  static const _timeout = Duration(seconds: 15);
+
+  Uri _rpc(String fn) =>
+      Uri.parse('${baseUrl.replaceAll(RegExp(r'/+$'), '')}/rest/v1/rpc/$fn');
+
+  Map<String, String> get _headers => {
+        'apikey': anonKey,
+        'Authorization': 'Bearer $anonKey',
+        'Content-Type': 'application/json',
+      };
 
   @override
   Future<bool> send(String deviceId, List<CloudEvent> events) async {
-    // TODO: POST $baseUrl/events с заголовком Authorization: Bearer $apiKey
-    // Тело: {'device_id': deviceId, 'events': events.map((e) => e.toJson()).toList()}
-    // Вернуть true только при коде 2xx — иначе события останутся в очереди.
-    debugPrint('HttpCloudTransport.send не реализован');
-    return false;
+    if (events.isEmpty) return true;
+    try {
+      final resp = await http
+          .post(
+            _rpc('device_report'),
+            headers: _headers,
+            body: jsonEncode({
+              'p_device': deviceId,
+              'p_token': deviceToken,
+              'p_events': events.map((e) => e.toJson()).toList(),
+            }),
+          )
+          .timeout(_timeout);
+
+      if (resp.statusCode != 200) {
+        debugPrint('SupabaseTransport.send HTTP ${resp.statusCode}: ${resp.body}');
+        return false;
+      }
+
+      final body = jsonDecode(resp.body);
+      final ok = body is Map && body['ok'] == true;
+      if (!ok) debugPrint('SupabaseTransport.send отказ: ${resp.body}');
+      return ok;
+    } catch (e) {
+      debugPrint('SupabaseTransport.send error: $e');
+      return false;
+    }
   }
 
   @override
   Future<List<CloudCommand>> fetchCommands(String deviceId) async {
-    // TODO: GET $baseUrl/commands?device_id=$deviceId
-    debugPrint('HttpCloudTransport.fetchCommands не реализован');
-    return [];
+    try {
+      final resp = await http
+          .post(
+            _rpc('device_poll'),
+            headers: _headers,
+            body: jsonEncode({
+              'p_device': deviceId,
+              'p_token': deviceToken,
+            }),
+          )
+          .timeout(_timeout);
+
+      if (resp.statusCode != 200) {
+        debugPrint('SupabaseTransport.fetchCommands HTTP ${resp.statusCode}');
+        return [];
+      }
+
+      final body = jsonDecode(resp.body);
+      if (body is! Map || body['ok'] != true) return [];
+
+      final raw = body['commands'];
+      if (raw is! List) return [];
+
+      return raw
+          .map((c) => CloudCommand.fromJson(c as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      debugPrint('SupabaseTransport.fetchCommands error: $e');
+      return [];
+    }
   }
 }
 
@@ -131,6 +200,31 @@ class CloudService {
 
   static const _historyKey = 'cloud_event_history';
   static const _maxHistory = 200;
+
+  // Выбирает транспорт по настройкам. Если облако выключено или
+  // не заполнено — работает локальный лог, приложение полностью
+  // функционально без интернета.
+  static void configure({
+    required String deviceId,
+    required bool enabled,
+    required String url,
+    required String anonKey,
+    required String token,
+  }) {
+    CloudService.deviceId = deviceId;
+
+    if (enabled && url.isNotEmpty && anonKey.isNotEmpty && token.isNotEmpty) {
+      transport = SupabaseTransport(
+        baseUrl: url,
+        anonKey: anonKey,
+        deviceToken: token,
+      );
+      debugPrint('CloudService: транспорт Supabase, аппарат $deviceId');
+    } else {
+      transport = LocalLogTransport();
+      debugPrint('CloudService: облако выключено, только локальный журнал');
+    }
+  }
 
   // Записать событие в очередь на отправку и в историю, затем попытаться отправить.
   static Future<void> report(
