@@ -185,8 +185,8 @@ class _StandbyScreenState extends State<StandbyScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Image.asset(
-              'assets/logo.png',
-              width: 160,
+              'assets/qr_code.png',
+              width: 220,
               errorBuilder: (_, _, _) => const Icon(
                 Icons.local_car_wash,
                 size: 100,
