@@ -8,6 +8,7 @@ import '../../models/app_state.dart';
 import '../../widgets/lang_switcher.dart';
 import '../../services/cloud_service.dart';
 import '../../services/modbus_service.dart';
+import '../../services/sync_service.dart';
 
 const Map<String, Map<String, String>> _i18n = {
   'ru': {
@@ -72,6 +73,8 @@ const Map<String, Map<String, String>> _i18n = {
     'cloud_ok': 'Связь есть, событие отправлено',
     'cloud_fail': 'Связи нет — проверь адрес, ключ и токен',
     'cloud_hint': 'Аппарат работает и без облака. Если выключено — события пишутся только в локальный журнал.',
+    'cloud_sync_now': 'Синхронизировать сейчас',
+    'cloud_synced': 'Синхронизация выполнена',
   },
   'en': {
     'menu_title': 'Service menu',
@@ -135,6 +138,8 @@ const Map<String, Map<String, String>> _i18n = {
     'cloud_ok': 'Connected, test event sent',
     'cloud_fail': 'No connection — check URL, key and token',
     'cloud_hint': 'The machine works without the cloud. When disabled, events are stored in the local log only.',
+    'cloud_sync_now': 'Sync now',
+    'cloud_synced': 'Sync complete',
   },
   'et': {
     'menu_title': 'Teenindusmenüü',
@@ -198,6 +203,8 @@ const Map<String, Map<String, String>> _i18n = {
     'cloud_ok': 'Ühendus olemas, sündmus saadetud',
     'cloud_fail': 'Ühendust pole — kontrolli aadressi, võtit ja luba',
     'cloud_hint': 'Seade töötab ka ilma pilveta. Väljalülitatuna salvestatakse sündmused ainult kohalikku logisse.',
+    'cloud_sync_now': 'Sünkroniseeri kohe',
+    'cloud_synced': 'Sünkroniseerimine tehtud',
   },
 };
 
@@ -1370,6 +1377,8 @@ class _JournalTabState extends State<_JournalTab> {
     'session_complete': 'Сессия завершена',
     'hardware_error': 'Ошибка оборудования',
     'energy_reading': 'Показания энергии',
+    'command_executed': 'Выполнена команда',
+    'config_changed': 'Изменены настройки',
   };
 
   static const _alarmTypes = {
@@ -1838,6 +1847,31 @@ class _CloudTabState extends State<_CloudTab> {
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: _testing
+                  ? null
+                  : () async {
+                      await SyncService.syncNow();
+                      if (!context.mounted) return;
+                      final t2 = _i18n[context.read<AppNotifier>().lang]!;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(t2['cloud_synced']!)),
+                      );
+                    },
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF8899AA),
+                side: const BorderSide(color: Color(0xFF334455)),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              child: Text(t['cloud_sync_now']!),
+            ),
           ),
         ],
       ),

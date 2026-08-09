@@ -16,12 +16,15 @@ import 'screens/service/service_menu.dart';
 import 'services/cloud_service.dart';
 import 'services/config_service.dart';
 import 'services/modbus_service.dart';
+import 'services/sync_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   final config = await ConfigService.load();
+
+  final notifier = AppNotifier()..config = config;
 
   // Облачный слой. Транспорт выбирается по сохранённым настройкам —
   // если облако не настроено/выключено, работает локальный лог.
@@ -32,6 +35,8 @@ void main() async {
     anonKey: config.cloudAnonKey,
     token: config.cloudToken,
   );
+
+  SyncService.start(notifier);
   unawaited(CloudService.report(CloudEventType.appStarted));
 
   // Безопасное выключение всего при старте — не блокирует показ UI,
@@ -42,8 +47,8 @@ void main() async {
   }());
 
   runApp(
-    ChangeNotifierProvider(
-      create: (_) => AppNotifier()..config = config,
+    ChangeNotifierProvider.value(
+      value: notifier,
       child: const DryFogApp(),
     ),
   );

@@ -237,17 +237,30 @@ class _ServicePinScreenState extends State<ServicePinScreen>
     final notifier = context.read<AppNotifier>();
     final lang = notifier.lang;
 
+    // Сохраняем подключение к облаку — иначе аппарат
+    // после сброса станет недоступен удалённо.
+    final keep = notifier.config;
+
     await ConfigService.reset();
     await SecurityService.resetAttempts();
+
+    final fresh = AppConfig(
+      deviceId: keep.deviceId,
+      cloudUrl: keep.cloudUrl,
+      cloudAnonKey: keep.cloudAnonKey,
+      cloudToken: keep.cloudToken,
+      cloudEnabled: keep.cloudEnabled,
+    );
+
+    await notifier.saveConfig(fresh);
+
     await CloudService.report(
       CloudEventType.factoryReset,
       data: {'source': 'master_code'},
     );
 
-    final fresh = await ConfigService.load();
     if (!mounted) return;
 
-    notifier.updateConfig(fresh);
     _snack(_t('reset_done', lang));
     notifier.transition(AppState.standby);
   }

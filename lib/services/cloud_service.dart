@@ -17,6 +17,8 @@ class CloudEventType {
   static const sessionComplete = 'session_complete';
   static const hardwareError = 'hardware_error';
   static const energyReading = 'energy_reading';
+  static const commandExecuted = 'command_executed';
+  static const configChanged = 'config_changed';
 }
 
 // ============================================================
@@ -77,6 +79,12 @@ class CloudCommand {
 abstract class CloudTransport {
   Future<bool> send(String deviceId, List<CloudEvent> events);
   Future<List<CloudCommand>> fetchCommands(String deviceId);
+  Future<bool> ackCommand(
+    String deviceId,
+    String commandId,
+    bool ok,
+    String? result,
+  );
 }
 
 // Заглушка: пишет в отладочный лог, ничего никуда не отправляет.
@@ -93,6 +101,17 @@ class LocalLogTransport implements CloudTransport {
 
   @override
   Future<List<CloudCommand>> fetchCommands(String deviceId) async => [];
+
+  @override
+  Future<bool> ackCommand(
+    String deviceId,
+    String commandId,
+    bool ok,
+    String? result,
+  ) async {
+    debugPrint('CLOUD[$deviceId] ack $commandId ok=$ok result=$result');
+    return true;
+  }
 }
 
 // ============================================================
@@ -162,6 +181,7 @@ class SupabaseTransport implements CloudTransport {
             body: jsonEncode({
               'p_device': deviceId,
               'p_token': deviceToken,
+              'p_version': CloudService.appVersion,
             }),
           )
           .timeout(_timeout);
@@ -185,6 +205,40 @@ class SupabaseTransport implements CloudTransport {
       return [];
     }
   }
+
+  @override
+  Future<bool> ackCommand(
+    String deviceId,
+    String commandId,
+    bool ok,
+    String? result,
+  ) async {
+    try {
+      final resp = await http
+          .post(
+            _rpc('device_ack'),
+            headers: _headers,
+            body: jsonEncode({
+              'p_device': deviceId,
+              'p_token': deviceToken,
+              'p_command': commandId,
+              'p_ok': ok,
+              'p_result': result,
+            }),
+          )
+          .timeout(_timeout);
+
+      if (resp.statusCode != 200) {
+        debugPrint('SupabaseTransport.ackCommand HTTP ${resp.statusCode}');
+        return false;
+      }
+      final body = jsonDecode(resp.body);
+      return body is Map && body['ok'] == true;
+    } catch (e) {
+      debugPrint('SupabaseTransport.ackCommand error: $e');
+      return false;
+    }
+  }
 }
 
 // ============================================================
@@ -194,6 +248,8 @@ class SupabaseTransport implements CloudTransport {
 class CloudService {
   static CloudTransport transport = LocalLogTransport();
   static String deviceId = 'CARFOG-001';
+  static bool isCloudEnabled = false;
+  static const String appVersion = '1.0.0';
 
   static const _queueKey = 'cloud_event_queue';
   static const _maxQueue = 500;
@@ -219,9 +275,11 @@ class CloudService {
         anonKey: anonKey,
         deviceToken: token,
       );
+      isCloudEnabled = true;
       debugPrint('CloudService: транспорт Supabase, аппарат $deviceId');
     } else {
       transport = LocalLogTransport();
+      isCloudEnabled = false;
       debugPrint('CloudService: облако выключено, только локальный журнал');
     }
   }
