@@ -36,6 +36,8 @@ const Map<String, Map<String, String>> _i18n = {
     'coin_label': 'Монета',
     'coin_yes': 'ДА',
     'coin_no': 'НЕТ',
+    'temp_label': 'Температура',
+    'temp_unavailable': '--',
     'diag_levels': 'Уровни канистр',
     'diag_manual': 'Ручное управление',
     'diag_manual_warning': 'Осторожно: прямое управление оборудованием, минуя обычную логику работы аппарата',
@@ -101,6 +103,8 @@ const Map<String, Map<String, String>> _i18n = {
     'coin_label': 'Coin',
     'coin_yes': 'YES',
     'coin_no': 'NO',
+    'temp_label': 'Temperature',
+    'temp_unavailable': '--',
     'diag_levels': 'Canister levels',
     'diag_manual': 'Manual control',
     'diag_manual_warning': 'Caution: direct hardware control, bypassing normal machine logic',
@@ -165,6 +169,8 @@ const Map<String, Map<String, String>> _i18n = {
     'coin_label': 'Münt',
     'coin_yes': 'JAH',
     'coin_no': 'EI',
+    'temp_label': 'Temperatuur',
+    'temp_unavailable': '--',
     'flavor_fallback': 'Lõhn',
     'diag_levels': 'Kanistrite tasemed',
     'diag_manual': 'Käsijuhtimine',
@@ -653,24 +659,35 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
   bool _coinDetected = false;
   Timer? _coinTimer;
 
+  double? _temperature;
+  Timer? _tempTimer;
+
   @override
   void initState() {
     super.initState();
     _readEnergy();
     _energyTimer = Timer.periodic(const Duration(seconds: 3), (_) => _readEnergy());
     _coinTimer = Timer.periodic(const Duration(milliseconds: 500), (_) => _readCoin());
+    _readTemperature();
+    _tempTimer = Timer.periodic(const Duration(seconds: 2), (_) => _readTemperature());
   }
 
   @override
   void dispose() {
     _energyTimer?.cancel();
     _coinTimer?.cancel();
+    _tempTimer?.cancel();
     super.dispose();
   }
 
   Future<void> _readCoin() async {
     final detected = await ModbusService.readCoin();
     if (mounted) setState(() => _coinDetected = detected);
+  }
+
+  Future<void> _readTemperature() async {
+    final temp = await ModbusService.readTemperature(channel: 0);
+    if (mounted) setState(() => _temperature = temp);
   }
 
   Future<void> _readEnergy() async {
@@ -782,6 +799,33 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
                   color: _coinDetected
                       ? const Color(0xFF00C6B2)
                       : const Color(0xFF556677),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF141B29),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              Text('${t['temp_label']}:',
+                  style: const TextStyle(color: Colors.white, fontSize: 14)),
+              const SizedBox(width: 8),
+              Text(
+                _temperature != null
+                    ? '${_temperature!.toStringAsFixed(1)} °C'
+                    : t['temp_unavailable']!,
+                style: TextStyle(
+                  color: _temperature != null
+                      ? const Color(0xFF00C6B2)
+                      : const Color(0xFFE53935),
                   fontWeight: FontWeight.bold,
                   fontSize: 14,
                 ),

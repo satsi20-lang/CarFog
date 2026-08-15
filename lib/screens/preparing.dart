@@ -1,39 +1,42 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_state.dart';
+import '../services/modbus_service.dart';
 import '../widgets/lang_switcher.dart';
 
 const Map<String, Map<String, String>> i18n = {
   'ru': {
-    'title': 'ПОДГОТОВКА АППАРАТА',
+    'title': 'Прогрев...',
     'subtitle': 'Идёт нагрев испарителя, пожалуйста подождите',
     'hint1': '1. Вставьте шланг в приоткрытое окно автомобиля',
     'hint2': '2. Включите внутреннюю рециркуляцию воздуха',
     'hint3': '3. Закройте все двери и ожидайте снаружи',
     'hint4': '4. После завершения обработки насос ещё {s} сек будет распылять — не трогайте шланг',
-    'temp': 'Температура испарителя',
     'target': 'Цель',
+    'cancel': 'Отмена',
   },
   'en': {
-    'title': 'PREPARING THE MACHINE',
+    'title': 'Preheating...',
     'subtitle': 'Heating the evaporator, please wait',
     'hint1': '1. Insert the hose through a slightly open window',
     'hint2': '2. Turn on cabin air recirculation',
     'hint3': '3. Close all doors and wait outside',
     'hint4': '4. After treatment ends, the pump keeps spraying for {s} more sec — do not touch the hose',
-    'temp': 'Evaporator temperature',
     'target': 'Target',
+    'cancel': 'Cancel',
   },
   'et': {
-    'title': 'SEADME ETTEVALMISTAMINE',
+    'title': 'Eelsoojendus...',
     'subtitle': 'Aurusti soojenemine käib, palun oota',
     'hint1': '1. Sisesta voolik veidi avatud autoaknasse',
     'hint2': '2. Lülita sisse salongi õhu ringlus',
     'hint3': '3. Sulge kõik uksed ja oota väljas',
     'hint4': '4. Pärast töötluse lõppu pihustab pump veel {s} sek — ära puuduta voolikut',
-    'temp': 'Aurusti temperatuur',
     'target': 'Sihtmärk',
+    'cancel': 'Tühista',
   },
 };
 
@@ -45,57 +48,28 @@ class PreparingScreen extends StatefulWidget {
 }
 
 class _PreparingScreenState extends State<PreparingScreen> {
-  // --- Симуляция нагрева (как в Python-версии) ---
-  double _currentTemp = 20.0;
-  double _startTemp = 20.0;
-  static const double _targetTemp = 220.0;
-  static const double _heatRate = 15.0; // °C/сек в режиме эмуляции
+  static const double _targetTemp = 225.0;
+  // Аварийный потолок — сохранён из прежней (симулированной) версии этого
+  // экрана. Без него реальный ТЭН, управляемый только по показаниям
+  // термопары, не имеет верхнего предела на случай залипшего реле или
+  // сбоя чтения.
   static const double _abortTemp = 240.0;
-  static const int _maxDurationS = 180;
+  static const int _maxDurationS = 600; // 10 минут
 
-  Timer? _timer;
+  double _currentTemp = 0.0;
   int _elapsedS = 0;
-  DateTime? _startTime;
+  Timer? _timer;
+
+  // Не даёт таймеру среагировать ещё раз после того, как исход уже решён
+  // (успех/таймаут/перегрев/отмена) — Timer.periodic может успеть
+  // сработать повторно, пока идут await внутри предыдущего тика.
+  bool _finished = false;
 
   @override
   void initState() {
     super.initState();
-    _startTemp = _currentTemp;
-    _startTime = DateTime.now();
-    _startHeating();
-  }
-
-  void _startHeating() {
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) return;
-
-      setState(() {
-        // Симуляция нагрева — заменится реальным чтением термопары
-        // через Modbus (Блок №2) на следующем этапе интеграции железа
-        _currentTemp = (_currentTemp + _heatRate).clamp(0, _targetTemp + 5);
-        _elapsedS++;
-      });
-
-      // Аварийный потолок
-      if (_currentTemp >= _abortTemp) {
-        _timer?.cancel();
-        context.read<AppNotifier>().goToError('overheat');
-        return;
-      }
-
-      // Таймаут (не достигли цели за 3 минуты)
-      if (_elapsedS >= _maxDurationS) {
-        _timer?.cancel();
-        context.read<AppNotifier>().goToError('timeout');
-        return;
-      }
-
-      // Достигли 100% — переходим к запуску компрессора
-      if (_currentTemp >= _targetTemp) {
-        _timer?.cancel();
-        context.read<AppNotifier>().transition(AppState.compressorStartup);
-      }
-    });
+    unawaited(ModbusService.setHeater(true));
+    _timer = Timer.periodic(const Duration(seconds: 3), (_) => _tick());
   }
 
   @override
@@ -104,18 +78,79 @@ class _PreparingScreenState extends State<PreparingScreen> {
     super.dispose();
   }
 
-  double get _progress {
-    final span = _targetTemp - _startTemp;
-    if (span <= 0) return 1.0;
-    return ((_currentTemp - _startTemp) / span).clamp(0.0, 1.0);
+  Future<void> _tick() async {
+    if (_finished) return;
+    _elapsedS += 3;
+
+    final temp = await ModbusService.readTemperature();
+    if (!mounted || _finished) return;
+    if (temp != null) {
+      setState(() => _currentTemp = temp);
+    }
+
+    if (temp != null && temp >= _abortTemp) {
+      await _fail(errorCode: 'overheat', logCode: 'HEAT_OVERHEAT');
+      return;
+    }
+
+    if (temp != null && temp >= _targetTemp) {
+      _finished = true;
+      _timer?.cancel();
+      if (!mounted) return;
+      context.read<AppNotifier>().transition(AppState.compressorStartup);
+      return;
+    }
+
+    if (_elapsedS >= _maxDurationS) {
+      await _fail(errorCode: 'timeout', logCode: 'HEAT_TIMEOUT');
+    }
   }
+
+  Future<void> _fail({required String errorCode, required String logCode}) async {
+    _finished = true;
+    _timer?.cancel();
+    await ModbusService.setHeater(false);
+    await _logError(logCode, 'temp=${_currentTemp.toStringAsFixed(1)}');
+    if (!mounted) return;
+    context.read<AppNotifier>().goToError(errorCode);
+  }
+
+  Future<void> _onCancel() async {
+    if (_finished) return;
+    _finished = true;
+    _timer?.cancel();
+    await ModbusService.setHeater(false);
+    await _logError('HEAT_USER_CANCEL', 'temp=${_currentTemp.toStringAsFixed(1)}');
+    if (!mounted) return;
+    context.read<AppNotifier>().resetSession();
+  }
+
+  // Дописывает запись в JSON-массив под ключом "error_log" в
+  // SharedPreferences, не перезаписывая уже накопленные записи.
+  Future<void> _logError(String code, String detail) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('error_log');
+      final List<dynamic> list =
+          raw != null ? jsonDecode(raw) as List<dynamic> : <dynamic>[];
+      list.add({
+        'timestamp': DateTime.now().toIso8601String(),
+        'code': code,
+        'detail': detail,
+      });
+      await prefs.setString('error_log', jsonEncode(list));
+    } catch (e) {
+      debugPrint('PreparingScreen._logError error: $e');
+    }
+  }
+
+  double get _progress => (_currentTemp / _targetTemp).clamp(0.0, 1.0);
 
   @override
   Widget build(BuildContext context) {
     final notifier = context.watch<AppNotifier>();
     final lang = notifier.lang;
     final t = i18n[lang]!;
-    final percent = (_progress * 100).toStringAsFixed(0);
 
     return Scaffold(
       body: SafeArea(
@@ -149,9 +184,9 @@ class _PreparingScreenState extends State<PreparingScreen> {
 
               const SizedBox(height: 40),
 
-              // Большой процент
+              // Текущая температура крупно
               Text(
-                '$percent %',
+                '${_currentTemp.toStringAsFixed(0)}°C',
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 80,
@@ -161,7 +196,7 @@ class _PreparingScreenState extends State<PreparingScreen> {
 
               const SizedBox(height: 16),
 
-              // Прогресс-бар
+              // Прогресс-бар: 0 → _targetTemp
               ClipRRect(
                 borderRadius: BorderRadius.circular(10),
                 child: LinearProgressIndicator(
@@ -176,24 +211,13 @@ class _PreparingScreenState extends State<PreparingScreen> {
                 ),
               ),
 
-              const SizedBox(height: 16),
-
-              // Температура
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    '${t['temp']!}: ${_currentTemp.toStringAsFixed(1)}°C',
-                    style: const TextStyle(color: Colors.white54, fontSize: 13),
-                  ),
-                  Text(
-                    '${t['target']!}: ${_targetTemp.toStringAsFixed(0)}°C',
-                    style: const TextStyle(color: Colors.white54, fontSize: 13),
-                  ),
-                ],
+              const SizedBox(height: 8),
+              Text(
+                '${t['target']!} ${_targetTemp.toStringAsFixed(0)}°C',
+                style: const TextStyle(color: Colors.white54, fontSize: 13),
               ),
 
-              const SizedBox(height: 48),
+              const SizedBox(height: 40),
 
               // Инструкции для клиента
               _HintRow(text: t['hint1']!),
@@ -205,6 +229,21 @@ class _PreparingScreenState extends State<PreparingScreen> {
               _HintRow(
                 text: t['hint4']!.replaceAll(
                     '{s}', '${notifier.config.pumpAfterHeaterS}'),
+              ),
+
+              const Spacer(),
+
+              OutlinedButton(
+                onPressed: _onCancel,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF556677),
+                  side: const BorderSide(color: Color(0xFF556677)),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+                child: Text(t['cancel']!),
               ),
             ],
           ),

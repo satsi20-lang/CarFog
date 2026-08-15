@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
+import '../services/modbus_service.dart';
 import '../widgets/lang_switcher.dart';
 
 const Map<String, Map<String, String>> i18n = {
@@ -60,6 +61,17 @@ class _TreatingScreenState extends State<TreatingScreen>
   Timer? _timer;
   bool _isBlinking = false;
 
+  // Физическое мигание красной LED (реле DO11) на последних секундах —
+  // отдельно от _blinkController, который отвечает только за анимацию фона.
+  Timer? _ledBlinkTimer;
+  bool _ledOn = false;
+
+  // Термостат испарителя: поддерживает температуру в коридоре 225–235°C
+  // на всё время экрана (компрессор/обработка/продувка), пока явно не
+  // отменён — см. _nextPhase() (treating→shutdown) и dispose().
+  Timer? _heaterTimer;
+  double _currentTemp = 0.0;
+
   late AnimationController _blinkController;
   late Animation<Color?> _bgColorAnim;
 
@@ -71,6 +83,7 @@ class _TreatingScreenState extends State<TreatingScreen>
       context.read<AppNotifier>().config.compressorPurgeS;
   int get _shutdownDelay =>
       context.read<AppNotifier>().config.pumpAfterHeaterS;
+  int get _flavorIndex => context.read<AppNotifier>().selectedFlavor ?? 0;
 
   @override
   void initState() {
@@ -84,7 +97,22 @@ class _TreatingScreenState extends State<TreatingScreen>
       end: const Color(0xFFFF0000),
     ).animate(_blinkController);
 
+    // Компрессор включаем сразу — пока идёт 5-секундный отсчёт набора
+    // давления на экране, реле уже физически включено.
+    unawaited(ModbusService.setCompressor(true));
+
     _startPhase(_Phase.compressor, _compressorDelay);
+
+    _heaterTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
+      final temp = await ModbusService.readTemperature();
+      if (temp == null || !mounted) return;
+      setState(() => _currentTemp = temp);
+      if (temp < 225.0) {
+        await ModbusService.setHeater(true);
+      } else if (temp > 235.0) {
+        await ModbusService.setHeater(false);
+      }
+    });
   }
 
   void _startPhase(_Phase phase, int seconds) {
@@ -107,6 +135,7 @@ class _TreatingScreenState extends State<TreatingScreen>
           !_isBlinking) {
         setState(() => _isBlinking = true);
         _blinkController.repeat(reverse: true);
+        _startRedBlink();
       }
 
       if (_secondsLeft <= 0) {
@@ -116,20 +145,51 @@ class _TreatingScreenState extends State<TreatingScreen>
     });
   }
 
-  void _nextPhase() {
+  // Физическое мигание красной LED каждые 500мс, пока идёт предупреждение
+  // об окончании сессии. Независимо от UI-анимации фона.
+  void _startRedBlink() {
+    _ledBlinkTimer?.cancel();
+    _ledOn = false;
+    _ledBlinkTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
+      _ledOn = !_ledOn;
+      unawaited(ModbusService.setLedRed(_ledOn));
+    });
+  }
+
+  void _stopRedBlink() {
+    _ledBlinkTimer?.cancel();
+    _ledBlinkTimer = null;
+  }
+
+  Future<void> _nextPhase() async {
     switch (_phase) {
       case _Phase.compressor:
-        // Компрессор прогрелся — запускаем насос и обработку
+        // Компрессор прогрелся — запускаем насос выбранного аромата и
+        // зелёную LED, затем переходим к отсчёту обработки.
+        await ModbusService.setPump(_flavorIndex, true);
+        await ModbusService.setLedGreen(true);
+        if (!mounted) return;
         _startPhase(_Phase.treating, _treatmentDuration);
         break;
       case _Phase.treating:
-        // Обработка завершена — насос+ТЭН выкл, компрессор продувает
+        // Обработка завершена — насос+ТЭН+LED выкл, компрессор продувает.
+        // Термостат отменяем ДО setHeater(false) — иначе он через 3 сек
+        // снова включит ТЭН поверх этого явного выключения.
+        _heaterTimer?.cancel();
+        _stopRedBlink();
         _blinkController.stop();
         _blinkController.reset();
+        await ModbusService.setPump(_flavorIndex, false);
+        await ModbusService.setHeater(false); // на случай если был включён
+        await ModbusService.setLedGreen(false);
+        await ModbusService.setLedRed(false);
+        if (!mounted) return;
         _startPhase(_Phase.shutdown, _shutdownDelay);
         break;
       case _Phase.shutdown:
-        // Продувка завершена — финал
+        // Продувка завершена — компрессор выкл, финал
+        await ModbusService.setCompressor(false);
+        if (!mounted) return;
         context.read<AppNotifier>().transition(AppState.finished);
         break;
     }
@@ -138,7 +198,12 @@ class _TreatingScreenState extends State<TreatingScreen>
   @override
   void dispose() {
     _timer?.cancel();
+    _heaterTimer?.cancel();
+    _stopRedBlink();
     _blinkController.dispose();
+    // Аварийная гарантия: что бы ни случилось с экраном (уход, ошибка,
+    // hot reload) — все выходы гарантированно выключаются.
+    unawaited(ModbusService.safeAllOff());
     super.dispose();
   }
 

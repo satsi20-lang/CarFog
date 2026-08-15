@@ -16,8 +16,8 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
     private var modbus: ModbusRtu? = null
 
     // Slave IDs согласно схеме проекта
-    private val SLAVE_DIO = 1        // MBSL16DI16DO
-    private val SLAVE_THERMO = 2     // HLS-KWL-4TC
+    private val SLAVE_DIO = 5        // MBSL16DI16DO сменил адрес через FC16, подтверждено сканом
+    private val SLAVE_THERMO = 1     // HLS-KWL-4TC заводской адрес, конфликт устранён
     private val SLAVE_ENERGY = 3     // DDS6619-039
 
     // Опрос монетоприёмника РЕЖИМА ОПЛАТЫ — работает только между

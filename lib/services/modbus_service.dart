@@ -91,16 +91,16 @@ class ModbusService {
     }
   }
 
-  // Читает температуру термопары, канал 0-3. Возвращает °C.
-  static Future<double> readTemperature({int channel = 0}) async {
+  // Читает температуру термопары, канал 0-3. Возвращает °C,
+  // либо null при ошибке чтения (не путать с настоящим 0°C).
+  static Future<double?> readTemperature({int channel = 0}) async {
     try {
       return await _channel.invokeMethod<double>('readTemperature', {
-            'channel': channel,
-          }) ??
-          0.0;
+        'channel': channel,
+      });
     } catch (e) {
       debugPrint('ModbusService.readTemperature error: $e');
-      return 0.0;
+      return null;
     }
   }
 
@@ -181,4 +181,5 @@ class ModbusService {
       return 0;
     }
   }
+
 }

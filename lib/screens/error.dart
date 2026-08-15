@@ -49,9 +49,9 @@ class _ErrorScreenState extends State<ErrorScreen>
       'ru': 'Температура превысила 240°C. Все устройства отключены.',
     },
     'timeout': {
-      'et': 'Seade ei saavutanud 220°C 180 sekundi jooksul.',
-      'en': 'Device did not reach 220°C within 180 seconds.',
-      'ru': 'Устройство не достигло 220°C за 180 секунд.',
+      'et': 'Seade ei saavutanud 225°C 600 sekundi jooksul.',
+      'en': 'Device did not reach 225°C within 600 seconds.',
+      'ru': 'Устройство не достигло 225°C за 600 секунд.',
     },
     'sensor': {
       'et': 'Temperatuuriandur ei anna signaali.',
