@@ -15,13 +15,19 @@ import 'screens/service/service_pin.dart';
 import 'screens/service/service_menu.dart';
 import 'services/cloud_service.dart';
 import 'services/config_service.dart';
+import 'services/level_service.dart';
 import 'services/modbus_service.dart';
 import 'services/sync_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-  SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  // Планшет физически установлен в альбомной ориентации — весь UI
+  // спроектирован под неё (см. переделанные экраны).
+  SystemChrome.setPreferredOrientations([
+    DeviceOrientation.landscapeLeft,
+    DeviceOrientation.landscapeRight,
+  ]);
   final config = await ConfigService.load();
 
   final notifier = AppNotifier()..config = config;
@@ -37,6 +43,7 @@ void main() async {
   );
 
   SyncService.start(notifier);
+  LevelService.start(notifier);
   unawaited(CloudService.report(CloudEventType.appStarted));
 
   // Безопасное выключение всего при старте — не блокирует показ UI,

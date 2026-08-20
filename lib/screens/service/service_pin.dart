@@ -284,22 +284,17 @@ class _ServicePinScreenState extends State<ServicePinScreen>
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E1A),
       body: SafeArea(
-        child: Stack(
+        child: Row(
           children: [
-            Positioned(
-              top: 16,
-              right: 16,
-              child: LangSwitcher(
-                current: lang,
-                onChanged: notifier.setLanguage,
-              ),
-            ),
-            Center(
-              child: SingleChildScrollView(
+            // Левая колонка: статус/заголовок, переключение режима, отмена
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Заголовок
+                    LangSwitcher(current: lang, onChanged: notifier.setLanguage),
+                    const Spacer(),
                     Text(
                       blocked
                           ? _t('locked_title', lang)
@@ -307,19 +302,15 @@ class _ServicePinScreenState extends State<ServicePinScreen>
                               ? _t('title_pin', lang)
                               : _t('title_master', lang),
                       style: TextStyle(
-                        color: blocked
-                            ? const Color(0xFFE53935)
-                            : Colors.white,
-                        fontSize: 22,
+                        color: blocked ? const Color(0xFFE53935) : Colors.white,
+                        fontSize: 24,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-
-                    const SizedBox(height: 12),
-
-                    // Подзаголовок: таймер, счётчик попыток или подсказка
+                    const SizedBox(height: 16),
                     if (blocked)
                       Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
                             _t('locked_sub', lang),
@@ -347,88 +338,15 @@ class _ServicePinScreenState extends State<ServicePinScreen>
                           color: Color(0xFF8899AA),
                           fontSize: 13,
                         ),
-                        textAlign: TextAlign.center,
                       )
                     else
                       _AttemptsIndicator(
                         label: _t('attempts', lang),
                         left: _attemptsLeft,
                         total: SecurityService.maxAttempts,
+                        alignStart: true,
                       ),
-
-                    const SizedBox(height: 28),
-
-                    // Точки ввода
-                    if (!blocked)
-                      AnimatedBuilder(
-                        animation: _shakeAnimation,
-                        builder: (context, child) => Transform.translate(
-                          offset: Offset(_shakeAnimation.value, 0),
-                          child: child,
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: List.generate(_maxLen, (i) {
-                            final filled = i < _entered.length;
-                            return Container(
-                              margin: EdgeInsets.symmetric(
-                                horizontal: _maxLen > 4 ? 5 : 10,
-                              ),
-                              width: 16,
-                              height: 16,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: filled
-                                    ? const Color(0xFF00C6B2)
-                                    : Colors.transparent,
-                                border: Border.all(
-                                  color: const Color(0xFF00C6B2),
-                                  width: 2,
-                                ),
-                              ),
-                            );
-                          }),
-                        ),
-                      ),
-
-                    if (!blocked) const SizedBox(height: 32),
-
-                    // Клавиатура
-                    if (!blocked)
-                      SizedBox(
-                        width: 280,
-                        child: GridView.count(
-                          crossAxisCount: 3,
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          mainAxisSpacing: 12,
-                          crossAxisSpacing: 12,
-                          childAspectRatio: 1.4,
-                          children: [
-                            ...['1', '2', '3', '4', '5', '6', '7', '8', '9']
-                                .map(
-                              (d) => _DigitButton(
-                                label: d,
-                                onTap: () => _onDigit(d),
-                              ),
-                            ),
-                            const SizedBox.shrink(),
-                            _DigitButton(
-                              label: '0',
-                              onTap: () => _onDigit('0'),
-                            ),
-                            _DigitButton(
-                              label: '⌫',
-                              onTap: _onBackspace,
-                              color: const Color(0xFF334455),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                    const SizedBox(height: 24),
-
-                    // Переключение режима: аварийный доступ / назад к PIN
+                    const Spacer(),
                     if (_mode == _Mode.pin)
                       TextButton(
                         onPressed: () => setState(() {
@@ -457,11 +375,8 @@ class _ServicePinScreenState extends State<ServicePinScreen>
                           ),
                         ),
                       ),
-
-                    // Отмена — всегда доступна
                     TextButton(
-                      onPressed: () =>
-                          notifier.transition(AppState.standby),
+                      onPressed: () => notifier.transition(AppState.standby),
                       child: Text(
                         _t('cancel', lang),
                         style: const TextStyle(
@@ -471,6 +386,86 @@ class _ServicePinScreenState extends State<ServicePinScreen>
                       ),
                     ),
                   ],
+                ),
+              ),
+            ),
+
+            Container(width: 1, color: const Color(0xFF1A2233)),
+
+            // Правая колонка: точки ввода + клавиатура
+            Expanded(
+              child: Center(
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      if (!blocked)
+                        AnimatedBuilder(
+                          animation: _shakeAnimation,
+                          builder: (context, child) => Transform.translate(
+                            offset: Offset(_shakeAnimation.value, 0),
+                            child: child,
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: List.generate(_maxLen, (i) {
+                              final filled = i < _entered.length;
+                              return Container(
+                                margin: EdgeInsets.symmetric(
+                                  horizontal: _maxLen > 4 ? 5 : 10,
+                                ),
+                                width: 16,
+                                height: 16,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: filled
+                                      ? const Color(0xFF00C6B2)
+                                      : Colors.transparent,
+                                  border: Border.all(
+                                    color: const Color(0xFF00C6B2),
+                                    width: 2,
+                                  ),
+                                ),
+                              );
+                            }),
+                          ),
+                        ),
+
+                      if (!blocked) const SizedBox(height: 24),
+
+                      if (!blocked)
+                        SizedBox(
+                          width: 260,
+                          child: GridView.count(
+                            crossAxisCount: 3,
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            mainAxisSpacing: 10,
+                            crossAxisSpacing: 10,
+                            childAspectRatio: 1.5,
+                            children: [
+                              ...['1', '2', '3', '4', '5', '6', '7', '8', '9']
+                                  .map(
+                                (d) => _DigitButton(
+                                  label: d,
+                                  onTap: () => _onDigit(d),
+                                ),
+                              ),
+                              const SizedBox.shrink(),
+                              _DigitButton(
+                                label: '0',
+                                onTap: () => _onDigit('0'),
+                              ),
+                              _DigitButton(
+                                label: '⌫',
+                                onTap: _onBackspace,
+                                color: const Color(0xFF334455),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -489,11 +484,13 @@ class _AttemptsIndicator extends StatelessWidget {
   final String label;
   final int left;
   final int total;
+  final bool alignStart;
 
   const _AttemptsIndicator({
     required this.label,
     required this.left,
     required this.total,
+    this.alignStart = false,
   });
 
   @override
@@ -505,6 +502,8 @@ class _AttemptsIndicator extends StatelessWidget {
             : const Color(0xFFE53935);
 
     return Column(
+      crossAxisAlignment:
+          alignStart ? CrossAxisAlignment.start : CrossAxisAlignment.center,
       children: [
         Text(
           '$label: $left',
@@ -516,7 +515,8 @@ class _AttemptsIndicator extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisAlignment:
+              alignStart ? MainAxisAlignment.start : MainAxisAlignment.center,
           children: List.generate(total, (i) {
             final alive = i < left;
             return Container(

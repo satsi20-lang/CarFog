@@ -511,7 +511,7 @@ class _FlavorsTabState extends State<_FlavorsTab> {
   void initState() {
     super.initState();
     final names = context.read<AppNotifier>().config.flavorNames;
-    _ctrls = List.generate(8, (i) {
+    _ctrls = List.generate(kFlavorCount, (i) {
       return _langs.map((l) {
         return TextEditingController(text: names[l]?[i] ?? '');
       }).toList();
@@ -530,10 +530,24 @@ class _FlavorsTabState extends State<_FlavorsTab> {
 
   void _save() {
     final notifier = context.read<AppNotifier>();
+    final currentNames = notifier.config.flavorNames;
     final newNames = <String, List<String>>{};
+    // Правим только первые kFlavorCount имён, остальные (если раньше
+    // было настроено больше — например, после отката с 6/8 ароматов)
+    // сохраняем как есть, чтобы не терять их при последующем увеличении
+    // kFlavorCount.
     for (int li = 0; li < _langs.length; li++) {
-      newNames[_langs[li]] =
-          List.generate(8, (i) => _ctrls[i][li].text.trim());
+      final lang = _langs[li];
+      final existing = List<String>.from(currentNames[lang] ?? const []);
+      for (int i = 0; i < kFlavorCount; i++) {
+        final value = _ctrls[i][li].text.trim();
+        if (i < existing.length) {
+          existing[i] = value;
+        } else {
+          existing.add(value);
+        }
+      }
+      newNames[lang] = existing;
     }
     final updated = notifier.config.copyWith(flavorNames: newNames);
     notifier.saveConfig(updated);
@@ -545,69 +559,72 @@ class _FlavorsTabState extends State<_FlavorsTab> {
   @override
   Widget build(BuildContext context) {
     final t = _i18n[context.watch<AppNotifier>().lang]!;
-    return Column(
-      children: [
-        // Заголовки колонок
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-          child: Row(
-            children: [
-              const SizedBox(width: 32),
-              ...['RU', 'EN', 'ET'].map(
-                (l) => Expanded(
-                  child: Text(l,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                          color: Color(0xFF556677),
-                          fontWeight: FontWeight.bold)),
-                ),
-              ),
-            ],
-          ),
-        ),
-        // Список ароматов
-        Expanded(
-          child: ListView.separated(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: 8,
-            separatorBuilder: (_, __) => const SizedBox(height: 8),
-            itemBuilder: (_, i) => Row(
+    // Единый скроллящийся контейнер вместо Expanded(ListView) внутри
+    // жёсткой Column: раньше при появлении клавиатуры (тап в поле имени)
+    // содержимое вкладки не могло сжаться и вылезало за пределы экрана.
+    // SingleChildScrollView гарантирует, что оно просто проскроллится.
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          // Заголовки колонок
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
               children: [
-                SizedBox(
-                  width: 32,
-                  child: Text('${i + 1}',
-                      style: const TextStyle(color: Color(0xFF556677))),
-                ),
-                ...List.generate(3, (li) {
-                  return Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: TextField(
-                        controller: _ctrls[i][li],
+                const SizedBox(width: 32),
+                ...['RU', 'EN', 'ET'].map(
+                  (l) => Expanded(
+                    child: Text(l,
+                        textAlign: TextAlign.center,
                         style: const TextStyle(
-                            color: Colors.white, fontSize: 13),
-                        decoration: InputDecoration(
-                          isDense: true,
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 8),
-                          filled: true,
-                          fillColor: const Color(0xFF1A2233),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(6),
-                            borderSide: BorderSide.none,
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                }),
+                            color: Color(0xFF556677),
+                            fontWeight: FontWeight.bold)),
+                  ),
+                ),
               ],
             ),
           ),
-        ),
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: SizedBox(
+          // Список ароматов (kFlavorCount — легко сменить на 6/8)
+          ...List.generate(kFlavorCount, (i) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 32,
+                    child: Text('${i + 1}',
+                        style: const TextStyle(color: Color(0xFF556677))),
+                  ),
+                  ...List.generate(3, (li) {
+                    return Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: TextField(
+                          controller: _ctrls[i][li],
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 13),
+                          decoration: InputDecoration(
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 8),
+                            filled: true,
+                            fillColor: const Color(0xFF1A2233),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(6),
+                              borderSide: BorderSide.none,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            );
+          }),
+          const SizedBox(height: 8),
+          SizedBox(
             width: double.infinity,
             child: ElevatedButton(
               onPressed: _save,
@@ -623,8 +640,8 @@ class _FlavorsTabState extends State<_FlavorsTab> {
                       fontWeight: FontWeight.bold, fontSize: 16)),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -765,18 +782,26 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
                 fontWeight: FontWeight.bold,
                 fontSize: 13)),
         const SizedBox(height: 12),
-        ...List.generate(4, (row) {
+        // Ряды по 4 карточки — под ландшафтную ширину. kFlavorCount=4
+        // укладывается в один ряд; при 6/8 появятся дополнительные ряды
+        // автоматически.
+        ...List.generate((kFlavorCount / 4).ceil(), (row) {
+          final start = row * 4;
+          final count = (kFlavorCount - start).clamp(0, 4);
           return Padding(
             padding: const EdgeInsets.only(bottom: 10),
             child: Row(
               children: [
-                Expanded(
+                for (var col = 0; col < count; col++) ...[
+                  if (col > 0) const SizedBox(width: 10),
+                  Expanded(
                     child: _LevelBadge(
-                        index: row * 2, levels: levels, flavors: flavors, t: t)),
-                const SizedBox(width: 10),
-                Expanded(
-                    child: _LevelBadge(
-                        index: row * 2 + 1, levels: levels, flavors: flavors, t: t)),
+                        index: start + col,
+                        levels: levels,
+                        flavors: flavors,
+                        t: t),
+                  ),
+                ],
               ],
             ),
           );
@@ -850,12 +875,16 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
 
         ...(() {
           final toggles = <Widget>[
+            // Все 8 физических каналов насоса остаются доступны для
+            // ручного теста (полная ёмкость DIO-модуля), но имя аромата
+            // подписывается только для реально активных (kFlavorCount).
             ...List.generate(8, (i) {
-              final name = flavors.length > i
-                  ? flavors[i]
-                  : '${t['flavor_fallback']} ${i + 1}';
+              final label = i < kFlavorCount
+                  ? '${t['pump']} ${i + 1} '
+                      '(${flavors.length > i ? flavors[i] : '${t['flavor_fallback']} ${i + 1}'})'
+                  : '${t['pump']} ${i + 1}';
               return _ToggleRow(
-                label: '${t['pump']} ${i + 1} ($name)',
+                label: label,
                 value: _pumpOn[i],
                 onChanged: _busy ? null : (v) => _setPump(i, v),
               );
@@ -1057,20 +1086,16 @@ class _SensorsTabState extends State<_SensorsTab> {
       _loading = true;
       _error = null;
     });
-    try {
-      final levels = await ModbusService.readLevels();
-      if (!mounted) return;
-      setState(() {
+    final levels = await ModbusService.readLevels();
+    if (!mounted) return;
+    setState(() {
+      if (levels != null) {
         _levels = levels;
-        _loading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _error = e.toString();
-        _loading = false;
-      });
-    }
+      } else {
+        _error = 'MODBUS';
+      }
+      _loading = false;
+    });
   }
 
   @override

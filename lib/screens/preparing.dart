@@ -154,99 +154,112 @@ class _PreparingScreenState extends State<PreparingScreen> {
 
     return Scaffold(
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              // Заголовок + переключатель языка
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      t['title']!,
-                      style: const TextStyle(
-                        color: Color(0xFFFFAA00),
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
+        child: Row(
+          children: [
+            // Левая колонка: заголовок, температура, прогресс
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            t['title']!,
+                            style: const TextStyle(
+                              color: Color(0xFFFFAA00),
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        LangSwitcher(current: lang, onChanged: notifier.setLanguage),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      t['subtitle']!,
+                      style: const TextStyle(color: Colors.white60, fontSize: 13),
+                    ),
+                    const Spacer(),
+                    Center(
+                      child: Text(
+                        '${_currentTemp.toStringAsFixed(0)}°C',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 72,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
-                  ),
-                  LangSwitcher(current: lang, onChanged: notifier.setLanguage),
-                ],
-              ),
-
-              const SizedBox(height: 8),
-              Text(
-                t['subtitle']!,
-                style: const TextStyle(color: Colors.white60, fontSize: 13),
-              ),
-
-              const SizedBox(height: 40),
-
-              // Текущая температура крупно
-              Text(
-                '${_currentTemp.toStringAsFixed(0)}°C',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 80,
-                  fontWeight: FontWeight.bold,
+                    const SizedBox(height: 16),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: LinearProgressIndicator(
+                        value: _progress,
+                        minHeight: 24,
+                        backgroundColor: const Color(0xFF2E2E2E),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          _progress > 0.9
+                              ? Colors.redAccent
+                              : const Color(0xFFFF3333),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Center(
+                      child: Text(
+                        '${t['target']!} ${_targetTemp.toStringAsFixed(0)}°C',
+                        style: const TextStyle(color: Colors.white54, fontSize: 13),
+                      ),
+                    ),
+                    const Spacer(),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 52,
+                      child: OutlinedButton(
+                        onPressed: _onCancel,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF556677),
+                          side: const BorderSide(color: Color(0xFF556677)),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10)),
+                        ),
+                        child: Text(t['cancel']!),
+                      ),
+                    ),
+                  ],
                 ),
               ),
+            ),
 
-              const SizedBox(height: 16),
+            Container(width: 1, color: const Color(0xFF2E2E2E)),
 
-              // Прогресс-бар: 0 → _targetTemp
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: LinearProgressIndicator(
-                  value: _progress,
-                  minHeight: 28,
-                  backgroundColor: const Color(0xFF2E2E2E),
-                  valueColor: AlwaysStoppedAnimation<Color>(
-                    _progress > 0.9
-                        ? Colors.redAccent
-                        : const Color(0xFFFF3333),
-                  ),
+            // Правая колонка: инструкции для клиента
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _HintRow(text: t['hint1']!),
+                    const SizedBox(height: 16),
+                    _HintRow(text: t['hint2']!),
+                    const SizedBox(height: 16),
+                    _HintRow(text: t['hint3']!),
+                    const SizedBox(height: 16),
+                    _HintRow(
+                      text: t['hint4']!.replaceAll(
+                          '{s}', '${notifier.config.pumpAfterHeaterS}'),
+                    ),
+                  ],
                 ),
               ),
-
-              const SizedBox(height: 8),
-              Text(
-                '${t['target']!} ${_targetTemp.toStringAsFixed(0)}°C',
-                style: const TextStyle(color: Colors.white54, fontSize: 13),
-              ),
-
-              const SizedBox(height: 40),
-
-              // Инструкции для клиента
-              _HintRow(text: t['hint1']!),
-              const SizedBox(height: 12),
-              _HintRow(text: t['hint2']!),
-              const SizedBox(height: 12),
-              _HintRow(text: t['hint3']!),
-              const SizedBox(height: 12),
-              _HintRow(
-                text: t['hint4']!.replaceAll(
-                    '{s}', '${notifier.config.pumpAfterHeaterS}'),
-              ),
-
-              const Spacer(),
-
-              OutlinedButton(
-                onPressed: _onCancel,
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF556677),
-                  side: const BorderSide(color: Color(0xFF556677)),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10)),
-                ),
-                child: Text(t['cancel']!),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

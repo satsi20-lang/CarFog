@@ -124,126 +124,130 @@ class _PaymentScreenState extends State<PaymentScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF1A1A1A),
       body: SafeArea(
-        child: Column(
+        child: Row(
           children: [
-            // Заголовок + переключатель языка
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      t['title']!,
+            // Левая колонка: заголовок, аромат, крупная цена
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            t['title']!,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        LangSwitcher(current: lang, onChanged: notifier.setLanguage),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    Text(
+                      t['flavor']!,
+                      style: const TextStyle(color: Colors.white60, fontSize: 15),
+                    ),
+                    Text(
+                      flavorName,
                       style: const TextStyle(
-                        color: Colors.white,
+                        color: Color(0xFF2EC4B6),
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                  ),
-                  LangSwitcher(current: lang, onChanged: notifier.setLanguage),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 8),
-
-            _InfoRow(
-              label: t['flavor']!,
-              value: flavorName,
-              valueColor: const Color(0xFF2EC4B6),
-            ),
-
-            const Spacer(),
-
-            // Цена — крупно
-            Text(
-              '${_euro(_priceCents)} €',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 56,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            Text(
-              t['price']!,
-              style: const TextStyle(color: Colors.white60, fontSize: 15),
-            ),
-
-            const SizedBox(height: 32),
-
-            // Прогресс оплаты
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: LinearProgressIndicator(
-                  value: progress,
-                  minHeight: 24,
-                  backgroundColor: const Color(0xFF2E2E2E),
-                  valueColor: const AlwaysStoppedAnimation<Color>(
-                    Color(0xFF2EC4B6),
-                  ),
+                    const Spacer(),
+                    Text(
+                      '${_euro(_priceCents)} €',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 64,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      t['price']!,
+                      style: const TextStyle(color: Colors.white60, fontSize: 15),
+                    ),
+                    const Spacer(),
+                    Text(
+                      _formatTime(_secondsLeft),
+                      style: const TextStyle(
+                        color: Colors.white38,
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
 
-            const SizedBox(height: 20),
+            // Разделитель
+            Container(width: 1, color: const Color(0xFF2E2E2E)),
 
-            _InfoRow(
-              label: t['paid']!,
-              value: '${_euro(_balanceCents)} €',
-              valueColor: _balanceCents >= _priceCents
-                  ? Colors.greenAccent
-                  : const Color(0xFF2EC4B6),
-            ),
-            const SizedBox(height: 8),
-            _InfoRow(
-              label: t['remaining']!,
-              value: '${_euro(remainingCents)} €',
-            ),
-
-            const SizedBox(height: 32),
-
-            Text(
-              t['instruction']!,
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white70, fontSize: 16),
-            ),
-
-            const Spacer(),
-
-            // Обратный отсчёт
-            Text(
-              _formatTime(_secondsLeft),
-              style: const TextStyle(
-                color: Colors.white38,
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-
-            const SizedBox(height: 24),
-
-            // Кнопка отмены
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: OutlinedButton(
-                  onPressed: _cancel,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white60,
-                    side: const BorderSide(color: Colors.white30),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
+            // Правая колонка: прогресс, суммы, инструкция, отмена
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      t['instruction']!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.white70, fontSize: 18),
                     ),
-                  ),
-                  child: Text(
-                    t['cancel']!,
-                    style: const TextStyle(fontSize: 16),
-                  ),
+                    const SizedBox(height: 28),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: LinearProgressIndicator(
+                        value: progress,
+                        minHeight: 24,
+                        backgroundColor: const Color(0xFF2E2E2E),
+                        valueColor: const AlwaysStoppedAnimation<Color>(
+                          Color(0xFF2EC4B6),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    _InfoRow(
+                      label: t['paid']!,
+                      value: '${_euro(_balanceCents)} €',
+                      valueColor: _balanceCents >= _priceCents
+                          ? Colors.greenAccent
+                          : const Color(0xFF2EC4B6),
+                    ),
+                    const SizedBox(height: 10),
+                    _InfoRow(
+                      label: t['remaining']!,
+                      value: '${_euro(remainingCents)} €',
+                    ),
+                    const Spacer(),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 52,
+                      child: OutlinedButton(
+                        onPressed: _cancel,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white60,
+                          side: const BorderSide(color: Colors.white30),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: Text(
+                          t['cancel']!,
+                          style: const TextStyle(fontSize: 16),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -267,25 +271,22 @@ class _InfoRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 32),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(color: Colors.white60, fontSize: 15),
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(color: Colors.white60, fontSize: 15),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            color: valueColor,
+            fontSize: 15,
+            fontWeight: FontWeight.bold,
           ),
-          Text(
-            value,
-            style: TextStyle(
-              color: valueColor,
-              fontSize: 15,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

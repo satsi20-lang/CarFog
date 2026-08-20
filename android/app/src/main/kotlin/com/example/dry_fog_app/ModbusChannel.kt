@@ -81,12 +81,17 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
                 result.success(ok)
             }
 
-            // Читает температуру термопары (канал 0-3, возвращает °C × 10)
+            // Читает температуру термопары (канал 0-3, возвращает °C × 10).
+            // Регистр знаковый (термопара может отдавать отрицательные
+            // значения и коды "нет датчика" вроде -500.0°C) — readHoldingRegisters
+            // возвращает беззнаковое 0..65535, поэтому обязательно приводим
+            // через toShort() перед делением, иначе, например, -12.4°C
+            // превращается в бессмысленные +6541.2°C.
             "readTemperature" -> {
                 val ch = call.argument<Int>("channel") ?: 0
                 val regs = modbus?.readHoldingRegisters(SLAVE_THERMO, ch, 1)
                 if (regs == null) result.error("MODBUS", "readTemperature failed", null)
-                else result.success(regs[0].toDouble() / 10.0)
+                else result.success(regs[0].toShort().toDouble() / 10.0)
             }
 
             // Читает данные счётчика энергии DDS6619: напряжение (В), ток (А),
@@ -259,9 +264,9 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
                 // порог 350мс, который стоял здесь раньше, был ниже этого и
                 // приводил именно к такому разрыву).
                 if (pulseCount > 0 && now - lastPulseTime > 600) {
-                    // Два номинала: 1-2 импульса → 1€, 3 и более → 2€
-                    // (калибровка по реальному железу — см. docs/coin_acceptor.md).
-                    val cents = if (pulseCount <= 2) 100 else 200
+                    // Новый монетоприёмник (заменён): 1 импульс → 1€, 2 и более → 2€
+                    // (перекалибровано — см. docs/coin_acceptor.md).
+                    val cents = if (pulseCount <= 1) 100 else 200
                     lastCoinCents.set(cents)
                     pulseCount = 0
                 }

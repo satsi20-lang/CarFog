@@ -30,13 +30,14 @@ class ModbusService {
   static bool get isOpen => _open;
 
   // Читает 8 датчиков уровня канистр. true = есть жидкость.
-  static Future<List<bool>> readLevels() async {
+  // null = ошибка чтения (не путать с настоящим "все канистры пусты").
+  static Future<List<bool>?> readLevels() async {
     try {
       final result = await _channel.invokeMethod<List>('readLevels');
-      return result?.map((e) => e as bool).toList() ?? List.filled(8, false);
+      return result?.map((e) => e as bool).toList();
     } catch (e) {
       debugPrint('ModbusService.readLevels error: $e');
-      return List.filled(8, false);
+      return null;
     }
   }
 
