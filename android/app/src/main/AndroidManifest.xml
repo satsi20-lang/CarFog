@@ -1,4 +1,13 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- Видео-заставка (standby.dart) читает файлы напрямую с SD-карты
+         из произвольной папки /vid — не через MediaStore/DCIM и с
+         нестандартным расширением (.lmxb), поэтому обычных READ_MEDIA_*
+         недостаточно. MANAGE_EXTERNAL_STORAGE даёт прямой доступ к файлам
+         независимо от расширения/типа — оправдано для полностью
+         контролируемого киоск-терминала (не Play Store приложение). -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
     <application
         android:label="dry_fog_app"
         android:name="${applicationName}"
