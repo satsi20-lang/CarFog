@@ -80,12 +80,13 @@ const Map<String, Map<String, String>> _i18n = {
     'cloud_synced': 'Синхронизация выполнена',
     'tab_kiosk': 'Киоск',
     'kiosk_enabled': 'Киоск-режим',
-    'kiosk_hint': 'После включения приложение станет домашним экраном — кнопка '
-        '«Домой» будет открывать его вместо рабочего стола Android. Система '
-        'один раз спросит, какое приложение использовать — выберите это '
-        'приложение и нажмите «Всегда». Device Owner и полное закрепление '
-        'экрана (Lock Task) сюда не входят — это отдельный шаг перед сдачей '
-        'аппарата.',
+    'kiosk_hint': 'После включения откроется системный экран выбора домашнего '
+        'приложения — выберите там это приложение. Затем один раз нажмите '
+        '«Домой» на планшете: если снова появится диалог выбора — обязательно '
+        'выберите это приложение и нажмите «Всегда» (не «Только сейчас»), '
+        'иначе автоматическое восстановление после сбоя не заработает. '
+        'Device Owner и полное закрепление экрана (Lock Task) сюда не входят '
+        '— это отдельный шаг перед сдачей аппарата.',
     'kiosk_open_desktop': 'Открыть системный рабочий стол',
     'kiosk_open_desktop_hint': 'Нужно для обслуживания планшета, пока '
         'включён киоск-режим — без этой кнопки из приложения будет не выйти.',
@@ -158,11 +159,13 @@ const Map<String, Map<String, String>> _i18n = {
     'cloud_synced': 'Sync complete',
     'tab_kiosk': 'Kiosk',
     'kiosk_enabled': 'Kiosk mode',
-    'kiosk_hint': 'Once enabled, the app becomes the home screen — the '
-        '"Home" button will open it instead of the Android desktop. The '
-        'system will ask once which app to use — pick this app and choose '
-        '"Always". Device Owner and full screen pinning (Lock Task) are not '
-        'part of this — that is a separate step right before handover.',
+    'kiosk_hint': 'Once enabled, a system screen opens to pick the default '
+        'home app — choose this app there. Then press "Home" once on the '
+        'tablet: if a chooser dialog appears again, pick this app and choose '
+        '"Always" (not "Just once") — otherwise automatic recovery after a '
+        'crash will not work. Device Owner and full screen pinning (Lock '
+        'Task) are not part of this — that is a separate step right before '
+        'handover.',
     'kiosk_open_desktop': 'Open system desktop',
     'kiosk_open_desktop_hint': 'Needed to service the tablet while kiosk '
         'mode is on — without this button there is no way out of the app.',
@@ -235,11 +238,13 @@ const Map<String, Map<String, String>> _i18n = {
     'cloud_synced': 'Sünkroniseerimine tehtud',
     'tab_kiosk': 'Kiosk',
     'kiosk_enabled': 'Kioski režiim',
-    'kiosk_hint': 'Sisselülitamisel muutub rakendus avakuvaks — nupp "Avakuva" '
-        'avab selle Androidi töölaua asemel. Süsteem küsib üks kord, millist '
-        'rakendust kasutada — vali see rakendus ja vajuta "Alati". Device '
-        'Owner ja täielik ekraani kinnitamine (Lock Task) siia ei kuulu — '
-        'see on eraldi samm vahetult enne seadme üleandmist.',
+    'kiosk_hint': 'Sisselülitamisel avaneb süsteemi vaikimisi avakuva valiku '
+        'ekraan — vali seal see rakendus. Seejärel vajuta tahvlil üks kord '
+        '"Avakuva": kui ilmub uuesti valikudialoog, vali kindlasti see '
+        'rakendus ja "Alati" (mitte "Ainult praegu") — vastasel juhul ei '
+        'tööta automaatne taastumine pärast avariid. Device Owner ja '
+        'täielik ekraani kinnitamine (Lock Task) siia ei kuulu — see on '
+        'eraldi samm vahetult enne seadme üleandmist.',
     'kiosk_open_desktop': 'Ava süsteemi töölaud',
     'kiosk_open_desktop_hint': 'Vajalik tahvli hooldamiseks, kui kioski '
         'režiim on sees — ilma selle nuputa ei pääse rakendusest välja.',
@@ -2011,9 +2016,14 @@ class _KioskTabState extends State<_KioskTab> {
     await SystemService.setKioskHomeEnabled(value);
 
     if (value) {
-      // Сразу предложить выбрать это приложение и поставить "Всегда" —
-      // без этого шага роль домашнего экрана включена, но никто её ещё
-      // фактически не выбрал.
+      // Экран "Приложение по умолчанию → Домашний экран" — самый надёжный
+      // способ сразу предложить выбрать это приложение (проверено вживую
+      // дважды). Обычный резолвер "Только сейчас/Всегда" (triggerHomeChooser)
+      // оказался не всегда таким же надёжным — в одном из тестов вариант
+      // диалога с "Use a different app" не закрепил выбор так же прочно.
+      // Поэтому здесь используем экран настроек, а подтверждение "Всегда" в
+      // резолвере (если он всплывёт) остаётся на технике при первом нажатии
+      // "Домой" после выбора — см. пояснение под кнопкой ниже.
       await SystemService.openHomeSettings();
     }
   }

@@ -88,6 +88,19 @@
             android:name=".RestartReceiver"
             android:exported="false"/>
 
+        <!-- Восстанавливает роль домашнего экрана после обновления APK
+             (Шаг 32, задача 3) — Android сбрасывает вручную выставленный
+             enabled-статус KioskHomeAlias обратно к манифестному при замене
+             пакета, проверено вживую. MY_PACKAGE_REPLACED — защищённая
+             системная рассылка, доставляется только самому приложению. -->
+        <receiver
+            android:name=".PackageUpdateReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+            </intent-filter>
+        </receiver>
+
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
