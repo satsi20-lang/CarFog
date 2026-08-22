@@ -107,6 +107,24 @@ class AppConfig {
       flavorNames: flavorNames ?? this.flavorNames,
     );
   }
+
+  // Слепок настроек для облака (Шаг 34) — только эксплуатационная часть,
+  // то, что панель управления реально должна показывать оператору. При
+  // добавлении нового поля в AppConfig решайте здесь же, входит ли оно
+  // сюда: НИКОГДА не добавляйте servicePin (даёт физический доступ к
+  // аппарату), cloudToken (это и есть ключ к самому облаку — отправлять
+  // его обратно бессмысленно и опасно), cloudAnonKey, cloudUrl.
+  Map<String, dynamic> reportedSnapshot() {
+    return {
+      'price_cents': treatmentPriceCents,
+      'duration_s': treatmentDurationS,
+      'compressor_purge_s': compressorPurgeS,
+      'pump_after_heater_s': pumpAfterHeaterS,
+      'flavor_count': kFlavorCount,
+      'flavor_names_ru': flavorNames['ru']?.take(kFlavorCount).toList() ?? [],
+      'kiosk_mode_enabled': kioskModeEnabled,
+    };
+  }
 }
 
 // ============================================================

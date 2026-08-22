@@ -75,7 +75,18 @@ void main() async {
   // Безопасное выключение всего при старте — не блокирует показ UI,
   // если железо ещё не подключено или порт не совпал.
   unawaited(() async {
-    await ModbusService.open(); // порт уточнить после find_port.py
+    const port = '/dev/ttyS5'; // уточнить после find_port.py
+    final opened = await ModbusService.open(port: port);
+    if (!opened) {
+      // Не удалось открыть порт (Шаг 33, задача 5.1) — аппарат физически
+      // не может работать без шины, оператору стоит узнать об этом сразу,
+      // а не только когда клиент пожалуется на нерабочий терминал.
+      await CloudService.report(CloudEventType.hardwareError, data: {
+        'code': 'modbus_open_failed',
+        'port': port,
+      });
+      return;
+    }
     await ModbusService.safeAllOff();
   }());
 

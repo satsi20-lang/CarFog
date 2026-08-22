@@ -107,20 +107,19 @@ class ModbusService {
 
   // Читает данные счётчика энергии DDS6619: voltage (В), current (А),
   // power (Вт), totalEnergy (кВт⋅ч, общий накопленный расход).
-  static Future<Map<String, double>> readEnergy() async {
-    const fallback = {
-      'voltage': 0.0,
-      'current': 0.0,
-      'power': 0.0,
-      'totalEnergy': 0.0,
-    };
+  // null = ошибка чтения (не путать с настоящим нулевым потреблением) —
+  // раньше здесь была нулевая заглушка на ошибку, из-за которой расход за
+  // сессию (Шаг 33, задача 1) в принципе нельзя было отличить от честного
+  // "не потребили ничего": разница показаний старт/финиш с подменённым
+  // нулём вместо null считалась бы неверно, а не пропускалась.
+  static Future<Map<String, double>?> readEnergy() async {
     try {
       final result = await _channel.invokeMethod<Map>('readEnergy');
-      if (result == null) return fallback;
+      if (result == null) return null;
       return result.map((k, v) => MapEntry(k as String, (v as num).toDouble()));
     } catch (e) {
       debugPrint('ModbusService.readEnergy error: $e');
-      return fallback;
+      return null;
     }
   }
 

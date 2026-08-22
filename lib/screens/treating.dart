@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../services/modbus_service.dart';
+import '../services/session_service.dart';
 import '../widgets/lang_switcher.dart';
 
 const Map<String, Map<String, String>> i18n = {
@@ -187,8 +188,12 @@ class _TreatingScreenState extends State<TreatingScreen>
         _startPhase(_Phase.shutdown, _shutdownDelay);
         break;
       case _Phase.shutdown:
-        // Продувка завершена — компрессор выкл, финал
+        // Продувка завершена — компрессор выкл, финал. Сессия (Шаг 33,
+        // задача 2.2) завершается именно здесь, а не в момент окончания
+        // treating — клиент ещё физически держит шланг, длительность
+        // сессии должна включать и продувку.
         await ModbusService.setCompressor(false);
+        await SessionService.complete();
         if (!mounted) return;
         context.read<AppNotifier>().transition(AppState.finished);
         break;

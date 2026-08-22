@@ -1,5 +1,6 @@
 import 'dart:async';
 import '../models/app_state.dart';
+import 'cloud_service.dart';
 import 'modbus_service.dart';
 
 // Периодически опрашивает уровни канистр (DI 0-7) и обновляет
@@ -15,6 +16,15 @@ class LevelService {
   Timer? _timer;
   bool _running = false;
   bool _paused = false;
+
+  // Последнее известное состояние каждой канистры (по реально распаянным
+  // каналам, kFlavorCount) — null, пока не было ни одного успешного
+  // чтения. Нужно, чтобы событие low_liquid/liquid_restored уходило один
+  // раз именно в момент ПЕРЕХОДА, а не на каждом опросе (Шаг 33, задача
+  // 3.1/3.2), и чтобы самое первое чтение после запуска не считалось
+  // переходом — иначе при каждом включении аппарата в облако летела бы
+  // пачка ложных событий по уже известному на старте состоянию (задача 3.3).
+  final List<bool?> _lastKnown = List<bool?>.filled(kFlavorCount, null);
 
   LevelService._(this.notifier);
 
@@ -83,9 +93,33 @@ class LevelService {
       final levels = await ModbusService.readLevels();
       // null = ошибка чтения (шина занята/таймаут) — не затираем последнее
       // известное состояние ложным "все канистры пусты".
-      if (levels != null) notifier.updateLevels(levels);
+      if (levels != null) {
+        notifier.updateLevels(levels);
+        await _reportTransitions(levels);
+      }
     } finally {
       _running = false;
+    }
+  }
+
+  // Каналы физически не распаяны за пределами kFlavorCount — их
+  // "состояние" ничего не значит и события по ним не отправляются
+  // (Шаг 33, задача 3.4).
+  Future<void> _reportTransitions(List<bool> levels) async {
+    for (var i = 0; i < kFlavorCount; i++) {
+      final hasLiquid = levels[i];
+      final was = _lastKnown[i];
+      _lastKnown[i] = hasLiquid;
+
+      if (was == null) continue; // первое чтение — исходное состояние
+      if (was == hasLiquid) continue; // без изменений
+
+      final flavor = notifier.config.flavorNames['ru']![i];
+      final data = {'channel': i, 'flavor': flavor};
+      await CloudService.report(
+        hasLiquid ? CloudEventType.liquidRestored : CloudEventType.lowLiquid,
+        data: data,
+      );
     }
   }
 }

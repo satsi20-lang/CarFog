@@ -19,6 +19,7 @@ class CloudEventType {
   static const masterCodeUsed = 'master_code_used';
   static const factoryReset = 'factory_reset';
   static const lowLiquid = 'low_liquid';
+  static const liquidRestored = 'liquid_restored';
   static const sessionComplete = 'session_complete';
   static const hardwareError = 'hardware_error';
   static const energyReading = 'energy_reading';
@@ -78,12 +79,36 @@ class CloudCommand {
 }
 
 // ============================================================
+// РЕЗУЛЬТАТ ОПРОСА (Шаг 34)
+// ============================================================
+
+// configReported — true, только если слепок настроек был передан этим
+// вызовом И сервер его принял. SyncService по этому флагу решает, можно
+// ли считать слепок отправленным (и не слать его снова, пока настройки
+// не изменятся) — если запрос не удался, флаг остаётся false, и попытка
+// естественным образом повторится на следующем опросе.
+class CloudPollResult {
+  final List<CloudCommand> commands;
+  final bool configReported;
+
+  CloudPollResult({required this.commands, this.configReported = false});
+}
+
+// ============================================================
 // ТРАНСПОРТ — интерфейс. Реализация меняется без правки кода приложения.
 // ============================================================
 
 abstract class CloudTransport {
   Future<bool> send(String deviceId, List<CloudEvent> events);
-  Future<List<CloudCommand>> fetchCommands(String deviceId);
+
+  // config — слепок фактических настроек аппарата (Шаг 34, задача 2),
+  // прикладывается к этому же опросу. null — если в этот раз отправлять
+  // нечего (решает вызывающий код, транспорт сам это не решает).
+  Future<CloudPollResult> fetchCommands(
+    String deviceId, {
+    Map<String, dynamic>? config,
+  });
+
   Future<bool> ackCommand(
     String deviceId,
     String commandId,
@@ -105,7 +130,18 @@ class LocalLogTransport implements CloudTransport {
   }
 
   @override
-  Future<List<CloudCommand>> fetchCommands(String deviceId) async => [];
+  Future<CloudPollResult> fetchCommands(
+    String deviceId, {
+    Map<String, dynamic>? config,
+  }) async {
+    // Заглушка без реального сервера — просто печатаем слепок в лог,
+    // чтобы состав полей можно было проверить глазами без облака
+    // (Шаг 34, задача 2.3).
+    if (config != null) {
+      debugPrint('CLOUD[$deviceId] reported_config: ${jsonEncode(config)}');
+    }
+    return CloudPollResult(commands: [], configReported: config != null);
+  }
 
   @override
   Future<bool> ackCommand(
@@ -177,7 +213,10 @@ class SupabaseTransport implements CloudTransport {
   }
 
   @override
-  Future<List<CloudCommand>> fetchCommands(String deviceId) async {
+  Future<CloudPollResult> fetchCommands(
+    String deviceId, {
+    Map<String, dynamic>? config,
+  }) async {
     try {
       final resp = await http
           .post(
@@ -187,27 +226,34 @@ class SupabaseTransport implements CloudTransport {
               'p_device': deviceId,
               'p_token': deviceToken,
               'p_version': CloudService.appVersion,
+              // Слепок настроек (Шаг 34, задача 2) — рядом с версией
+              // приложения, тем же опросом. null, если в этот раз
+              // отправлять нечего (device_poll на сервере просто
+              // не тронет reported_config, см. coalesce в SQL).
+              'p_config': config,
             }),
           )
           .timeout(_timeout);
 
       if (resp.statusCode != 200) {
         debugPrint('SupabaseTransport.fetchCommands HTTP ${resp.statusCode}');
-        return [];
+        return CloudPollResult(commands: []);
       }
 
       final body = jsonDecode(resp.body);
-      if (body is! Map || body['ok'] != true) return [];
+      if (body is! Map || body['ok'] != true) {
+        return CloudPollResult(commands: []);
+      }
 
       final raw = body['commands'];
-      if (raw is! List) return [];
+      final commands = raw is List
+          ? raw.map((c) => CloudCommand.fromJson(c as Map<String, dynamic>)).toList()
+          : <CloudCommand>[];
 
-      return raw
-          .map((c) => CloudCommand.fromJson(c as Map<String, dynamic>))
-          .toList();
+      return CloudPollResult(commands: commands, configReported: config != null);
     } catch (e) {
       debugPrint('SupabaseTransport.fetchCommands error: $e');
-      return [];
+      return CloudPollResult(commands: []);
     }
   }
 
@@ -254,13 +300,27 @@ class CloudService {
   static CloudTransport transport = LocalLogTransport();
   static String deviceId = 'CARFOG-001';
   static bool isCloudEnabled = false;
-  static const String appVersion = '1.0.0';
+
+  // Версия, которую аппарат сообщает облаку при каждом опросе (p_version в
+  // device_poll) — колонка devices.app_version в панели полезна, только
+  // если это число реально меняется. Правило: поднимать при каждой
+  // заметной правке (перед OTA-обновлениями это станет обязательным —
+  // без честной версии на аппарате понять, что реально раскатано, будет
+  // нечем). Дублирует pubspec.yaml.version не автоматически, а вручную —
+  // здесь нет зависимости от package_info_plus, чтобы не тащить лишний
+  // плагин ради одной строки; при желании завести единый источник истины
+  // это можно сделать отдельно.
+  static const String appVersion = '1.1.0';
 
   static const _queueKey = 'cloud_event_queue';
   static const _maxQueue = 500;
 
   static const _historyKey = 'cloud_event_history';
-  static const _maxHistory = 200;
+  // Шаг 33 добавил регулярные события (почасовые energy_reading — 24/сутки,
+  // плюс каждая платная сессия) — на 200 записей журнал в сервисном меню
+  // схлопывался бы за 2-3 дня, вытесняя важное. 500 держит примерно
+  // полторы-две недели истории на аппарате обычной загрузки.
+  static const _maxHistory = 500;
 
   // Выбирает транспорт по настройкам. Если облако выключено или
   // не заполнено — работает локальный лог, приложение полностью

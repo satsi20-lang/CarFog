@@ -753,7 +753,10 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
     final previousMonth = await ModbusService.getPreviousMonthEnergy();
     if (mounted) {
       setState(() {
-        _energy = energy;
+        // Показания на вкладке диагностики — если чтение не удалось,
+        // просто оставляем прежние значения на экране (null здесь означал
+        // бы ошибку, а не честный ноль — см. ModbusService.readEnergy).
+        if (energy != null) _energy = energy;
         _monthlyEnergy = monthly;
         _previousMonthEnergy = previousMonth;
       });
@@ -1484,6 +1487,7 @@ class _JournalTabState extends State<_JournalTab> {
     'master_code_used': 'Использован мастер-код',
     'factory_reset': 'Сброс к заводским',
     'low_liquid': 'Заканчивается жидкость',
+    'liquid_restored': 'Канистра заправлена',
     'session_complete': 'Сессия завершена',
     'hardware_error': 'Ошибка оборудования',
     'energy_reading': 'Показания энергии',

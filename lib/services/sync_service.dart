@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../models/app_state.dart';
 import 'cloud_service.dart';
 import 'config_service.dart';
+import 'modbus_service.dart';
 import 'security_service.dart';
 
 // Периодический обмен с облаком: отправка накопленных событий,
@@ -19,6 +21,21 @@ class SyncService {
 
   // Интервал опроса в спокойном состоянии
   static const Duration idleInterval = Duration(seconds: 30);
+
+  // Периодический снимок счётчика энергии (Шаг 33, задача 4) — встроен в
+  // этот же тик, отдельный таймер не заводим: пауза на время приёма денег
+  // и техпроцесса здесь уже есть (_isBusyState), значит и снимок сам
+  // собой не будет сниматься, пока шина занята чем-то важнее.
+  static const Duration energyReadingInterval = Duration(hours: 1);
+  DateTime? _lastEnergyReadingAt;
+
+  // Слепок настроек для облака (Шаг 34, задача 3) — отправляется тем же
+  // опросом, но не каждый тик: только при первом опросе после запуска
+  // (_lastConfigSentAt == null), при фактическом изменении содержимого
+  // или раз в сутки принудительно (страховка от рассинхронизации).
+  static const Duration configForceInterval = Duration(hours: 24);
+  Map<String, dynamic>? _lastSentConfigSnapshot;
+  DateTime? _lastConfigSentAt;
 
   // Во время приёма денег и технологического процесса опрос
   // приостанавливается: сеть не должна мешать работе аппарата.
@@ -100,12 +117,42 @@ class SyncService {
 
     _running = true;
     try {
+      await _maybeReportEnergy();
       await CloudService.flush();
 
-      final commands =
-          await CloudService.transport.fetchCommands(CloudService.deviceId);
+      // Слепок настроек (Шаг 34) — задача 2.4: если сборка почему-то
+      // упала, просто не прикладываем его в этот раз, опрос команд
+      // всё равно должен отработать как раньше.
+      Map<String, dynamic>? configToSend;
+      try {
+        configToSend = _configToSendOrNull();
+      } catch (e) {
+        debugPrint('SyncService: не удалось собрать слепок настроек: $e');
+      }
 
-      for (final command in commands) {
+      if (configToSend != null) {
+        debugPrint('SyncService: отправляю слепок настроек: ${jsonEncode(configToSend)}');
+      }
+
+      final result = await CloudService.transport.fetchCommands(
+        CloudService.deviceId,
+        config: configToSend,
+      );
+
+      // configReported — сервер реально принял именно этот слепок
+      // (задача 3.3: неудачная отправка не считается отправленной,
+      // повторится сама на следующем опросе).
+      if (configToSend != null) {
+        if (result.configReported) {
+          _lastSentConfigSnapshot = configToSend;
+          _lastConfigSentAt = DateTime.now();
+          debugPrint('SyncService: слепок настроек принят сервером');
+        } else {
+          debugPrint('SyncService: слепок настроек НЕ принят, повторю на следующем опросе');
+        }
+      }
+
+      for (final command in result.commands) {
         await _execute(command);
       }
     } catch (e) {
@@ -113,6 +160,48 @@ class SyncService {
     } finally {
       _running = false;
     }
+  }
+
+  // null, если слепок отправлять не нужно: настройки не менялись с
+  // последней успешной отправки и сутки ещё не прошли. Сравнение — по
+  // содержимому (jsonEncode), а не по ссылке на Map (задача 3.2).
+  Map<String, dynamic>? _configToSendOrNull() {
+    final snapshot = notifier.config.reportedSnapshot();
+
+    final last = _lastSentConfigSnapshot;
+    final sentAt = _lastConfigSentAt;
+    if (last != null && sentAt != null) {
+      final changed = jsonEncode(snapshot) != jsonEncode(last);
+      final forceDue = DateTime.now().difference(sentAt) >= configForceInterval;
+      if (!changed && !forceDue) return null;
+    }
+    return snapshot;
+  }
+
+  // Снимок счётчика раз в час (Шаг 33, задача 4.1). Этот метод вызывается
+  // только из _tick(), которая сама не запускается в "занятых" состояниях
+  // (задача 4.2) — отдельной проверки busy-state здесь не нужно. Если
+  // снимок почему-то не удался (шина всё же занята чем-то ещё, ошибка
+  // чтения) — время последнего успешного снимка не обновляется, и попытка
+  // просто повторится на следующем тике.
+  Future<void> _maybeReportEnergy() async {
+    final last = _lastEnergyReadingAt;
+    if (last != null && DateTime.now().difference(last) < energyReadingInterval) {
+      return;
+    }
+
+    final energy = await ModbusService.readEnergy();
+    if (energy == null) return;
+    final monthly = await ModbusService.getMonthlyEnergy();
+
+    _lastEnergyReadingAt = DateTime.now();
+    await CloudService.report(CloudEventType.energyReading, data: {
+      'voltage': energy['voltage'],
+      'current': energy['current'],
+      'power': energy['power'],
+      'total_kwh': energy['totalEnergy'],
+      'month_kwh': monthly,
+    });
   }
 
   // ============================================================

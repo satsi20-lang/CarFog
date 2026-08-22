@@ -123,23 +123,38 @@ class _StandbyScreenState extends State<StandbyScreen> {
       return;
     }
 
-    controller.setLooping(false);
+    // Один файл в плейлисте — зацикливаем его средствами самого плеера:
+    // просто и без риска гонки на границе конец/начало (см. ниже).
+    // Несколько файлов — крутим плейлист по кругу, но не через
+    // ручное отслеживание "position >= duration" в addListener: тот
+    // слушатель дёргается на каждое обновление позиции (много раз в
+    // секунду), и пока старый контроллер ещё не задиспоузился, условие
+    // окончания успевало сработать повторно — ролик мог оборваться
+    // раньше времени и просмотр падал на заставку вместо луп-показа.
+    // "_advancing" гарантирует, что переход к следующему файлу
+    // запускается ровно один раз за ролик.
+    if (_playlist.length == 1) {
+      controller.setLooping(true);
+    } else {
+      controller.setLooping(false);
+      var advancing = false;
+      controller.addListener(() {
+        if (!mounted || advancing) return;
+        if (controller.value.hasError) {
+          advancing = true;
+          final nextIndex = (index + 1) % _playlist.length;
+          _currentIndex = nextIndex;
+          _playVideo(nextIndex, attempt + 1);
+          return;
+        }
+        if (controller.value.isCompleted) {
+          advancing = true;
+          _currentIndex = (_currentIndex + 1) % _playlist.length;
+          _playVideo(_currentIndex);
+        }
+      });
+    }
     controller.play();
-
-    controller.addListener(() {
-      if (!mounted) return;
-      if (controller.value.hasError) {
-        final nextIndex = (index + 1) % _playlist.length;
-        _currentIndex = nextIndex;
-        _playVideo(nextIndex, attempt + 1);
-        return;
-      }
-      if (controller.value.position >= controller.value.duration &&
-          controller.value.duration.inSeconds > 0) {
-        _currentIndex = (_currentIndex + 1) % _playlist.length;
-        _playVideo(_currentIndex);
-      }
-    });
 
     if (mounted) setState(() => _controller = controller);
   }

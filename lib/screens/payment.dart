@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../services/modbus_service.dart';
+import '../services/session_service.dart';
 import '../widgets/lang_switcher.dart';
 
 const Map<String, Map<String, String>> _i18n = {
@@ -88,9 +89,20 @@ class _PaymentScreenState extends State<PaymentScreen> {
     _coinTimer?.cancel();
     _countdownTimer?.cancel();
     ModbusService.stopPaymentCoinCounting();
-    if (mounted) {
-      context.read<AppNotifier>().transition(AppState.preparing);
-    }
+    if (!mounted) return;
+    final notifier = context.read<AppNotifier>();
+    final flavorIndex = notifier.selectedFlavor ?? 0;
+    // Начинаем сессию (Шаг 33, задача 1/2) именно здесь — сумма уже
+    // набрана, деньги приняты монетоприёмником безвозвратно. Название
+    // аромата берём по-русски независимо от языка интерфейса клиента:
+    // событие уходит оператору, не клиенту.
+    unawaited(SessionService.start(
+      flavorIndex: flavorIndex,
+      flavorNameRu: notifier.config.flavorNames['ru']![flavorIndex],
+      priceCents: _priceCents,
+      paidCents: _balanceCents,
+    ));
+    notifier.transition(AppState.preparing);
   }
 
   void _cancel() {
