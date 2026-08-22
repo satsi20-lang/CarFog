@@ -53,11 +53,18 @@ class _StandbyScreenState extends State<StandbyScreen> {
                 .listSync()
                 .where((f) {
                   final p = f.path.toLowerCase();
-                  // .lmxb встречается на некоторых картах наравне с .mp4 —
-                  // принимаем оба расширения. Если конкретный файл
-                  // окажется нечитаемым, _playVideo() просто пропустит
-                  // его и перейдёт к следующему (см. ниже).
-                  return p.endsWith('.mp4') || p.endsWith('.lmxb');
+                  // .mp4 — основной формат. .mkv/.webm — тоже штатно
+                  // читаются ExoPlayer'ом, лишняя строка в фильтре дешевле
+                  // разбирательства "почему не играет". .lmxb (формат со
+                  // старого аппарата с пиксельным экраном) сюда больше не
+                  // входит — ExoPlayer его не распознаёт вообще
+                  // (UnrecognizedInputFormatException), только зря тратил
+                  // время на попытку открыть. Если конкретный файл всё же
+                  // окажется нечитаемым, _playVideo() пропустит его и
+                  // перейдёт к следующему (см. ниже).
+                  return p.endsWith('.mp4') ||
+                      p.endsWith('.mkv') ||
+                      p.endsWith('.webm');
                 })
                 .map((f) => f.path)
                 .toList()
@@ -113,8 +120,9 @@ class _StandbyScreenState extends State<StandbyScreen> {
     try {
       await controller.initialize();
     } catch (e) {
-      // Файл повреждён/не тот формат (например .lmxb без валидного
-      // контейнера) — пропускаем и пробуем следующий, а не роняем экран.
+      // Файл повреждён или ExoPlayer не распознаёт контейнер — пропускаем
+      // и пробуем следующий, а не роняем всю заставку из-за одного
+      // битого файла.
       debugPrint('StandbyScreen: playback failed for $path: $e');
       controller.dispose();
       final nextIndex = (index + 1) % _playlist.length;
@@ -124,7 +132,10 @@ class _StandbyScreenState extends State<StandbyScreen> {
     }
 
     // Один файл в плейлисте — зацикливаем его средствами самого плеера:
-    // просто и без риска гонки на границе конец/начало (см. ниже).
+    // просто и без риска гонки на границе конец/начало (см. ниже). Но
+    // ошибку во время воспроизведения (не при инициализации, а позже —
+    // например карту вынули на ходу) всё равно нужно ловить, иначе экран
+    // молча зависнет на сломанном кадре навсегда.
     // Несколько файлов — крутим плейлист по кругу, но не через
     // ручное отслеживание "position >= duration" в addListener: тот
     // слушатель дёргается на каждое обновление позиции (много раз в
@@ -135,6 +146,14 @@ class _StandbyScreenState extends State<StandbyScreen> {
     // запускается ровно один раз за ролик.
     if (_playlist.length == 1) {
       controller.setLooping(true);
+      var failed = false;
+      controller.addListener(() {
+        if (!mounted || failed || !controller.value.hasError) return;
+        failed = true;
+        debugPrint('StandbyScreen: playback error for $path: '
+            '${controller.value.errorDescription}');
+        _stopVideo();
+      });
     } else {
       controller.setLooping(false);
       var advancing = false;
