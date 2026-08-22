@@ -9,6 +9,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class CloudEventType {
   static const appStarted = 'app_started';
+  // Запуск после аварийного завершения (Шаг 32, задача 6) — отдельный тип,
+  // а не app_started с полем в data, чтобы подсветка тревожным цветом в
+  // локальном журнале и в веб-панели была простым фильтром по типу, без
+  // разбора вложенных полей.
+  static const appStartedAfterCrash = 'app_started_after_crash';
   static const serviceLoginOk = 'service_login_ok';
   static const unauthorizedAccess = 'unauthorized_access';
   static const masterCodeUsed = 'master_code_used';

@@ -46,6 +46,7 @@ class ConfigService {
         'cloudAnonKey': c.cloudAnonKey,
         'cloudToken': c.cloudToken,
         'cloudEnabled': c.cloudEnabled,
+        'kioskModeEnabled': c.kioskModeEnabled,
         'flavorNames': c.flavorNames,
       };
 
@@ -60,6 +61,7 @@ class ConfigService {
         cloudAnonKey: (j['cloudAnonKey'] as String?) ?? '',
         cloudToken: (j['cloudToken'] as String?) ?? '',
         cloudEnabled: (j['cloudEnabled'] as bool?) ?? false,
+        kioskModeEnabled: (j['kioskModeEnabled'] as bool?) ?? false,
         flavorNames: (j['flavorNames'] as Map<String, dynamic>?)?.map(
           (k, v) => MapEntry(k, List<String>.from(v)),
         ),

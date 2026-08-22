@@ -18,6 +18,7 @@ import 'services/config_service.dart';
 import 'services/level_service.dart';
 import 'services/modbus_service.dart';
 import 'services/sync_service.dart';
+import 'services/system_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -44,7 +45,27 @@ void main() async {
 
   SyncService.start(notifier);
   LevelService.start(notifier);
-  unawaited(CloudService.report(CloudEventType.appStarted));
+
+  // Роль домашнего экрана синхронизируется с сохранённым конфигом при
+  // каждом запуске (Шаг 32, задача 3) — идемпотентно, страхует от
+  // рассинхронизации PackageManager и AppConfig (например после
+  // переустановки APK при отладке).
+  unawaited(SystemService.setKioskHomeEnabled(config.kioskModeEnabled));
+
+  // Причина запуска — обычный / после аварии / после перезагрузки (Шаг 32,
+  // задача 6). Отдельный тип события для аварии, чтобы он подсвечивался
+  // тревожным в журнале и в веб-панели без разбора вложенных полей.
+  unawaited(() async {
+    final reason = await SystemService.consumeStartReason();
+    if (reason == 'crash') {
+      await CloudService.report(CloudEventType.appStartedAfterCrash);
+    } else {
+      await CloudService.report(
+        CloudEventType.appStarted,
+        data: reason == 'boot' ? {'reason': 'boot'} : null,
+      );
+    }
+  }());
 
   // Безопасное выключение всего при старте — не блокирует показ UI,
   // если железо ещё не подключено или порт не совпал.

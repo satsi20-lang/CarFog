@@ -24,6 +24,10 @@ class AppConfig {
   String cloudAnonKey;
   String cloudToken;
   bool cloudEnabled;
+  // Роль домашнего экрана (Шаг 32, задача 3) — по умолчанию выключена,
+  // включается только тумблером "Киоск-режим" в сервисном меню, чтобы
+  // свежая сборка на планшете разработчика не захватывала рабочий стол.
+  bool kioskModeEnabled;
   Map<String, List<String>> flavorNames;
 
   AppConfig({
@@ -37,6 +41,7 @@ class AppConfig {
     this.cloudAnonKey = '',
     this.cloudToken = '',
     this.cloudEnabled = false,
+    this.kioskModeEnabled = false,
     Map<String, List<String>>? flavorNames,
   }) : flavorNames =
            flavorNames ??
@@ -84,6 +89,7 @@ class AppConfig {
     String? cloudAnonKey,
     String? cloudToken,
     bool? cloudEnabled,
+    bool? kioskModeEnabled,
     Map<String, List<String>>? flavorNames,
   }) {
     return AppConfig(
@@ -97,6 +103,7 @@ class AppConfig {
       cloudAnonKey: cloudAnonKey ?? this.cloudAnonKey,
       cloudToken: cloudToken ?? this.cloudToken,
       cloudEnabled: cloudEnabled ?? this.cloudEnabled,
+      kioskModeEnabled: kioskModeEnabled ?? this.kioskModeEnabled,
       flavorNames: flavorNames ?? this.flavorNames,
     );
   }

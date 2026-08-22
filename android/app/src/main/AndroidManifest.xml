@@ -8,9 +8,20 @@
          контролируемого киоск-терминала (не Play Store приложение). -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
         tools:ignore="ScopedStorage" />
+    <!-- Автозапуск после подачи питания (Шаг 32, задача 1) — терминал стоит
+         на улице без оператора рядом. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Рестарт после аварии (Шаг 32, задача 4) — setAlarmClock() требует
+         точных будильников, зато (в отличие от обычного неточного
+         будильника) реально пробивает ограничение на старт активности из
+         фона мёртвого процесса — проверено вживую. На Android 13 разрешение
+         выдаётся автоматически при установке; на Android 14+ для приложений
+         с targetSdk 34+ может понадобиться разовое подтверждение через
+         системные настройки. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <application
         android:label="dry_fog_app"
-        android:name="${applicationName}"
+        android:name=".DryFogApplication"
         android:icon="@mipmap/ic_launcher">
         <activity
             android:name=".MainActivity"
@@ -34,6 +45,49 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+
+        <!-- Псевдоним для роли домашнего экрана (Шаг 32, задача 2). Отдельный
+             компонент, а не второй intent-filter на MainActivity, потому что
+             задача 3 включает/выключает именно роль "домашний экран" через
+             PackageManager во время работы, не трогая обычный запуск из
+             списка приложений. Выключен по умолчанию: свежая сборка не
+             должна внезапно захватывать роль рабочего стола на планшете
+             разработчика — включается только тумблером "Киоск-режим" в
+             сервисном меню. -->
+        <activity-alias
+            android:name=".KioskHomeAlias"
+            android:targetActivity=".MainActivity"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.HOME"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+        </activity-alias>
+
+        <!-- Автозапуск после перезагрузки/подачи питания (Шаг 32, задача 1).
+             exported=true обязателен, иначе система не сможет его вызвать —
+             сами системные широковещательные сообщения BOOT_COMPLETED
+             защищены (protected broadcast), отправить их может только
+             система, так что экспорт здесь не открывает дыру. directBootAware
+             нужен, чтобы приёмник вообще получал LOCKED_BOOT_COMPLETED. -->
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="true"
+            android:directBootAware="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED"/>
+            </intent-filter>
+        </receiver>
+
+        <!-- Рестарт после аварии (Шаг 32, задача 4) — только по собственному
+             PendingIntent из AlarmManager, извне не вызывается. -->
+        <receiver
+            android:name=".RestartReceiver"
+            android:exported="false"/>
+
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

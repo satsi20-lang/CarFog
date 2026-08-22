@@ -20,6 +20,25 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
     private val SLAVE_THERMO = 1     // HLS-KWL-4TC заводской адрес, конфликт устранён
     private val SLAVE_ENERGY = 3     // DDS6619-039
 
+    // Показания энергосчётчика, прочитанные недавно — переиспользуются между
+    // readEnergy() и getMonthlyEnergy(), чтобы не гонять по шине один и тот же
+    // набор из 4 транзакций дважды подряд (см. readEnergyValues()).
+    private var energyCache: Map<String, Double>? = null
+    private var energyCacheTime: Long = 0L
+    private val ENERGY_CACHE_MAX_AGE_MS = 2000L
+
+    companion object {
+        // Объект работы с шиной, открытый последним успешным "open" — нужен
+        // аварийному обработчику (DryFogApplication) для прямого доступа к
+        // порту в обход MethodChannel/Flutter, когда Dart уже нерабочий.
+        @Volatile
+        var activeBus: ModbusRtu? = null
+
+        // Дублирует SLAVE_DIO как доступный статически — тот же адрес,
+        // аварийному обработчику нужен вне экземпляра ModbusChannel.
+        const val SLAVE_DIO_STATIC = 5
+    }
+
     // Опрос монетоприёмника РЕЖИМА ОПЛАТЫ — работает только между
     // startPaymentCoinCounting()/stopPaymentCoinCounting() (на весь экран
     // оплаты, а не постоянно как раньше), поэтому не конкурирует с обычными
@@ -38,13 +57,17 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
             "open" -> {
                 val port = call.argument<String>("port") ?: "/dev/ttyS5"
                 val baud = call.argument<Int>("baud") ?: 9600
-                modbus = ModbusRtu()
-                result.success(modbus!!.open(port, baud))
+                val bus = ModbusRtu()
+                val opened = bus.open(port, baud)
+                modbus = bus
+                activeBus = if (opened) bus else null
+                result.success(opened)
             }
 
             "close" -> {
                 modbus?.close()
                 modbus = null
+                activeBus = null
                 result.success(null)
             }
 
@@ -95,9 +118,11 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
             }
 
             // Читает данные счётчика энергии DDS6619: напряжение (В), ток (А),
-            // мощность (Вт), общий накопленный расход (кВт⋅ч)
+            // мощность (Вт), общий накопленный расход (кВт⋅ч). Всегда
+            // свежее чтение (forceFresh=true) — это то значение, которым
+            // затем переиспользуется getMonthlyEnergy() в этом же цикле опроса.
             "readEnergy" -> {
-                val energy = readEnergyValues()
+                val energy = readEnergyValues(forceFresh = true)
                 if (energy == null) result.error("MODBUS", "readEnergy failed", null)
                 else result.success(energy)
             }
@@ -151,7 +176,22 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
 
     // Читает все 4 показателя счётчика энергии одним запросом-набором.
     // null, если хоть одно чтение по шине не удалось.
-    private fun readEnergyValues(): Map<String, Double>? {
+    //
+    // forceFresh=false переиспользует значение, прочитанное не позднее
+    // ENERGY_CACHE_MAX_AGE_MS назад, вместо повторного похода по шине —
+    // без этого readEnergy() и getMonthlyEnergy() (вызываются подряд из
+    // одного и того же цикла опроса в _readEnergy(), см. service_menu.dart)
+    // гоняли одни и те же 4 транзакции дважды, и при неотвечающем счётчике
+    // (таймаут 500мс на каждую) это держало общую последовательную очередь
+    // Modbus занятой до ~4 секунд лишний раз — за это время любой другой
+    // вызов (например setDO тумблера насоса) просто ждал своей очереди.
+    private fun readEnergyValues(forceFresh: Boolean = false): Map<String, Double>? {
+        val cached = energyCache
+        val now = System.currentTimeMillis()
+        if (!forceFresh && cached != null && now - energyCacheTime < ENERGY_CACHE_MAX_AGE_MS) {
+            return cached
+        }
+
         val voltageReg = modbus?.readInputRegisters(SLAVE_ENERGY, 0x0000, 1)
         val currentReg = modbus?.readInputRegisters(SLAVE_ENERGY, 0x0003, 1)
         val powerReg = modbus?.readInputRegisters(SLAVE_ENERGY, 0x0008, 1)
@@ -164,16 +204,19 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
         val lowWord = totalRegs[1]
         val totalEnergy = ((highWord.toLong() shl 16) or lowWord.toLong()) * 0.01
 
-        return mapOf(
+        val result = mapOf(
             "voltage" to voltageReg[0].toDouble() / 10.0,
             "current" to currentReg[0].toDouble() / 100.0,
             "power" to powerReg[0].toDouble(),
             "totalEnergy" to totalEnergy
         )
+        energyCache = result
+        energyCacheTime = now
+        return result
     }
 
     private fun getMonthlyEnergy(): Double? {
-        val totalEnergy = readEnergyValues()?.get("totalEnergy") ?: return null
+        val totalEnergy = readEnergyValues(forceFresh = false)?.get("totalEnergy") ?: return null
 
         val prefs = context.getSharedPreferences("energy_meter_prefs", Context.MODE_PRIVATE)
         val cal = Calendar.getInstance()

@@ -9,6 +9,7 @@ import '../../widgets/lang_switcher.dart';
 import '../../services/cloud_service.dart';
 import '../../services/modbus_service.dart';
 import '../../services/sync_service.dart';
+import '../../services/system_service.dart';
 
 const Map<String, Map<String, String>> _i18n = {
   'ru': {
@@ -77,6 +78,17 @@ const Map<String, Map<String, String>> _i18n = {
     'cloud_hint': 'Аппарат работает и без облака. Если выключено — события пишутся только в локальный журнал.',
     'cloud_sync_now': 'Синхронизировать сейчас',
     'cloud_synced': 'Синхронизация выполнена',
+    'tab_kiosk': 'Киоск',
+    'kiosk_enabled': 'Киоск-режим',
+    'kiosk_hint': 'После включения приложение станет домашним экраном — кнопка '
+        '«Домой» будет открывать его вместо рабочего стола Android. Система '
+        'один раз спросит, какое приложение использовать — выберите это '
+        'приложение и нажмите «Всегда». Device Owner и полное закрепление '
+        'экрана (Lock Task) сюда не входят — это отдельный шаг перед сдачей '
+        'аппарата.',
+    'kiosk_open_desktop': 'Открыть системный рабочий стол',
+    'kiosk_open_desktop_hint': 'Нужно для обслуживания планшета, пока '
+        'включён киоск-режим — без этой кнопки из приложения будет не выйти.',
   },
   'en': {
     'menu_title': 'Service menu',
@@ -144,6 +156,16 @@ const Map<String, Map<String, String>> _i18n = {
     'cloud_hint': 'The machine works without the cloud. When disabled, events are stored in the local log only.',
     'cloud_sync_now': 'Sync now',
     'cloud_synced': 'Sync complete',
+    'tab_kiosk': 'Kiosk',
+    'kiosk_enabled': 'Kiosk mode',
+    'kiosk_hint': 'Once enabled, the app becomes the home screen — the '
+        '"Home" button will open it instead of the Android desktop. The '
+        'system will ask once which app to use — pick this app and choose '
+        '"Always". Device Owner and full screen pinning (Lock Task) are not '
+        'part of this — that is a separate step right before handover.',
+    'kiosk_open_desktop': 'Open system desktop',
+    'kiosk_open_desktop_hint': 'Needed to service the tablet while kiosk '
+        'mode is on — without this button there is no way out of the app.',
   },
   'et': {
     'menu_title': 'Teenindusmenüü',
@@ -211,6 +233,16 @@ const Map<String, Map<String, String>> _i18n = {
     'cloud_hint': 'Seade töötab ka ilma pilveta. Väljalülitatuna salvestatakse sündmused ainult kohalikku logisse.',
     'cloud_sync_now': 'Sünkroniseeri kohe',
     'cloud_synced': 'Sünkroniseerimine tehtud',
+    'tab_kiosk': 'Kiosk',
+    'kiosk_enabled': 'Kioski režiim',
+    'kiosk_hint': 'Sisselülitamisel muutub rakendus avakuvaks — nupp "Avakuva" '
+        'avab selle Androidi töölaua asemel. Süsteem küsib üks kord, millist '
+        'rakendust kasutada — vali see rakendus ja vajuta "Alati". Device '
+        'Owner ja täielik ekraani kinnitamine (Lock Task) siia ei kuulu — '
+        'see on eraldi samm vahetult enne seadme üleandmist.',
+    'kiosk_open_desktop': 'Ava süsteemi töölaud',
+    'kiosk_open_desktop_hint': 'Vajalik tahvli hooldamiseks, kui kioski '
+        'režiim on sees — ilma selle nuputa ei pääse rakendusest välja.',
   },
 };
 
@@ -222,7 +254,7 @@ class ServiceMenuScreen extends StatefulWidget {
 }
 
 class _ServiceMenuScreenState extends State<ServiceMenuScreen> {
-  int _tab = 0; // 0=Настройки, 1=Ароматы, 2=Диагностика, 3=Датчики, 4=Журнал, 5=Облако
+  int _tab = 0; // 0=Настройки, 1=Ароматы, 2=Диагностика, 3=Датчики, 4=Журнал, 5=Облако, 6=Киоск
 
   Widget _buildTab() {
     switch (_tab) {
@@ -236,8 +268,10 @@ class _ServiceMenuScreenState extends State<ServiceMenuScreen> {
         return const _SensorsTab();
       case 4:
         return _JournalTab();
-      default:
+      case 5:
         return _CloudTab();
+      default:
+        return _KioskTab();
     }
   }
 
@@ -254,6 +288,7 @@ class _ServiceMenuScreenState extends State<ServiceMenuScreen> {
       t['tab_sensors']!,
       t['tab_journal']!,
       t['tab_cloud']!,
+      t['tab_kiosk']!,
     ];
 
     return Scaffold(
@@ -1438,6 +1473,7 @@ class _JournalTabState extends State<_JournalTab> {
 
   static const _eventLabels = {
     'app_started': 'Запуск приложения',
+    'app_started_after_crash': 'Запуск после аварийного завершения',
     'service_login_ok': 'Вход в сервисное меню',
     'unauthorized_access': 'Несанкционированный доступ',
     'master_code_used': 'Использован мастер-код',
@@ -1455,6 +1491,7 @@ class _JournalTabState extends State<_JournalTab> {
     'master_code_used',
     'factory_reset',
     'hardware_error',
+    'app_started_after_crash',
   };
 
   static const _warnTypes = {
@@ -1941,6 +1978,102 @@ class _CloudTabState extends State<_CloudTab> {
               ),
               child: Text(t['cloud_sync_now']!),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================================
+// ВКЛАДКА: КИОСК-РЕЖИМ (Шаг 32, задача 3)
+// ============================================================
+
+class _KioskTab extends StatefulWidget {
+  @override
+  State<_KioskTab> createState() => _KioskTabState();
+}
+
+class _KioskTabState extends State<_KioskTab> {
+  late bool _enabled;
+
+  @override
+  void initState() {
+    super.initState();
+    _enabled = context.read<AppNotifier>().config.kioskModeEnabled;
+  }
+
+  Future<void> _onToggle(bool value) async {
+    setState(() => _enabled = value);
+
+    final notifier = context.read<AppNotifier>();
+    await notifier.saveConfig(notifier.config.copyWith(kioskModeEnabled: value));
+    await SystemService.setKioskHomeEnabled(value);
+
+    if (value) {
+      // Сразу предложить выбрать это приложение и поставить "Всегда" —
+      // без этого шага роль домашнего экрана включена, но никто её ещё
+      // фактически не выбрал.
+      await SystemService.openHomeSettings();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = _i18n[context.watch<AppNotifier>().lang]!;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  t['kiosk_enabled']!,
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                ),
+              ),
+              Switch(
+                value: _enabled,
+                onChanged: _onToggle,
+                activeThumbColor: const Color(0xFF00C6B2),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            t['kiosk_hint']!,
+            style: const TextStyle(color: Color(0xFF8899AA), fontSize: 12),
+          ),
+
+          const SizedBox(height: 28),
+          Container(height: 1, color: const Color(0xFF1A2233)),
+          const SizedBox(height: 28),
+
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: () => SystemService.openHomeSettings(),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF00C6B2),
+                side: const BorderSide(color: Color(0xFF00C6B2)),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              child: Text(
+                t['kiosk_open_desktop']!,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            t['kiosk_open_desktop_hint']!,
+            style: const TextStyle(color: Color(0xFF8899AA), fontSize: 12),
           ),
         ],
       ),
