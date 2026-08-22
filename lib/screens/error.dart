@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
+import '../widgets/fog_background.dart';
 import '../widgets/lang_switcher.dart';
 
 class ErrorScreen extends StatefulWidget {
@@ -20,11 +21,7 @@ class _ErrorScreenState extends State<ErrorScreen>
 
   // Локализованные сообщения по коду ошибки
   static const _errorMessages = {
-    'overheat': {
-      'et': 'Ülekuumenemine',
-      'en': 'Overheating',
-      'ru': 'Перегрев',
-    },
+    'overheat': {'et': 'Ülekuumenemine', 'en': 'Overheating', 'ru': 'Перегрев'},
     'timeout': {
       'et': 'Soojenduse aeg ületatud',
       'en': 'Heating timeout',
@@ -80,8 +77,12 @@ class _ErrorScreenState extends State<ErrorScreen>
   };
 
   String _t(String key, String lang, [String code = 'generic']) {
-    if (key == 'title') return _errorMessages[code]?[lang] ?? _errorMessages['generic']![lang]!;
-    if (key == 'detail') return _errorDetails[code]?[lang] ?? _errorDetails['generic']![lang]!;
+    if (key == 'title') {
+      return _errorMessages[code]?[lang] ?? _errorMessages['generic']![lang]!;
+    }
+    if (key == 'detail') {
+      return _errorDetails[code]?[lang] ?? _errorDetails['generic']![lang]!;
+    }
     return _labels[key]?[lang] ?? '';
   }
 
@@ -131,130 +132,141 @@ class _ErrorScreenState extends State<ErrorScreen>
 
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E1A),
-      body: SafeArea(
-        child: Stack(
-          children: [
-            // Lang switcher
-            Positioned(
-              top: 16,
-              right: 16,
-              child: LangSwitcher(current: lang, onChanged: notifier.setLanguage),
-            ),
+      body: FogBackground(
+        // Красный акцент — экран ошибки (Задача 1.4).
+        accentColor: const Color(0xFFE53935),
+        child: SafeArea(
+          child: Stack(
+            children: [
+              // Lang switcher
+              Positioned(
+                top: 16,
+                right: 16,
+                child: LangSwitcher(
+                  current: lang,
+                  onChanged: notifier.setLanguage,
+                ),
+              ),
 
-            // Main content
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 32),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    // Shake + error icon
-                    AnimatedBuilder(
-                      animation: _shakeAnimation,
-                      builder: (context, child) => Transform.translate(
-                        offset: Offset(_shakeAnimation.value, 0),
-                        child: child,
-                      ),
-                      child: Container(
-                        width: 120,
-                        height: 120,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: const Color(0xFFE53935).withValues(alpha: 0.12),
-                          border: Border.all(
-                            color: const Color(0xFFE53935),
-                            width: 3,
-                          ),
+              // Main content
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // Shake + error icon
+                      AnimatedBuilder(
+                        animation: _shakeAnimation,
+                        builder: (context, child) => Transform.translate(
+                          offset: Offset(_shakeAnimation.value, 0),
+                          child: child,
                         ),
-                        child: const Icon(
-                          Icons.error_outline_rounded,
-                          color: Color(0xFFE53935),
-                          size: 72,
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 32),
-
-                    // Error title
-                    Text(
-                      _t('title', lang, code),
-                      style: const TextStyle(
-                        color: Color(0xFFE53935),
-                        fontSize: 26,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 0.5,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    // Error detail
-                    Text(
-                      _t('detail', lang, code),
-                      style: const TextStyle(
-                        color: Color(0xFF8899AA),
-                        fontSize: 15,
-                        height: 1.5,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    // Contact staff
-                    Text(
-                      _t('contact', lang),
-                      style: const TextStyle(
-                        color: Color(0xFF556677),
-                        fontSize: 14,
-                        height: 1.5,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-
-                    const SizedBox(height: 48),
-
-                    // Countdown
-                    Column(
-                      children: [
-                        Text(
-                          _t('returning', lang),
-                          style: const TextStyle(
-                            color: Color(0xFF556677),
-                            fontSize: 14,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Container(
-                          width: 56,
-                          height: 56,
+                        child: Container(
+                          width: 120,
+                          height: 120,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
+                            color: const Color(
+                              0xFFE53935,
+                            ).withValues(alpha: 0.12),
                             border: Border.all(
-                              color: const Color(0xFFE53935).withValues(alpha: 0.4),
-                              width: 2,
+                              color: const Color(0xFFE53935),
+                              width: 3,
                             ),
                           ),
-                          child: Center(
-                            child: Text(
-                              '$_secondsLeft${_t('sec', lang)}',
-                              style: const TextStyle(
-                                color: Color(0xFFE53935),
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
+                          child: const Icon(
+                            Icons.error_outline_rounded,
+                            color: Color(0xFFE53935),
+                            size: 72,
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 32),
+
+                      // Error title
+                      Text(
+                        _t('title', lang, code),
+                        style: const TextStyle(
+                          color: Color(0xFFE53935),
+                          fontSize: 26,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.5,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      // Error detail
+                      Text(
+                        _t('detail', lang, code),
+                        style: const TextStyle(
+                          color: Color(0xFF8899AA),
+                          fontSize: 15,
+                          height: 1.5,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      // Contact staff
+                      Text(
+                        _t('contact', lang),
+                        style: const TextStyle(
+                          color: Color(0xFF556677),
+                          fontSize: 14,
+                          height: 1.5,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+
+                      const SizedBox(height: 48),
+
+                      // Countdown
+                      Column(
+                        children: [
+                          Text(
+                            _t('returning', lang),
+                            style: const TextStyle(
+                              color: Color(0xFF556677),
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Container(
+                            width: 56,
+                            height: 56,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: const Color(
+                                  0xFFE53935,
+                                ).withValues(alpha: 0.4),
+                                width: 2,
+                              ),
+                            ),
+                            child: Center(
+                              child: Text(
+                                '$_secondsLeft${_t('sec', lang)}',
+                                style: const TextStyle(
+                                  color: Color(0xFFE53935),
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

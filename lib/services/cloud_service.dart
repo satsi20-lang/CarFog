@@ -310,7 +310,7 @@ class CloudService {
   // здесь нет зависимости от package_info_plus, чтобы не тащить лишний
   // плагин ради одной строки; при желании завести единый источник истины
   // это можно сделать отдельно.
-  static const String appVersion = '1.1.1';
+  static const String appVersion = '1.2.0';
 
   static const _queueKey = 'cloud_event_queue';
   static const _maxQueue = 500;

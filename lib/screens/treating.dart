@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../services/modbus_service.dart';
 import '../services/session_service.dart';
+import '../widgets/fog_background.dart';
 import '../widgets/lang_switcher.dart';
 
 const Map<String, Map<String, String>> i18n = {
@@ -82,8 +83,7 @@ class _TreatingScreenState extends State<TreatingScreen>
       context.read<AppNotifier>().config.treatmentDurationS;
   int get _compressorDelay =>
       context.read<AppNotifier>().config.compressorPurgeS;
-  int get _shutdownDelay =>
-      context.read<AppNotifier>().config.pumpAfterHeaterS;
+  int get _shutdownDelay => context.read<AppNotifier>().config.pumpAfterHeaterS;
   int get _flavorIndex => context.read<AppNotifier>().selectedFlavor ?? 0;
 
   @override
@@ -248,12 +248,8 @@ class _TreatingScreenState extends State<TreatingScreen>
         titleColor = const Color(0xFFFFAA00);
         break;
       case _Phase.treating:
-        title = _isBlinking
-            ? t['warning_title']!
-            : t['treating_title']!;
-        subtitle = _isBlinking
-            ? t['warning_sub']!
-            : t['treating_sub']!;
+        title = _isBlinking ? t['warning_title']! : t['treating_title']!;
+        subtitle = _isBlinking ? t['warning_sub']! : t['treating_sub']!;
         titleColor = _isBlinking ? Colors.redAccent : const Color(0xFFFF3333);
         break;
       case _Phase.shutdown:
@@ -270,119 +266,138 @@ class _TreatingScreenState extends State<TreatingScreen>
           backgroundColor: _isBlinking
               ? _bgColorAnim.value
               : const Color(0xFF1A1A1A),
-          body: SafeArea(
-            child: Row(
-              children: [
-                // Левая колонка: заголовок, аромат, индикатор фаз
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                title,
-                                style: TextStyle(
-                                  color: titleColor,
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
+          // paintBase: false — заливку уже даёт Scaffold.backgroundColor
+          // выше (в том числе мигание последних секунд), дублировать её
+          // не нужно. intensity гасится в ноль на время мигания — та
+          // анимация главнее и не должна перекрываться дымкой (Задача
+          // 3.3).
+          body: FogBackground(
+            paintBase: false,
+            intensity: _isBlinking ? 0 : 0.14,
+            child: SafeArea(
+              child: Row(
+                children: [
+                  // Левая колонка: заголовок, аромат, индикатор фаз
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  title,
+                                  style: TextStyle(
+                                    color: titleColor,
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
-                            ),
-                            LangSwitcher(
-                                current: lang, onChanged: notifier.setLanguage),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          subtitle,
-                          style: const TextStyle(
-                              color: Colors.white60, fontSize: 13),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          '${t['flavor']!}: $flavorName',
-                          style: const TextStyle(
-                            color: Color(0xFF2EC4B6),
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
+                              LangSwitcher(
+                                current: lang,
+                                onChanged: notifier.setLanguage,
+                              ),
+                            ],
                           ),
-                        ),
-                        const Spacer(),
-                        // Индикатор текущей фазы
-                        Row(
-                          children: [
-                            _PhaseIndicator(
-                              active: _phase == _Phase.compressor,
-                              done: _phase != _Phase.compressor,
-                              label: '1',
+                          const SizedBox(height: 8),
+                          Text(
+                            subtitle,
+                            style: const TextStyle(
+                              color: Colors.white60,
+                              fontSize: 13,
                             ),
-                            const SizedBox(width: 8),
-                            Expanded(
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            '${t['flavor']!}: $flavorName',
+                            style: const TextStyle(
+                              color: Color(0xFF2EC4B6),
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const Spacer(),
+                          // Индикатор текущей фазы
+                          Row(
+                            children: [
+                              _PhaseIndicator(
+                                active: _phase == _Phase.compressor,
+                                done: _phase != _Phase.compressor,
+                                label: '1',
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
                                 child: Container(
-                                    height: 2, color: Colors.white24)),
-                            const SizedBox(width: 8),
-                            _PhaseIndicator(
-                              active: _phase == _Phase.treating,
-                              done: _phase == _Phase.shutdown,
-                              label: '2',
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
+                                  height: 2,
+                                  color: Colors.white24,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              _PhaseIndicator(
+                                active: _phase == _Phase.treating,
+                                done: _phase == _Phase.shutdown,
+                                label: '2',
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
                                 child: Container(
-                                    height: 2, color: Colors.white24)),
-                            const SizedBox(width: 8),
-                            _PhaseIndicator(
-                              active: _phase == _Phase.shutdown,
-                              done: false,
-                              label: '3',
-                            ),
-                          ],
-                        ),
-                      ],
+                                  height: 2,
+                                  color: Colors.white24,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              _PhaseIndicator(
+                                active: _phase == _Phase.shutdown,
+                                done: false,
+                                label: '3',
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
 
-                Container(width: 1, color: const Color(0xFF2E2E2E)),
+                  Container(width: 1, color: const Color(0xFF2E2E2E)),
 
-                // Правая колонка: большой таймер + прогресс-бар
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          '$_secondsLeft ${t['seconds']!}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 72,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(10),
-                          child: LinearProgressIndicator(
-                            value: _progress,
-                            minHeight: 24,
-                            backgroundColor: const Color(0xFF2E2E2E),
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              _phase == _Phase.treating
-                                  ? const Color(0xFFFF3333)
-                                  : const Color(0xFF2EC4B6),
+                  // Правая колонка: большой таймер + прогресс-бар
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            '$_secondsLeft ${t['seconds']!}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 72,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 16),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: LinearProgressIndicator(
+                              value: _progress,
+                              minHeight: 24,
+                              backgroundColor: const Color(0xFF2E2E2E),
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                _phase == _Phase.treating
+                                    ? const Color(0xFFFF3333)
+                                    : const Color(0xFF2EC4B6),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         );
@@ -407,23 +422,24 @@ class _PhaseIndicator extends StatelessWidget {
     Color color;
     if (done) {
       color = const Color(0xFF2EC4B6);
-    } else if (active) color = const Color(0xFFFF3333);
-    else color = Colors.white24;
+    } else if (active) {
+      color = const Color(0xFFFF3333);
+    } else {
+      color = Colors.white24;
+    }
 
     return Container(
       width: 36,
       height: 36,
-      decoration: BoxDecoration(
-        color: color,
-        shape: BoxShape.circle,
-      ),
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
       child: Center(
         child: Text(
           done ? '✓' : label,
           style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-              fontSize: 16),
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+          ),
         ),
       ),
     );

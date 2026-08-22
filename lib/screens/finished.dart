@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
+import '../widgets/fog_background.dart';
 import '../widgets/lang_switcher.dart';
 
 class FinishedScreen extends StatefulWidget {
@@ -19,13 +20,21 @@ class _FinishedScreenState extends State<FinishedScreen>
   int _secondsLeft = 5;
 
   static const _labels = {
-    'title': {'et': 'Töötlus lõpetatud!', 'en': 'Treatment complete!', 'ru': 'Обработка завершена!'},
+    'title': {
+      'et': 'Töötlus lõpetatud!',
+      'en': 'Treatment complete!',
+      'ru': 'Обработка завершена!',
+    },
     'subtitle': {
       'et': 'Teie auto salon on töödeldud kuiva uduga.',
       'en': 'Your car interior has been treated with dry fog.',
       'ru': 'Салон вашего автомобиля обработан сухим туманом.',
     },
-    'returning': {'et': 'Naaseb algusesse', 'en': 'Returning to start', 'ru': 'Возврат к началу'},
+    'returning': {
+      'et': 'Naaseb algusesse',
+      'en': 'Returning to start',
+      'ru': 'Возврат к началу',
+    },
     'sec': {'et': 's', 'en': 's', 'ru': 'с'},
   };
 
@@ -72,113 +81,122 @@ class _FinishedScreenState extends State<FinishedScreen>
 
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E1A),
-      body: SafeArea(
-        child: Stack(
-          children: [
-            // Lang switcher
-            Positioned(
-              top: 16,
-              right: 16,
-              child: LangSwitcher(current: lang, onChanged: notifier.setLanguage),
-            ),
+      body: FogBackground(
+        child: SafeArea(
+          child: Stack(
+            children: [
+              // Lang switcher
+              Positioned(
+                top: 16,
+                right: 16,
+                child: LangSwitcher(
+                  current: lang,
+                  onChanged: notifier.setLanguage,
+                ),
+              ),
 
-            // Main content
-            Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  // Animated checkmark
-                  ScaleTransition(
-                    scale: _scaleAnimation,
-                    child: Container(
-                      width: 120,
-                      height: 120,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: const Color(0xFF00C6B2).withValues(alpha: 0.15),
-                        border: Border.all(
-                          color: const Color(0xFF00C6B2),
-                          width: 3,
+              // Main content
+              Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // Animated checkmark
+                    ScaleTransition(
+                      scale: _scaleAnimation,
+                      child: Container(
+                        width: 120,
+                        height: 120,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: const Color(
+                            0xFF00C6B2,
+                          ).withValues(alpha: 0.15),
+                          border: Border.all(
+                            color: const Color(0xFF00C6B2),
+                            width: 3,
+                          ),
+                        ),
+                        child: const Icon(
+                          Icons.check_rounded,
+                          color: Color(0xFF00C6B2),
+                          size: 72,
                         ),
                       ),
-                      child: const Icon(
-                        Icons.check_rounded,
-                        color: Color(0xFF00C6B2),
-                        size: 72,
-                      ),
                     ),
-                  ),
 
-                  const SizedBox(height: 32),
+                    const SizedBox(height: 32),
 
-                  // Title
-                  Text(
-                    _t('title', lang),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.5,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // Subtitle
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 40),
-                    child: Text(
-                      _t('subtitle', lang),
+                    // Title
+                    Text(
+                      _t('title', lang),
                       style: const TextStyle(
-                        color: Color(0xFF8899AA),
-                        fontSize: 16,
-                        height: 1.5,
+                        color: Colors.white,
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.5,
                       ),
                       textAlign: TextAlign.center,
                     ),
-                  ),
 
-                  const SizedBox(height: 48),
+                    const SizedBox(height: 16),
 
-                  // Countdown
-                  Column(
-                    children: [
-                      Text(
-                        _t('returning', lang),
+                    // Subtitle
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 40),
+                      child: Text(
+                        _t('subtitle', lang),
                         style: const TextStyle(
-                          color: Color(0xFF556677),
-                          fontSize: 14,
+                          color: Color(0xFF8899AA),
+                          fontSize: 16,
+                          height: 1.5,
                         ),
+                        textAlign: TextAlign.center,
                       ),
-                      const SizedBox(height: 8),
-                      Container(
-                        width: 56,
-                        height: 56,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: const Color(0xFF00C6B2).withValues(alpha: 0.4),
-                            width: 2,
+                    ),
+
+                    const SizedBox(height: 48),
+
+                    // Countdown
+                    Column(
+                      children: [
+                        Text(
+                          _t('returning', lang),
+                          style: const TextStyle(
+                            color: Color(0xFF556677),
+                            fontSize: 14,
                           ),
                         ),
-                        child: Center(
-                          child: Text(
-                            '$_secondsLeft${_t('sec', lang)}',
-                            style: const TextStyle(
-                              color: Color(0xFF00C6B2),
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
+                        const SizedBox(height: 8),
+                        Container(
+                          width: 56,
+                          height: 56,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: const Color(
+                                0xFF00C6B2,
+                              ).withValues(alpha: 0.4),
+                              width: 2,
+                            ),
+                          ),
+                          child: Center(
+                            child: Text(
+                              '$_secondsLeft${_t('sec', lang)}',
+                              style: const TextStyle(
+                                color: Color(0xFF00C6B2),
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                ],
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

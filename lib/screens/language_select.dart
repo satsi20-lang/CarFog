@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
+import '../widgets/fog_background.dart';
 
 class LanguageSelectScreen extends StatelessWidget {
   const LanguageSelectScreen({super.key});
@@ -8,27 +9,29 @@ class LanguageSelectScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Text(
-              'ВЫБЕРИТЕ ЯЗЫК\nSELECT LANGUAGE\nVALI KEEL',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                height: 1.6,
+      body: FogBackground(
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text(
+                'ВЫБЕРИТЕ ЯЗЫК\nSELECT LANGUAGE\nVALI KEEL',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  height: 1.6,
+                ),
               ),
-            ),
-            const SizedBox(height: 60),
-            _LangButton(label: 'Eesti', lang: 'et'),
-            const SizedBox(height: 20),
-            _LangButton(label: 'English', lang: 'en'),
-            const SizedBox(height: 20),
-            _LangButton(label: 'Русский', lang: 'ru'),
-          ],
+              const SizedBox(height: 60),
+              _LangButton(label: 'Eesti', lang: 'et'),
+              const SizedBox(height: 20),
+              _LangButton(label: 'English', lang: 'en'),
+              const SizedBox(height: 20),
+              _LangButton(label: 'Русский', lang: 'ru'),
+            ],
+          ),
         ),
       ),
     );
