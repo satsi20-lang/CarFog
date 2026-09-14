@@ -47,6 +47,21 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
     private var paymentPollingThread: Thread? = null
     private val paymentPollingActive = AtomicBoolean(false)
 
+    // Платёжный терминал (задача "терминал") — в отличие от монетоприёмника,
+    // здесь НЕТ своего потока: правило проекта на этот шаг прямо запрещает
+    // заводить новые потоки под обработчики, опрос ведёт Dart через
+    // Timer.periodic, каждый тик — один вызов "pollTerminal" через уже
+    // существующую фоновую очередь канала. Состояние между тиками просто
+    // живёт в полях экземпляра — тот же ModbusChannel обслуживает все тики
+    // подряд, пока жив FlutterEngine.
+    private var terminalLastState = false
+    private var terminalStateChangedAt = 0L
+    private var terminalLastConfirmedAt = 0L
+    private val terminalJournal = ArrayDeque<String>()
+    private val TERMINAL_JOURNAL_MAX = 300
+    private val terminalTimeFormat =
+        java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.US)
+
     init {
         channel.setMethodCallHandler(this)
     }
@@ -73,10 +88,16 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
 
             "isOpen" -> result.success(modbus?.isOpen() == true)
 
-            // Читает все 8 DI датчиков уровня (каналы 0-7)
-            "readLevels" -> {
-                val di = modbus?.readDiscreteInputs(SLAVE_DIO, 0, 8)
-                if (di == null) result.error("MODBUS", "readLevels failed", null)
+            // Читает ВСЕ 16 DI одной транзакцией — один запрос на 16 входов
+            // стоит по времени столько же, сколько на 8 (время уходит на
+            // служебную часть кадра, не на число бит). Каналы 0-7 — уровни
+            // канистр, 8 — монетоприёмник, 10 (по умолчанию, настраивается)
+            // — платёжный терминал. Раньше уровни читались отдельным
+            // 8-битным запросом ("readLevels") — теперь то же самое отдаёт
+            // этот же более широкий запрос, разбор по каналам делает Dart.
+            "readAllInputs" -> {
+                val di = modbus?.readDiscreteInputs(SLAVE_DIO, 0, 16)
+                if (di == null) result.error("MODBUS", "readAllInputs failed", null)
                 else result.success(di.map { it })
             }
 
@@ -169,6 +190,35 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
 
             // Номинал последней принятой монеты в центах (0 = новой монеты нет)
             "getLastCoinCents" -> result.success(getLastCoinCents())
+
+            // Один опрос платёжного терминала — читает канал, сравнивает с
+            // прошлым известным состоянием, при фронте пишет в журнал и, если
+            // фронт "тот самый" (по режиму) и не попал в защитную паузу —
+            // засчитывает оплату. Вызывается часто (Dart Timer.periodic), но
+            // сам не заводит поток — см. комментарий у полей terminal* выше.
+            "pollTerminal" -> {
+                val ch = call.argument<Int>("channel") ?: 10
+                val mode = call.argument<String>("mode") ?: "edge"
+                val guardMs = (call.argument<Int>("guardMs") ?: 3000).toLong()
+                val di = modbus?.readDiscreteInputs(SLAVE_DIO, ch, 1, timeoutMs = 150L)
+                if (di == null) {
+                    result.error("MODBUS", "pollTerminal failed", null)
+                } else {
+                    val raw = di[0]
+                    result.success(mapOf("state" to raw, "confirmed" to pollTerminalEdge(raw, mode, guardMs)))
+                }
+            }
+
+            // Журнал сигнала терминала — кольцевой буфер строк для калибровки
+            // (см. pollTerminalEdge/addTerminalLog). Не зависит от того, кто
+            // именно опрашивает канал — экран оплаты, вкладка "Датчики" или
+            // фоновая проверка вне экрана оплаты.
+            "getTerminalJournal" -> result.success(terminalJournal.toList())
+
+            "clearTerminalJournal" -> {
+                terminalJournal.clear()
+                result.success(null)
+            }
 
             else -> result.notImplemented()
         }
@@ -329,4 +379,60 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
     }
 
     private fun getLastCoinCents(): Int = lastCoinCents.getAndSet(0)
+
+    // Один тик опроса терминала: обновляет terminalLastState, пишет фронт в
+    // журнал (с длительностью предыдущего состояния — по этому можно
+    // восстановить форму сигнала, задача 3.3), и решает, засчитывать ли
+    // оплату.
+    //
+    // Режимы (форма сигнала не измерена заранее, отсюда оба):
+    //  - "edge"  — короткий импульс на каждую оплату: считаем по
+    //    восходящему фронту (false→true).
+    //  - "level" — вход удерживается на время транзакции: считаем по
+    //    НИСХОДЯЩЕМУ фронту (true→false) — то есть когда терминал
+    //    отпускает линию после завершения транзакции, а не в момент её
+    //    начала. Если на практике окажется иначе — это ровно то, ради
+    //    чего затевался журнал: смотрим записи и меняем логику здесь.
+    // Защитная пауза (guardMs) отсчитывается от последней ЗАСЧИТАННОЙ
+    // оплаты, не от последнего фронта — так дребезг вокруг границы паузы
+    // не запускает её заново на каждый мелкий скачок.
+    private fun pollTerminalEdge(raw: Boolean, mode: String, guardMs: Long): Boolean {
+        if (raw == terminalLastState) return false
+
+        val now = System.currentTimeMillis()
+        val heldMs = now - terminalStateChangedAt
+        addTerminalLog(
+            "фронт ${if (terminalLastState) 1 else 0}→${if (raw) 1 else 0} " +
+                "(предыдущее состояние держалось ${heldMs} мс)"
+        )
+        terminalStateChangedAt = now
+
+        // raw уже гарантированно отличается от terminalLastState (проверено
+        // выше) — значит это либо восходящий (false→true), либо нисходящий
+        // (true→false) фронт, третьего не дано. "edge" хочет восходящий
+        // (qualifies = raw), "level" — нисходящий (qualifies = !raw).
+        val qualifies = if (mode == "level") !raw else raw
+        terminalLastState = raw
+        if (!qualifies) return false
+
+        val sinceLastConfirm = now - terminalLastConfirmedAt
+        if (sinceLastConfirm < guardMs) {
+            addTerminalLog(
+                "отклонено защитной паузой (прошло ${sinceLastConfirm} мс из ${guardMs} мс)"
+            )
+            return false
+        }
+
+        terminalLastConfirmedAt = now
+        addTerminalLog("ОПЛАТА ЗАСЧИТАНА (режим $mode)")
+        return true
+    }
+
+    private fun addTerminalLog(line: String) {
+        val ts = terminalTimeFormat.format(java.util.Date())
+        terminalJournal.addLast("$ts $line")
+        while (terminalJournal.size > TERMINAL_JOURNAL_MAX) {
+            terminalJournal.removeFirst()
+        }
+    }
 }

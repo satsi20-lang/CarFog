@@ -53,6 +53,25 @@ const Map<String, Map<String, String>> _i18n = {
     'sensor_label': 'Датчик',
     'sensor_has_fluid': 'Есть жидкость',
     'sensor_error': 'Ошибка чтения',
+    'terminal_section': 'Платёжный терминал',
+    'terminal_enabled': 'Терминал подключён',
+    'terminal_channel': 'Канал DI',
+    'terminal_mode': 'Режим распознавания',
+    'terminal_mode_edge': 'По фронту (импульс)',
+    'terminal_mode_level': 'По уровню (удержание)',
+    'terminal_guard': 'Защитная пауза (мс)',
+    'terminal_state': 'Вход сейчас',
+    'terminal_state_high': 'ВЫСОКИЙ',
+    'terminal_state_low': 'НИЗКИЙ',
+    'terminal_state_unknown': '—',
+    'terminal_observe_start': 'Начать наблюдение',
+    'terminal_observe_stop': 'Остановить наблюдение',
+    'terminal_journal': 'Журнал сигнала',
+    'terminal_journal_clear': 'Очистить журнал',
+    'terminal_journal_empty':
+        'Пока пусто — начните наблюдение и приложите карту к терминалу',
+    'err_terminal_channel': 'Канал: 0–15',
+    'err_terminal_guard': 'Защитная пауза: минимум 100 мс',
     'diag_energy': 'Счётчик энергии',
     'energy_voltage': 'Напряжение',
     'energy_current': 'Ток',
@@ -132,6 +151,25 @@ const Map<String, Map<String, String>> _i18n = {
     'sensor_label': 'Sensor',
     'sensor_has_fluid': 'Liquid present',
     'sensor_error': 'Read error',
+    'terminal_section': 'Payment terminal',
+    'terminal_enabled': 'Terminal connected',
+    'terminal_channel': 'DI channel',
+    'terminal_mode': 'Detection mode',
+    'terminal_mode_edge': 'Edge (short pulse)',
+    'terminal_mode_level': 'Level (held during transaction)',
+    'terminal_guard': 'Guard delay (ms)',
+    'terminal_state': 'Input now',
+    'terminal_state_high': 'HIGH',
+    'terminal_state_low': 'LOW',
+    'terminal_state_unknown': '—',
+    'terminal_observe_start': 'Start observing',
+    'terminal_observe_stop': 'Stop observing',
+    'terminal_journal': 'Signal log',
+    'terminal_journal_clear': 'Clear log',
+    'terminal_journal_empty':
+        'Empty so far — start observing and tap a card on the terminal',
+    'err_terminal_channel': 'Channel: 0–15',
+    'err_terminal_guard': 'Guard delay: 100 ms minimum',
     'diag_energy': 'Energy meter',
     'energy_voltage': 'Voltage',
     'energy_current': 'Current',
@@ -211,6 +249,25 @@ const Map<String, Map<String, String>> _i18n = {
     'sensor_label': 'Andur',
     'sensor_has_fluid': 'Vedelik olemas',
     'sensor_error': 'Lugemisviga',
+    'terminal_section': 'Maksepterminal',
+    'terminal_enabled': 'Terminal ühendatud',
+    'terminal_channel': 'DI kanal',
+    'terminal_mode': 'Tuvastusrežiim',
+    'terminal_mode_edge': 'Fronditi (lühiimpulss)',
+    'terminal_mode_level': 'Taseme järgi (hoitakse tehingu ajal)',
+    'terminal_guard': 'Kaitsepaus (ms)',
+    'terminal_state': 'Sisend praegu',
+    'terminal_state_high': 'KÕRGE',
+    'terminal_state_low': 'MADAL',
+    'terminal_state_unknown': '—',
+    'terminal_observe_start': 'Alusta jälgimist',
+    'terminal_observe_stop': 'Peata jälgimine',
+    'terminal_journal': 'Signaali logi',
+    'terminal_journal_clear': 'Tühjenda logi',
+    'terminal_journal_empty':
+        'Veel tühi — alusta jälgimist ja puuduta kaardiga terminali',
+    'err_terminal_channel': 'Kanal: 0–15',
+    'err_terminal_guard': 'Kaitsepaus: vähemalt 100 ms',
     'diag_energy': 'Energiamõõtja',
     'energy_voltage': 'Pinge',
     'energy_current': 'Vool',
@@ -1124,6 +1181,41 @@ class _SensorsTabState extends State<_SensorsTab> {
   bool _loading = false;
   String? _error;
 
+  // --- Платёжный терминал (задача "терминал", задача 7) ---
+  late TextEditingController _terminalChannelCtrl;
+  late TextEditingController _terminalGuardCtrl;
+  late String _terminalMode;
+  late bool _terminalEnabled;
+  bool? _terminalState;
+  List<String> _terminalJournal = [];
+  Timer? _terminalObserveTimer;
+  bool _observing = false;
+  // Последнее известное состояние ВСЕХ 16 входов — только для диагностики
+  // "правильный ли канал терминала выбран" (см. _pollTerminalOnce).
+  List<bool>? _lastAllChannels;
+
+  @override
+  void initState() {
+    super.initState();
+    final cfg = context.read<AppNotifier>().config;
+    _terminalChannelCtrl = TextEditingController(
+      text: cfg.paymentTerminalChannel.toString(),
+    );
+    _terminalGuardCtrl = TextEditingController(
+      text: cfg.paymentTerminalGuardMs.toString(),
+    );
+    _terminalMode = cfg.paymentTerminalMode;
+    _terminalEnabled = cfg.paymentTerminalEnabled;
+  }
+
+  @override
+  void dispose() {
+    _terminalObserveTimer?.cancel();
+    _terminalChannelCtrl.dispose();
+    _terminalGuardCtrl.dispose();
+    super.dispose();
+  }
+
   Future<void> _readSensors() async {
     setState(() {
       _loading = true;
@@ -1141,9 +1233,99 @@ class _SensorsTabState extends State<_SensorsTab> {
     });
   }
 
+  // Наблюдение опрашивает КАНАЛ/РЕЖИМ/ПАУЗУ прямо из полей ввода, ещё не
+  // сохранённых в конфиг — так техник может подбирать параметры и сразу
+  // проверять результат по журналу, не сохраняя на каждой попытке.
+  void _toggleObserve() {
+    if (_observing) {
+      _terminalObserveTimer?.cancel();
+      setState(() => _observing = false);
+      return;
+    }
+    setState(() => _observing = true);
+    _pollTerminalOnce();
+    _terminalObserveTimer = Timer.periodic(
+      const Duration(milliseconds: 100),
+      (_) => _pollTerminalOnce(),
+    );
+  }
+
+  Future<void> _pollTerminalOnce() async {
+    final channel = int.tryParse(_terminalChannelCtrl.text) ?? 10;
+    final guard = int.tryParse(_terminalGuardCtrl.text) ?? 3000;
+    final poll = await ModbusService.pollTerminal(
+      channel: channel,
+      mode: _terminalMode,
+      guardMs: guard,
+    );
+    final journal = await ModbusService.getTerminalJournal();
+
+    // Диагностика "правильный ли канал выбран" — на случай, если карта
+    // реально прошла, а на настроенном канале ничего не изменилось.
+    // Читаем те же 16 входов, что и раньше (задача 1) — лишнего запроса
+    // к шине не добавляет, отдельная от pollTerminal транзакция. Любое
+    // изменение на ЛЮБОМ канале печатается в лог отладки — видно через
+    // adb logcat.
+    final all = await ModbusService.readAllInputs();
+    if (all != null) {
+      final last = _lastAllChannels;
+      if (last != null) {
+        for (var i = 0; i < all.length && i < last.length; i++) {
+          if (all[i] != last[i]) {
+            debugPrint(
+              'TERMINAL DEBUG: DI$i ${last[i] ? 1 : 0}→${all[i] ? 1 : 0} '
+              'в ${DateTime.now().toIso8601String()}',
+            );
+          }
+        }
+      }
+      _lastAllChannels = all;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      if (poll != null) _terminalState = poll.state;
+      _terminalJournal = journal;
+    });
+  }
+
+  Future<void> _clearTerminalJournal() async {
+    await ModbusService.clearTerminalJournal();
+    if (!mounted) return;
+    setState(() => _terminalJournal = []);
+  }
+
+  void _saveTerminalSettings() {
+    final notifier = context.read<AppNotifier>();
+    final t = _i18n[notifier.lang]!;
+    final channel = int.tryParse(_terminalChannelCtrl.text);
+    final guard = int.tryParse(_terminalGuardCtrl.text);
+    if (channel == null || channel < 0 || channel > 15) {
+      _snack(t['err_terminal_channel']!);
+      return;
+    }
+    if (guard == null || guard < 100) {
+      _snack(t['err_terminal_guard']!);
+      return;
+    }
+    final updated = notifier.config.copyWith(
+      paymentTerminalChannel: channel,
+      paymentTerminalMode: _terminalMode,
+      paymentTerminalGuardMs: guard,
+      paymentTerminalEnabled: _terminalEnabled,
+    );
+    notifier.saveConfig(updated);
+    _snack(t['saved']!);
+  }
+
+  void _snack(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = _i18n[context.watch<AppNotifier>().lang]!;
+    final journal = _terminalJournal.reversed.toList(); // новые сверху
 
     return ListView(
       padding: const EdgeInsets.all(24),
@@ -1182,7 +1364,235 @@ class _SensorsTabState extends State<_SensorsTab> {
             child: _SensorRow(index: i, value: value, t: t),
           );
         }),
+
+        const SizedBox(height: 28),
+        Container(height: 1, color: const Color(0xFF1A2233)),
+        const SizedBox(height: 20),
+
+        Text(
+          t['terminal_section']!,
+          style: const TextStyle(
+            color: Color(0xFF556677),
+            fontWeight: FontWeight.bold,
+            fontSize: 13,
+          ),
+        ),
+        const SizedBox(height: 12),
+        _ToggleRow(
+          label: t['terminal_enabled']!,
+          value: _terminalEnabled,
+          onChanged: (v) => setState(() => _terminalEnabled = v),
+        ),
+        const SizedBox(height: 12),
+        _Field(
+          label: t['terminal_channel']!,
+          controller: _terminalChannelCtrl,
+          keyboardType: TextInputType.number,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+        ),
+        const SizedBox(height: 16),
+        Text(
+          t['terminal_mode']!,
+          style: const TextStyle(color: Color(0xFF8899AA), fontSize: 13),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: _ModeButton(
+                label: t['terminal_mode_edge']!,
+                selected: _terminalMode == 'edge',
+                onTap: () => setState(() => _terminalMode = 'edge'),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _ModeButton(
+                label: t['terminal_mode_level']!,
+                selected: _terminalMode == 'level',
+                onTap: () => setState(() => _terminalMode = 'level'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        _Field(
+          label: t['terminal_guard']!,
+          controller: _terminalGuardCtrl,
+          keyboardType: TextInputType.number,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+        ),
+        const SizedBox(height: 16),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: _saveTerminalSettings,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF00C6B2),
+              foregroundColor: Colors.black,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ),
+            child: Text(
+              t['save']!,
+              style:
+                  const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 20),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF141B29),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              Text(
+                '${t['terminal_state']}:',
+                style: const TextStyle(color: Colors.white, fontSize: 14),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                _terminalState == null
+                    ? t['terminal_state_unknown']!
+                    : (_terminalState!
+                        ? t['terminal_state_high']!
+                        : t['terminal_state_low']!),
+                style: TextStyle(
+                  color: _terminalState == true
+                      ? const Color(0xFF00C6B2)
+                      : const Color(0xFF556677),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: _toggleObserve,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF00C6B2),
+                  side: const BorderSide(color: Color(0xFF00C6B2)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                child: Text(
+                  _observing
+                      ? t['terminal_observe_stop']!
+                      : t['terminal_observe_start']!,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            OutlinedButton(
+              onPressed: _terminalJournal.isEmpty ? null : _clearTerminalJournal,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF556677),
+                side: const BorderSide(color: Color(0xFF556677)),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 16, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              child: Text(t['terminal_journal_clear']!),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Text(
+          t['terminal_journal']!,
+          style: const TextStyle(
+            color: Color(0xFF556677),
+            fontWeight: FontWeight.bold,
+            fontSize: 13,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          height: 220,
+          width: double.infinity,
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: const Color(0xFF141B29),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: journal.isEmpty
+              ? Center(
+                  child: Text(
+                    t['terminal_journal_empty']!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                        color: Color(0xFF556677), fontSize: 12),
+                  ),
+                )
+              : ListView.builder(
+                  itemCount: journal.length,
+                  itemBuilder: (context, i) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Text(
+                      journal[i],
+                      style: const TextStyle(
+                        color: Color(0xFF8899AA),
+                        fontSize: 11,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                  ),
+                ),
+        ),
       ],
+    );
+  }
+}
+
+class _ModeButton extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ModeButton({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFF00C6B2).withValues(alpha: 0.15) : const Color(0xFF1A2233),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: selected ? const Color(0xFF00C6B2) : const Color(0xFF2E2E2E),
+            width: 1.5,
+          ),
+        ),
+        child: Text(
+          label,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: selected ? const Color(0xFF00C6B2) : const Color(0xFF8899AA),
+            fontWeight: FontWeight.bold,
+            fontSize: 13,
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1493,6 +1903,7 @@ class _JournalTabState extends State<_JournalTab> {
     'energy_reading': 'Показания энергии',
     'command_executed': 'Выполнена команда',
     'config_changed': 'Изменены настройки',
+    'unexpected_payment': 'Оплата вне экрана оплаты',
   };
 
   static const _alarmTypes = {
@@ -1501,6 +1912,7 @@ class _JournalTabState extends State<_JournalTab> {
     'factory_reset',
     'hardware_error',
     'app_started_after_crash',
+    'unexpected_payment',
   };
 
   static const _warnTypes = {

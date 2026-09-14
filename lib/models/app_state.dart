@@ -28,6 +28,22 @@ class AppConfig {
   // включается только тумблером "Киоск-режим" в сервисном меню, чтобы
   // свежая сборка на планшете разработчика не захватывала рабочий стол.
   bool kioskModeEnabled;
+
+  // Платёжный терминал (клемма DI11 модуля MBSL16DI16DO = канал 10).
+  // Форма сигнала не измерена заранее — отсюда настраиваемые режим и
+  // защитная пауза вместо жёсткой логики, калибруются по журналу на
+  // вкладке "Датчики" сервисного меню.
+  int paymentTerminalChannel;
+  // 'edge' — короткий импульс на каждую оплату, 'level' — вход
+  // удерживается на время транзакции.
+  String paymentTerminalMode;
+  // Мс — защита от того, что дребезг контакта или длинный импульс
+  // превратится в две оплаты подряд.
+  int paymentTerminalGuardMs;
+  // Пока мастер не установил терминал физически, приложение не должно
+  // реагировать на этот вход вообще — по умолчанию выключено.
+  bool paymentTerminalEnabled;
+
   Map<String, List<String>> flavorNames;
 
   AppConfig({
@@ -42,6 +58,10 @@ class AppConfig {
     this.cloudToken = '',
     this.cloudEnabled = false,
     this.kioskModeEnabled = false,
+    this.paymentTerminalChannel = 10,
+    this.paymentTerminalMode = 'edge',
+    this.paymentTerminalGuardMs = 3000,
+    this.paymentTerminalEnabled = false,
     Map<String, List<String>>? flavorNames,
   }) : flavorNames =
            flavorNames ??
@@ -90,6 +110,10 @@ class AppConfig {
     String? cloudToken,
     bool? cloudEnabled,
     bool? kioskModeEnabled,
+    int? paymentTerminalChannel,
+    String? paymentTerminalMode,
+    int? paymentTerminalGuardMs,
+    bool? paymentTerminalEnabled,
     Map<String, List<String>>? flavorNames,
   }) {
     return AppConfig(
@@ -104,6 +128,13 @@ class AppConfig {
       cloudToken: cloudToken ?? this.cloudToken,
       cloudEnabled: cloudEnabled ?? this.cloudEnabled,
       kioskModeEnabled: kioskModeEnabled ?? this.kioskModeEnabled,
+      paymentTerminalChannel:
+          paymentTerminalChannel ?? this.paymentTerminalChannel,
+      paymentTerminalMode: paymentTerminalMode ?? this.paymentTerminalMode,
+      paymentTerminalGuardMs:
+          paymentTerminalGuardMs ?? this.paymentTerminalGuardMs,
+      paymentTerminalEnabled:
+          paymentTerminalEnabled ?? this.paymentTerminalEnabled,
       flavorNames: flavorNames ?? this.flavorNames,
     );
   }

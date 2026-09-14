@@ -18,6 +18,12 @@ class SessionService {
     required String flavorNameRu,
     required int priceCents,
     required int paidCents,
+    // 'coins' | 'card' | 'mixed' (Шаг "терминал", задача 6) — 'mixed',
+    // когда картой оплатили поверх уже внесённых монет: терминал настроен
+    // на полную цену независимо от того, что уже в аппарате, так что
+    // клиент в этом случае фактически переплатил.
+    String paymentMethod = 'coins',
+    int? coinsCents,
   }) async {
     final energy = await ModbusService.readEnergy();
     _current = _Session(
@@ -25,6 +31,8 @@ class SessionService {
       flavorNameRu: flavorNameRu,
       priceCents: priceCents,
       paidCents: paidCents,
+      paymentMethod: paymentMethod,
+      coinsCents: coinsCents,
       startedAt: DateTime.now(),
       startEnergyKwh: energy?['totalEnergy'],
     );
@@ -63,8 +71,10 @@ class SessionService {
       'paid_cents': session.paidCents,
       'duration_s': durationS,
       'completed': completed,
+      'payment_method': session.paymentMethod,
     };
     if (reason != null) data['reason'] = reason;
+    if (session.coinsCents != null) data['coins_cents'] = session.coinsCents;
 
     // Расход за сессию — только если ОБА показания (старт и сейчас)
     // реально прочитались. Если хоть одно не удалось — поле не
@@ -87,6 +97,8 @@ class _Session {
   final String flavorNameRu;
   final int priceCents;
   final int paidCents;
+  final String paymentMethod;
+  final int? coinsCents;
   final DateTime startedAt;
   final double? startEnergyKwh;
   bool ended = false;
@@ -96,6 +108,8 @@ class _Session {
     required this.flavorNameRu,
     required this.priceCents,
     required this.paidCents,
+    required this.paymentMethod,
+    required this.coinsCents,
     required this.startedAt,
     required this.startEnergyKwh,
   });

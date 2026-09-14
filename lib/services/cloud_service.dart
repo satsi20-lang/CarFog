@@ -25,6 +25,11 @@ class CloudEventType {
   static const energyReading = 'energy_reading';
   static const commandExecuted = 'command_executed';
   static const configChanged = 'config_changed';
+  // Платёжный терминал сработал вне экрана оплаты (задача "терминал",
+  // задача 5) — сухой контакт живёт своей жизнью, клиент мог приложить
+  // карту в неподходящий момент. Деньги спишутся, услуга не будет
+  // оказана — обязательно долетает до оператора.
+  static const unexpectedPayment = 'unexpected_payment';
 }
 
 // ============================================================
@@ -310,7 +315,7 @@ class CloudService {
   // здесь нет зависимости от package_info_plus, чтобы не тащить лишний
   // плагин ради одной строки; при желании завести единый источник истины
   // это можно сделать отдельно.
-  static const String appVersion = '1.2.0';
+  static const String appVersion = '1.3.0';
 
   static const _queueKey = 'cloud_event_queue';
   static const _maxQueue = 500;

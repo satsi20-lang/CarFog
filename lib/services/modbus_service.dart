@@ -29,16 +29,28 @@ class ModbusService {
 
   static bool get isOpen => _open;
 
-  // Читает 8 датчиков уровня канистр. true = есть жидкость.
-  // null = ошибка чтения (не путать с настоящим "все канистры пусты").
-  static Future<List<bool>?> readLevels() async {
+  // Читает ВСЕ 16 дискретных входов одной транзакцией (каналы 0-7 —
+  // уровни канистр, 8 — монетоприёмник, остальные, включая платёжный
+  // терминал — по месту распайки). Один запрос на 16 входов стоит по
+  // времени столько же, сколько на 8 — служебная часть кадра одинакова.
+  // null = ошибка чтения.
+  static Future<List<bool>?> readAllInputs() async {
     try {
-      final result = await _channel.invokeMethod<List>('readLevels');
+      final result = await _channel.invokeMethod<List>('readAllInputs');
       return result?.map((e) => e as bool).toList();
     } catch (e) {
-      debugPrint('ModbusService.readLevels error: $e');
+      debugPrint('ModbusService.readAllInputs error: $e');
       return null;
     }
+  }
+
+  // Уровни канистр (каналы 0-7) — тонкая обёртка над readAllInputs() для
+  // мест, которым не нужны остальные каналы. true = есть жидкость.
+  // null = ошибка чтения (не путать с настоящим "все канистры пусты").
+  static Future<List<bool>?> readLevels() async {
+    final all = await readAllInputs();
+    if (all == null || all.length < 8) return null;
+    return all.sublist(0, 8);
   }
 
   // Читает сигнал монетоприёмника.
@@ -182,4 +194,59 @@ class ModbusService {
     }
   }
 
+  // Один опрос платёжного терминала: читает канал, определяет фронт и
+  // защитную паузу на стороне Kotlin (состояние между тиками хранится
+  // там), пишет в журнал. Опрашивать часто — обязанность вызывающего
+  // (Timer.periodic на стороне Dart), сам метод не заводит поток.
+  static Future<TerminalPoll?> pollTerminal({
+    required int channel,
+    required String mode,
+    required int guardMs,
+  }) async {
+    try {
+      final result = await _channel.invokeMethod<Map>('pollTerminal', {
+        'channel': channel,
+        'mode': mode,
+        'guardMs': guardMs,
+      });
+      if (result == null) return null;
+      return TerminalPoll(
+        state: result['state'] as bool,
+        confirmed: result['confirmed'] as bool,
+      );
+    } catch (e) {
+      debugPrint('ModbusService.pollTerminal error: $e');
+      return null;
+    }
+  }
+
+  // Журнал сигнала терминала — кольцевой буфер строк для калибровки
+  // (вкладка "Датчики" сервисного меню).
+  static Future<List<String>> getTerminalJournal() async {
+    try {
+      final raw = await _channel.invokeMethod<List>('getTerminalJournal');
+      return raw?.map((e) => e as String).toList() ?? [];
+    } catch (e) {
+      debugPrint('ModbusService.getTerminalJournal error: $e');
+      return [];
+    }
+  }
+
+  static Future<void> clearTerminalJournal() async {
+    try {
+      await _channel.invokeMethod('clearTerminalJournal');
+    } catch (e) {
+      debugPrint('ModbusService.clearTerminalJournal error: $e');
+    }
+  }
+}
+
+// Результат одного pollTerminal(): текущее сырое состояние входа и признак
+// "именно этим тиком засчитана оплата" (уже с учётом режима и защитной
+// паузы — см. ModbusChannel.pollTerminalEdge на нативной стороне).
+class TerminalPoll {
+  final bool state;
+  final bool confirmed;
+
+  const TerminalPoll({required this.state, required this.confirmed});
 }

@@ -9,6 +9,10 @@ import 'modbus_service.dart';
 // Раньше AppNotifier.updateLevels() существовал, но его никто не вызывал —
 // levels навсегда оставались дефолтными (все true), поэтому ни показания
 // в сервисном меню, ни фильтрация ароматов не отражали реальное железо.
+//
+// С задачи "терминал" этот же тик заодно фоново следит за платёжным
+// терминалом вне экрана оплаты (задача 5) — читает те же 16 входов одной
+// транзакцией (задача 1), лишней нагрузки на шину это не добавляет.
 class LevelService {
   static LevelService? _instance;
 
@@ -26,14 +30,24 @@ class LevelService {
   // пачка ложных событий по уже известному на старте состоянию (задача 3.3).
   final List<bool?> _lastKnown = List<bool?>.filled(kFlavorCount, null);
 
+  // То же самое, но для платёжного терминала вне экрана оплаты — своя,
+  // отдельная от payment.dart/вкладки "Датчики" база: те опрашивают канал
+  // куда чаще и для других целей (реальный приём оплаты, калибровка), не
+  // нужно путать их историю с фоновой проверкой "не приложили ли карту
+  // не вовремя".
+  bool? _terminalLastAmbient;
+  DateTime? _terminalLastAmbientEventAt;
+
   LevelService._(this.notifier);
 
   static const Duration interval = Duration(seconds: 3);
 
-  // Во время оплаты/обработки шина занята монетоприёмником и термостатом —
-  // опрос уровней в это время не нужен и только создавал бы лишнюю
-  // конкуренцию за общий лок (см. docs/coin_acceptor.md).
-  static bool _isBusyState(AppState s) {
+  // Уровни канистр по-прежнему не обновляются во время оплаты/обработки —
+  // клиенту это не показывается, а частое чтение конкурирует за шину с
+  // монетоприёмником/термостатом (см. docs/coin_acceptor.md). Терминал
+  // (ниже) от этого списка не зависит — его как раз обязательно проверять
+  // и во время обработки, см. _isFullyPausedState.
+  static bool _isLevelBusyState(AppState s) {
     switch (s) {
       case AppState.payment:
       case AppState.preparing:
@@ -44,6 +58,19 @@ class LevelService {
       default:
         return false;
     }
+  }
+
+  // Сам опрос (тик целиком) ставится на паузу гораздо реже — терминал
+  // нужно слушать и во время обработки: клиент может по ошибке приложить
+  // карту, пока идёт treating (Шаг "терминал", задача 5). Паузим только
+  // на экране оплаты (там канал терминала уже слушает свой отдельный,
+  // более быстрый опрос — см. payment.dart) и в сервисном меню (там
+  // срабатывание почти наверняка техник тестирует терминал на вкладке
+  // "Датчики", а не клиент случайно приложил карту).
+  static bool _isFullyPausedState(AppState s) {
+    return s == AppState.payment ||
+        s == AppState.serviceMenu ||
+        s == AppState.servicePinEntry;
   }
 
   static void start(AppNotifier notifier) {
@@ -60,7 +87,7 @@ class LevelService {
 
   void _begin() {
     notifier.addListener(_onNotifierChanged);
-    _paused = _isBusyState(notifier.state);
+    _paused = _isFullyPausedState(notifier.state);
     _reschedule();
   }
 
@@ -71,9 +98,21 @@ class LevelService {
   }
 
   void _onNotifierChanged() {
-    final busy = _isBusyState(notifier.state);
-    if (busy != _paused) {
-      _paused = busy;
+    final paused = _isFullyPausedState(notifier.state);
+    if (paused != _paused) {
+      // Выход из паузы (обычно — уход с экрана оплаты). Терминал держит
+      // линию высокой ещё какое-то время после уже принятой там оплаты
+      // (измерено — около секунды), а этот тик мог всё это время стоять
+      // и не знать о том фронте. Без сброса первый же возобновлённый тик
+      // увидел бы "было низко (устарело) → сейчас высоко" и отрапортовал
+      // бы уже учтённую оплату как unexpected_payment. Сброс в null
+      // переиспользует существующую логику калибровки первого чтения
+      // (см. _checkTerminalAmbient) — тик просто заново узнаёт текущее
+      // состояние, не считая его переходом.
+      if (_paused && !paused) {
+        _terminalLastAmbient = null;
+      }
+      _paused = paused;
       _reschedule();
     }
   }
@@ -90,13 +129,18 @@ class LevelService {
     if (_running) return;
     _running = true;
     try {
-      final levels = await ModbusService.readLevels();
+      final all = await ModbusService.readAllInputs();
       // null = ошибка чтения (шина занята/таймаут) — не затираем последнее
       // известное состояние ложным "все канистры пусты".
-      if (levels != null) {
+      if (all == null) return;
+
+      if (!_isLevelBusyState(notifier.state) && all.length >= 8) {
+        final levels = all.sublist(0, 8);
         notifier.updateLevels(levels);
-        await _reportTransitions(levels);
+        await _reportLevelTransitions(levels);
       }
+
+      await _checkTerminalAmbient(all);
     } finally {
       _running = false;
     }
@@ -105,7 +149,7 @@ class LevelService {
   // Каналы физически не распаяны за пределами kFlavorCount — их
   // "состояние" ничего не значит и события по ним не отправляются
   // (Шаг 33, задача 3.4).
-  Future<void> _reportTransitions(List<bool> levels) async {
+  Future<void> _reportLevelTransitions(List<bool> levels) async {
     for (var i = 0; i < kFlavorCount; i++) {
       final hasLiquid = levels[i];
       final was = _lastKnown[i];
@@ -121,5 +165,40 @@ class LevelService {
         data: data,
       );
     }
+  }
+
+  // Терминал сработал вне экрана оплаты (и вне сервисного меню) — клиент
+  // почти наверняка не ожидал этого сам: деньги спишутся, услуга не будет
+  // оказана. При 3-секундном интервале опроса это грубее, чем точный
+  // опрос на экране оплаты, и совсем короткий импульс теоретически может
+  // проскочить между тиками — так и было принято в задаче 5 ("благодаря
+  // задаче 1 это не стоит дополнительных обращений к шине", то есть без
+  // отдельного быстрого опроса специально под этот случай). Реагируем
+  // только на появление сигнала (не на его снятие) — направление фронта
+  // для тревоги неважно, важен сам факт срабатывания.
+  Future<void> _checkTerminalAmbient(List<bool> all) async {
+    final cfg = notifier.config;
+    if (!cfg.paymentTerminalEnabled) return;
+    final idx = cfg.paymentTerminalChannel;
+    if (idx < 0 || idx >= all.length) return;
+
+    final value = all[idx];
+    final last = _terminalLastAmbient;
+    _terminalLastAmbient = value;
+    if (last == null || last == value || !value) return;
+
+    final now = DateTime.now();
+    final since = _terminalLastAmbientEventAt;
+    if (since != null &&
+        now.difference(since) <
+            Duration(milliseconds: cfg.paymentTerminalGuardMs)) {
+      return;
+    }
+    _terminalLastAmbientEventAt = now;
+
+    await CloudService.report(
+      CloudEventType.unexpectedPayment,
+      data: {'state': notifier.state.name},
+    );
   }
 }

@@ -15,6 +15,7 @@ const Map<String, Map<String, String>> _i18n = {
     'paid': 'Внесено',
     'remaining': 'Осталось',
     'instruction': 'Внесите монеты',
+    'instruction_with_card': 'Внесите монеты или приложите карту',
     'cancel': 'Отмена',
   },
   'en': {
@@ -24,6 +25,7 @@ const Map<String, Map<String, String>> _i18n = {
     'paid': 'Paid',
     'remaining': 'Remaining',
     'instruction': 'Insert coins',
+    'instruction_with_card': 'Insert coins or tap your card',
     'cancel': 'Cancel',
   },
   'et': {
@@ -33,6 +35,7 @@ const Map<String, Map<String, String>> _i18n = {
     'paid': 'Makstud',
     'remaining': 'Jäänud',
     'instruction': 'Lisa münte',
+    'instruction_with_card': 'Lisa münte või kasuta kaarti',
     'cancel': 'Tühista',
   },
 };
@@ -51,11 +54,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
   Timer? _coinTimer;
   Timer? _countdownTimer;
+  Timer? _terminalTimer;
+  bool _terminalEnabled = false;
 
   @override
   void initState() {
     super.initState();
-    _priceCents = context.read<AppNotifier>().config.treatmentPriceCents;
+    final cfg = context.read<AppNotifier>().config;
+    _priceCents = cfg.treatmentPriceCents;
     ModbusService.startPaymentCoinCounting();
     _coinTimer = Timer.periodic(
       const Duration(milliseconds: 100),
@@ -65,12 +71,24 @@ class _PaymentScreenState extends State<PaymentScreen> {
       const Duration(seconds: 1),
       (_) => _tickCountdown(),
     );
+
+    // Терминал слушаем параллельно с монетоприёмником, только если техник
+    // включил его в настройках (Шаг "терминал", задача 4.1/4.6) — пока не
+    // подключён физически, вход в принципе ничего не значит.
+    _terminalEnabled = cfg.paymentTerminalEnabled;
+    if (_terminalEnabled) {
+      _terminalTimer = Timer.periodic(
+        const Duration(milliseconds: 100),
+        (_) => _checkTerminal(cfg),
+      );
+    }
   }
 
   @override
   void dispose() {
     _coinTimer?.cancel();
     _countdownTimer?.cancel();
+    _terminalTimer?.cancel();
     ModbusService.stopPaymentCoinCounting();
     super.dispose();
   }
@@ -81,7 +99,27 @@ class _PaymentScreenState extends State<PaymentScreen> {
       setState(() => _balanceCents += cents);
     }
     if (_balanceCents >= _priceCents) {
-      _proceedToTreatment();
+      _proceedToTreatment(paymentMethod: 'coins');
+    }
+  }
+
+  // Терминал настроен эквайером на фиксированную сумму, равную цене
+  // обработки — сигнал означает "оплачено полностью", независимо от того,
+  // сколько уже внесено монетами (Шаг "терминал", задача 4.2). Если
+  // что-то уже накопилось — это переплата, фиксируем отдельным способом
+  // оплаты 'mixed', чтобы сумма монет не потерялась в отчётности
+  // (задача 4.3).
+  Future<void> _checkTerminal(AppConfig cfg) async {
+    final poll = await ModbusService.pollTerminal(
+      channel: cfg.paymentTerminalChannel,
+      mode: cfg.paymentTerminalMode,
+      guardMs: cfg.paymentTerminalGuardMs,
+    );
+    if (poll != null && poll.confirmed) {
+      _proceedToTreatment(
+        paymentMethod: _balanceCents > 0 ? 'mixed' : 'card',
+        coinsCents: _balanceCents > 0 ? _balanceCents : null,
+      );
     }
   }
 
@@ -92,23 +130,35 @@ class _PaymentScreenState extends State<PaymentScreen> {
     }
   }
 
-  void _proceedToTreatment() {
+  void _proceedToTreatment({
+    required String paymentMethod,
+    int? coinsCents,
+  }) {
     _coinTimer?.cancel();
     _countdownTimer?.cancel();
+    _terminalTimer?.cancel();
     ModbusService.stopPaymentCoinCounting();
     if (!mounted) return;
     final notifier = context.read<AppNotifier>();
     final flavorIndex = notifier.selectedFlavor ?? 0;
+    // Оплата картой всегда идёт на полную цену (так настроен терминал) —
+    // если до этого уже были внесены монеты, они добавляются поверх, а не
+    // вычитаются: клиент фактически переплатил (задача 4.3).
+    final paidCents = paymentMethod == 'coins'
+        ? _balanceCents
+        : _priceCents + (coinsCents ?? 0);
     // Начинаем сессию (Шаг 33, задача 1/2) именно здесь — сумма уже
-    // набрана, деньги приняты монетоприёмником безвозвратно. Название
-    // аромата берём по-русски независимо от языка интерфейса клиента:
-    // событие уходит оператору, не клиенту.
+    // набрана, деньги приняты монетоприёмником/терминалом безвозвратно.
+    // Название аромата берём по-русски независимо от языка интерфейса
+    // клиента: событие уходит оператору, не клиенту.
     unawaited(
       SessionService.start(
         flavorIndex: flavorIndex,
         flavorNameRu: notifier.config.flavorNames['ru']![flavorIndex],
         priceCents: _priceCents,
-        paidCents: _balanceCents,
+        paidCents: paidCents,
+        paymentMethod: paymentMethod,
+        coinsCents: coinsCents,
       ),
     );
     notifier.transition(AppState.preparing);
@@ -117,6 +167,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   void _cancel() {
     _coinTimer?.cancel();
     _countdownTimer?.cancel();
+    _terminalTimer?.cancel();
     ModbusService.stopPaymentCoinCounting();
     if (mounted) {
       context.read<AppNotifier>().resetSession();
@@ -232,7 +283,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        t['instruction']!,
+                        _terminalEnabled
+                            ? t['instruction_with_card']!
+                            : t['instruction']!,
                         textAlign: TextAlign.center,
                         style: const TextStyle(
                           color: Colors.white70,

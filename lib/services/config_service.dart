@@ -47,6 +47,10 @@ class ConfigService {
         'cloudToken': c.cloudToken,
         'cloudEnabled': c.cloudEnabled,
         'kioskModeEnabled': c.kioskModeEnabled,
+        'paymentTerminalChannel': c.paymentTerminalChannel,
+        'paymentTerminalMode': c.paymentTerminalMode,
+        'paymentTerminalGuardMs': c.paymentTerminalGuardMs,
+        'paymentTerminalEnabled': c.paymentTerminalEnabled,
         'flavorNames': c.flavorNames,
       };
 
@@ -62,6 +66,12 @@ class ConfigService {
         cloudToken: (j['cloudToken'] as String?) ?? '',
         cloudEnabled: (j['cloudEnabled'] as bool?) ?? false,
         kioskModeEnabled: (j['kioskModeEnabled'] as bool?) ?? false,
+        paymentTerminalChannel: (j['paymentTerminalChannel'] as int?) ?? 10,
+        paymentTerminalMode: (j['paymentTerminalMode'] as String?) ?? 'edge',
+        paymentTerminalGuardMs:
+            (j['paymentTerminalGuardMs'] as int?) ?? 3000,
+        paymentTerminalEnabled:
+            (j['paymentTerminalEnabled'] as bool?) ?? false,
         flavorNames: (j['flavorNames'] as Map<String, dynamic>?)?.map(
           (k, v) => MapEntry(k, List<String>.from(v)),
         ),
