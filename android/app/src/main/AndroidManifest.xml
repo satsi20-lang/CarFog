@@ -23,10 +23,23 @@
         android:label="dry_fog_app"
         android:name=".DryFogApplication"
         android:icon="@mipmap/ic_launcher">
+        <!-- launchMode singleInstance (задача "приложение остаётся в фоне
+             при холодном старте") — MainActivity достижима тремя разными
+             путями (обычный LAUNCHER intent-filter здесь, роль домашнего
+             экрана через KioskHomeAlias ниже, явный запуск из
+             BootReceiver), и на холодном старте после полного обесточивания
+             (в отличие от программной перезагрузки) эти пути могут
+             сработать почти одновременно, порождая два раздельных
+             экземпляра активности в разных task-стеках — тогда системе
+             физически не из чего выбирать, какой из них поднять на
+             передний план. singleInstance гарантирует ровно один экземпляр
+             в собственной задаче независимо от того, через какой intent
+             его вызвали — любой повторный запуск маршрутизируется в уже
+             существующий (onNewIntent), а не создаёт второй. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTop"
+            android:launchMode="singleInstance"
             android:taskAffinity=""
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"

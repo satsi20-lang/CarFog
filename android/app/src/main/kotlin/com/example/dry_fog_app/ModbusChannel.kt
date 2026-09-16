@@ -112,17 +112,36 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
             "setDO" -> {
                 val ch = call.argument<Int>("channel") ?: return result.error("ARG", "no channel", null)
                 val on = call.argument<Boolean>("value") ?: false
-                val ok = modbus?.writeSingleCoil(SLAVE_DIO, ch, on) == true
+                val ok = modbus?.writeSingleCoil(SLAVE_DIO, ch, on, timeoutMs = 150L) == true
                 result.success(ok)
             }
 
-            // Выключает ВСЕ выходы (safe_all_off)
+            // Выключает ВСЕ выходы (safe_all_off). Таймаут 150 мс на каждый
+            // канал явно (не 500 по умолчанию) — этот путь вызывается в
+            // повторяющемся цикле при старте, пока шина не ответит (задача
+            // "гарантированное выключение"), и должен быстро проваливаться
+            // на мёртвой шине, а не копить по 6 секунд на 12 каналах.
             "safeAllOff" -> {
                 var ok = true
                 for (ch in 0..11) {
-                    if (modbus?.writeSingleCoil(SLAVE_DIO, ch, false) != true) ok = false
+                    if (modbus?.writeSingleCoil(SLAVE_DIO, ch, false, timeoutMs = 150L) != true) {
+                        ok = false
+                    }
                 }
                 result.success(ok)
+            }
+
+            // Читает фактическое состояние всех 12 используемых выходов
+            // одной транзакцией — для сторожа выходов (задача "сторож
+            // выходов"): в покое ожидается, что выключено всё, и если
+            // модуль поднял катушку сам (после подачи питания, до того как
+            // safeAllOff успел отработать) — это единственный способ узнать
+            // об этом, не полагаясь на память приложения о том, что оно
+            // само куда-то писало.
+            "readCoils" -> {
+                val coils = modbus?.readCoils(SLAVE_DIO, 0, 12, timeoutMs = 150L)
+                if (coils == null) result.error("MODBUS", "readCoils failed", null)
+                else result.success(coils.toList())
             }
 
             // Читает температуру термопары (канал 0-3, возвращает °C × 10).
@@ -200,30 +219,33 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
                 val ch = call.argument<Int>("channel") ?: 10
                 val mode = call.argument<String>("mode") ?: "edge"
                 val guardMs = (call.argument<Int>("guardMs") ?: 3000).toLong()
-                // Раньше здесь был отдельный однобитный запрос (timeoutMs=150) —
-                // отдельная от readAllInputs транзакция, снятая в чуть другой
-                // момент. На коротких импульсах (~100-170 мс, живой тест) этого
-                // достаточно, чтобы один запрос попал в высокий уровень, а
-                // другой — нет, и подтверждённая оплата не запишется в журнал
-                // при том, что фронт виден через readAllInputs. Читаем те же
-                // 16 входов тем же вызовом, что и остальные обработчики — один
-                // и тот же снимок шины для любого потребителя в этом тике.
-                val di = modbus?.readDiscreteInputs(SLAVE_DIO, 0, 16)
-                if (di == null || ch < 0 || ch >= di.size) {
+                // Узкое однобитное чтение с ЯВНЫМ коротким таймаутом — это
+                // окончательное решение, не временное. История: короткое
+                // время был вариант с широким 16-битным чтением здесь же
+                // (переиспользовать снимок с readAllInputs) — контрольный
+                // тест дал 5 из 5 пойманных оплат на узком чтении против 0
+                // из 5 на широком, и разница была не в ширине запроса
+                // (8 байт что так, что так, разница в один байт ответа —
+                // на 9600 бод это около миллисекунды). Настоящая причина:
+                // в узком варианте таймаут стоял явно (150 мс), а при
+                // переходе на широкое чтение параметр забыли передать, и
+                // подставилось значение по умолчанию (500 мс, см.
+                // ModbusRtu.readDiscreteInputs). На успешном чтении разницы
+                // нет, но каждая неудачная попытка блокировала общий лок
+                // шины (ioLock, см. ModbusRtu.sendAndReceive) втрое дольше,
+                // а рядом непрерывно опрашивает поток монетоприёмника
+                // (paymentPollingThread) — устойчивый рост задержки съедал
+                // короткие импульсы терминала. Подробности и цифры теста —
+                // docs/payment_terminal.md.
+                val di = modbus?.readDiscreteInputs(SLAVE_DIO, ch, 1, timeoutMs = 150L)
+                if (di == null) {
                     result.error("MODBUS", "pollTerminal failed", null)
                 } else {
-                    val raw = di[ch]
-                    // "all" — тот же снимок 16 входов, что уже прочитан для
-                    // channel/confirmed выше, отдаём его же для диагностики
-                    // на вкладке "Датчики" (см. _pollTerminalOnce в
-                    // service_menu.dart) — так проверка "на другом ли канале
-                    // сигнал" не заводит ещё одну отдельную транзакцию по
-                    // шине вдобавок к этой.
+                    val raw = di[0]
                     result.success(
                         mapOf(
                             "state" to raw,
                             "confirmed" to pollTerminalEdge(raw, mode, guardMs),
-                            "all" to di.map { it },
                         )
                     )
                 }

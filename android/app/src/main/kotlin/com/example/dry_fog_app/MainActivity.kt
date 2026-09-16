@@ -29,9 +29,27 @@ class MainActivity : FlutterActivity() {
     // отдаётся во Flutter через SYSTEM_CHANNEL.consumeStartReason (задача 6).
     private var startedFromBoot = false
 
+    // Диагностика для задачи "приложение остаётся в фоне при холодном
+    // старте" — сведения о ТОМ, как именно был запущен этот процесс,
+    // снимаются один раз здесь и уходят во Flutter через
+    // SYSTEM_CHANNEL.getLaunchDiagnostics, чтобы попасть в облачное
+    // событие app_started и различать случаи без подключения к планшету.
+    private var launchAction: String? = null
+    private var launchCategories: List<String> = emptyList()
+    private var launchIsTaskRoot: Boolean = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         startedFromBoot = intent?.getBooleanExtra(BootReceiver.EXTRA_STARTED_FROM_BOOT, false) == true
+        launchAction = intent?.action
+        launchCategories = intent?.categories?.toList() ?: emptyList()
+        // isTaskRoot вычисляем сразу в onCreate — единственный надёжный
+        // момент: singleInstance (см. AndroidManifest.xml) гарантирует
+        // единственный экземпляр этой Activity, но сам факт "было ли ДО
+        // сих пор запущено что-то ещё под этим же процессом/ролью" — то,
+        // что раньше могло создавать второй экземпляр через роль домашнего
+        // экрана параллельно с BootReceiver — виднее всего именно здесь.
+        launchIsTaskRoot = isTaskRoot
         // Терминал без оператора рядом — экран не должен гаснуть сам
         // (Шаг 32, задача 5). Таймаут экрана в настройках прошивки всё
         // равно стоит выставить в "никогда" отдельно: этот флаг перекрывает
@@ -114,6 +132,14 @@ class MainActivity : FlutterActivity() {
                         result.success(null)
                     }
                     "consumeStartReason" -> result.success(consumeStartReason())
+                    "getLaunchDiagnostics" -> result.success(
+                        mapOf(
+                            "intent_action" to launchAction,
+                            "intent_categories" to launchCategories,
+                            "is_task_root" to launchIsTaskRoot,
+                            "started_from_boot" to startedFromBoot,
+                        )
+                    )
                     else -> result.notImplemented()
                 }
             }

@@ -47,4 +47,20 @@ class SystemService {
       return 'normal';
     }
   }
+
+  // Сведения о ТОМ, как именно был запущен этот процесс (задача
+  // "приложение остаётся в фоне при холодном старте") — intent action и
+  // категории, с которыми поднялась MainActivity, и был ли этот экземпляр
+  // корнем задачи. Уходит в данные события app_started, чтобы отличить
+  // холодный старт от программной перезагрузки прямо в облачной панели,
+  // не подключаясь к планшету.
+  static Future<Map<String, dynamic>> getLaunchDiagnostics() async {
+    try {
+      final result = await _channel.invokeMethod<Map>('getLaunchDiagnostics');
+      return result?.map((k, v) => MapEntry(k as String, v)) ?? const {};
+    } catch (e) {
+      debugPrint('SystemService.getLaunchDiagnostics error: $e');
+      return const {};
+    }
+  }
 }

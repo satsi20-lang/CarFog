@@ -37,6 +37,14 @@ class _ErrorScreenState extends State<ErrorScreen>
       'en': 'System error',
       'ru': 'Ошибка системы',
     },
+    // Задача "не брать деньги, если шина недоступна" — без технических
+    // подробностей (ни слова про Modbus/RS485/шину): клиенту нужно только
+    // понять, что платить не надо.
+    'bus_unavailable': {
+      'et': 'Seade on ajutiselt hooldusel',
+      'en': 'Temporarily out of service',
+      'ru': 'Аппарат временно не работает',
+    },
   };
 
   static const _errorDetails = {
@@ -59,6 +67,12 @@ class _ErrorScreenState extends State<ErrorScreen>
       'et': 'Ilmnes tundmatu viga.',
       'en': 'An unexpected error occurred.',
       'ru': 'Возникла непредвиденная ошибка.',
+    },
+    'bus_unavailable': {
+      'et': 'Makseid ei saa praegu vastu võtta. Palun proovige hiljem uuesti.',
+      'en':
+          'Payments are not being accepted right now. Please try again later.',
+      'ru': 'Оплата сейчас не принимается. Пожалуйста, попробуйте позже.',
     },
   };
 
@@ -104,17 +118,25 @@ class _ErrorScreenState extends State<ErrorScreen>
     ]).animate(_shakeController);
     _shakeController.forward();
 
-    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-      setState(() => _secondsLeft--);
-      if (_secondsLeft <= 0) {
-        timer.cancel();
-        context.read<AppNotifier>().resetSession();
-      }
-    });
+    // "Шина недоступна" не возвращается сама по таймеру — неизвестно,
+    // сколько продлится простой, а обратный отсчёт с истёкшим временем
+    // выглядел бы так, будто аппарат вот-вот снова заработает. Возврат
+    // происходит сам, когда AppNotifier.setBusHealthy(true) застанет
+    // именно этот код ошибки (задача 4.5) — обычные ошибки (перегрев и
+    // т.п.) по-прежнему возвращаются через 10 секунд.
+    if (context.read<AppNotifier>().errorCode != 'bus_unavailable') {
+      _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        if (!mounted) {
+          timer.cancel();
+          return;
+        }
+        setState(() => _secondsLeft--);
+        if (_secondsLeft <= 0) {
+          timer.cancel();
+          context.read<AppNotifier>().resetSession();
+        }
+      });
+    }
   }
 
   @override
@@ -225,42 +247,46 @@ class _ErrorScreenState extends State<ErrorScreen>
 
                       const SizedBox(height: 48),
 
-                      // Countdown
-                      Column(
-                        children: [
-                          Text(
-                            _t('returning', lang),
-                            style: const TextStyle(
-                              color: Color(0xFF556677),
-                              fontSize: 14,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Container(
-                            width: 56,
-                            height: 56,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: const Color(
-                                  0xFFE53935,
-                                ).withValues(alpha: 0.4),
-                                width: 2,
+                      // Countdown — скрыт для 'bus_unavailable': возврат не
+                      // по таймеру, а сам, когда шина восстановится (см.
+                      // initState), обратный отсчёт с истёкшим временем
+                      // здесь был бы враньём.
+                      if (code != 'bus_unavailable')
+                        Column(
+                          children: [
+                            Text(
+                              _t('returning', lang),
+                              style: const TextStyle(
+                                color: Color(0xFF556677),
+                                fontSize: 14,
                               ),
                             ),
-                            child: Center(
-                              child: Text(
-                                '$_secondsLeft${_t('sec', lang)}',
-                                style: const TextStyle(
-                                  color: Color(0xFFE53935),
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
+                            const SizedBox(height: 8),
+                            Container(
+                              width: 56,
+                              height: 56,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: const Color(
+                                    0xFFE53935,
+                                  ).withValues(alpha: 0.4),
+                                  width: 2,
+                                ),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  '$_secondsLeft${_t('sec', lang)}',
+                                  style: const TextStyle(
+                                    color: Color(0xFFE53935),
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                        ],
-                      ),
+                          ],
+                        ),
                     ],
                   ),
                 ),

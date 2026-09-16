@@ -16,7 +16,8 @@ import 'screens/service/service_menu.dart';
 import 'services/cloud_service.dart';
 import 'services/config_service.dart';
 import 'services/level_service.dart';
-import 'services/modbus_service.dart';
+import 'services/output_watchdog_service.dart';
+import 'services/startup_service.dart';
 import 'services/sync_service.dart';
 import 'services/system_service.dart';
 
@@ -60,41 +61,40 @@ void main() async {
   // Причина запуска — обычный / после аварии / после перезагрузки (Шаг 32,
   // задача 6). Отдельный тип события для аварии, чтобы он подсвечивался
   // тревожным в журнале и в веб-панели без разбора вложенных полей.
+  // launchDiagnostics (задача "приложение остаётся в фоне при холодном
+  // старте") добавлен к обоим типам события — по нему в облачной панели
+  // видно, каким путём поднялась именно эта активность (intent action,
+  // категории, была ли она корнем задачи), без подключения к планшету.
   unawaited(() async {
     final reason = await SystemService.consumeStartReason();
+    final launchDiagnostics = await SystemService.getLaunchDiagnostics();
     if (reason == 'crash') {
-      await CloudService.report(CloudEventType.appStartedAfterCrash);
+      await CloudService.report(
+        CloudEventType.appStartedAfterCrash,
+        data: launchDiagnostics,
+      );
     } else {
       await CloudService.report(
         CloudEventType.appStarted,
-        data: reason == 'boot' ? {'reason': 'boot'} : null,
+        data: {if (reason == 'boot') 'reason': 'boot', ...launchDiagnostics},
       );
     }
   }());
 
-  // Безопасное выключение всего при старте — не блокирует показ UI,
-  // если железо ещё не подключено или порт не совпал.
-  unawaited(() async {
-    const port = '/dev/ttyS5'; // уточнить после find_port.py
-    final opened = await ModbusService.open(port: port);
-    if (!opened) {
-      // Не удалось открыть порт (Шаг 33, задача 5.1) — аппарат физически
-      // не может работать без шины, оператору стоит узнать об этом сразу,
-      // а не только когда клиент пожалуется на нерабочий терминал.
-      await CloudService.report(CloudEventType.hardwareError, data: {
-        'code': 'modbus_open_failed',
-        'port': port,
-      });
-      return;
-    }
-    await ModbusService.safeAllOff();
-  }());
+  // Безопасное выключение всего при старте — не блокирует показ UI, но
+  // теперь ПОВТОРЯЕТСЯ, пока не подтвердится результат (задача
+  // "гарантированное выключение при старте") — раньше это была одна
+  // попытка без проверки, и на холодном старте, пока шина ещё не готова,
+  // выключение молча не происходило. См. StartupService.
+  unawaited(StartupService.ensureSafeStartup(notifier));
+
+  // Сторож выходов (задача "сторож выходов") — следит за фактическим
+  // состоянием выходов в состояниях покоя и гасит всё, если модуль поднял
+  // что-то сам.
+  OutputWatchdogService.start(notifier);
 
   runApp(
-    ChangeNotifierProvider.value(
-      value: notifier,
-      child: const DryFogApp(),
-    ),
+    ChangeNotifierProvider.value(value: notifier, child: const DryFogApp()),
   );
 }
 

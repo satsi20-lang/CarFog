@@ -205,6 +205,35 @@ class AppNotifier extends ChangeNotifier {
   List<bool> _levels = List.filled(8, true);
   List<bool> get levels => _levels;
 
+  // --- Работоспособность шины (задача "не брать деньги, если шина
+  // недоступна") --- По умолчанию false: пока StartupService ни разу не
+  // подтвердил успешное выключение всех выходов при старте, аппарат не
+  // должен считать себя работоспособным (та же логика, что и в самой
+  // задаче о гарантированном выключении — железо, которым нельзя
+  // управлять, не имеет права принимать деньги). Дальше поддерживается
+  // StartupService (первый успех) и OutputWatchdogService (последующие
+  // успехи/ошибки обмена в состояниях покоя).
+  bool _busHealthy = false;
+  bool get busHealthy => _busHealthy;
+
+  void setBusHealthy(bool healthy) {
+    if (_busHealthy == healthy) return;
+    final was = _busHealthy;
+    _busHealthy = healthy;
+    // Связь восстановилась, пока клиент стоял на экране "аппарат не
+    // работает" — возвращаемся в обычный режим сами, без перезапуска
+    // (задача 4.5). Не трогаем других причин ошибки (перегрев и т.д.) —
+    // только именно этот код.
+    if (!was &&
+        healthy &&
+        _state == AppState.error &&
+        _errorCode == 'bus_unavailable') {
+      resetSession();
+      return;
+    }
+    notifyListeners();
+  }
+
   // ============================================================
   // ПЕРЕХОДЫ СОСТОЯНИЙ
   // ============================================================
@@ -235,6 +264,14 @@ class AppNotifier extends ChangeNotifier {
   // ============================================================
 
   void selectFlavor(int index) {
+    // Не пускаем дальше выбора аромата, если шина недоступна (задача "не
+    // брать деньги, если шина недоступна") — приём оплаты при потерянном
+    // управлении оборудованием означает, что клиент заплатит и не получит
+    // услугу.
+    if (!_busHealthy) {
+      goToError('bus_unavailable');
+      return;
+    }
     _selectedFlavor = index;
     transition(AppState.payment);
   }

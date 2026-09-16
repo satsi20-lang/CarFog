@@ -108,9 +108,15 @@ class ModbusRtu {
     }
 
     // FC01: Read Coils (DO — текущее состояние выходов)
-    fun readCoils(slaveId: Int, startAddr: Int, count: Int): BooleanArray? {
+    // timeoutMs — явный, не значение по умолчанию (см. историю про
+    // pollTerminal в ModbusChannel.kt: забытый явный таймаут на широком
+    // чтении незаметно подставил 500 мс вместо нужных 150 и съедал
+    // короткие импульсы под нагрузкой шины). Сторож выходов (задача
+    // "сторож выходов") дорожит быстрым ответом не меньше терминала —
+    // застрять на 500 мс на КАЖДОМ неотвечающем тике так же вредно.
+    fun readCoils(slaveId: Int, startAddr: Int, count: Int, timeoutMs: Long = 500): BooleanArray? {
         val req = buildRequest(slaveId, 0x01, startAddr, count)
-        val resp = sendAndReceive(req, 3 + ((count + 7) / 8)) ?: return null
+        val resp = sendAndReceive(req, 3 + ((count + 7) / 8), timeoutMs) ?: return null
         if (!validateResponse(resp, slaveId, 0x01)) return null
         val result = BooleanArray(count)
         for (i in 0 until count) {
@@ -122,7 +128,11 @@ class ModbusRtu {
     }
 
     // FC05: Write Single Coil (DO — управление выходом)
-    fun writeSingleCoil(slaveId: Int, addr: Int, value: Boolean): Boolean {
+    // timeoutMs — явный (см. комментарий у readCoils выше). Особенно важно
+    // для safeAllOff при старте (задача "гарантированное выключение"): это
+    // ровно тот путь, который должен быстро провалиться и повториться, если
+    // шина ещё не отвечает, а не ждать по умолчанию на каждом из 12 каналов.
+    fun writeSingleCoil(slaveId: Int, addr: Int, value: Boolean, timeoutMs: Long = 500): Boolean {
         val coilVal = if (value) 0xFF00 else 0x0000
         val req = byteArrayOf(
             slaveId.toByte(),
@@ -134,7 +144,7 @@ class ModbusRtu {
         // Ответ FC05 — эхо запроса: 6 байт данных + 2 CRC, добавляемых внутри
         // sendAndReceive. Раньше здесь передавалось 8 (уже с CRC), из-за чего
         // ожидалось 10 байт вместо реальных 8 и запись всегда считалась неудачной.
-        val resp = sendAndReceive(reqWithCrc, 6) ?: return false
+        val resp = sendAndReceive(reqWithCrc, 6, timeoutMs) ?: return false
         return validateResponse(resp, slaveId, 0x05)
     }
 

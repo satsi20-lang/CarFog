@@ -110,6 +110,21 @@ class ModbusService {
     }
   }
 
+  // Фактическое состояние всех 12 используемых выходов одной транзакцией
+  // (FC01, Read Coils) — для сторожа выходов: в покое ожидается, что
+  // выключено всё, и это единственный способ узнать, не поднял ли модуль
+  // катушку сам (например, сразу после подачи питания). null = ошибка
+  // чтения — не путать с "всё выключено".
+  static Future<List<bool>?> readCoils() async {
+    try {
+      final result = await _channel.invokeMethod<List>('readCoils');
+      return result?.map((e) => e as bool).toList();
+    } catch (e) {
+      debugPrint('ModbusService.readCoils error: $e');
+      return null;
+    }
+  }
+
   // Читает температуру термопары, канал 0-3. Возвращает °C,
   // либо null при ошибке чтения (не путать с настоящим 0°C).
   static Future<double?> readTemperature({int channel = 0}) async {
@@ -220,7 +235,6 @@ class ModbusService {
       return TerminalPoll(
         state: result['state'] as bool,
         confirmed: result['confirmed'] as bool,
-        all: (result['all'] as List?)?.map((e) => e as bool).toList(),
       );
     } catch (e) {
       debugPrint('ModbusService.pollTerminal error: $e');
@@ -255,10 +269,6 @@ class ModbusService {
 class TerminalPoll {
   final bool state;
   final bool confirmed;
-  // Тот же снимок всех 16 входов, что использован для state/confirmed —
-  // для диагностики "на другом ли канале сигнал" на вкладке "Датчики",
-  // без отдельной транзакции по шине (см. ModbusChannel.pollTerminal).
-  final List<bool>? all;
 
-  const TerminalPoll({required this.state, required this.confirmed, this.all});
+  const TerminalPoll({required this.state, required this.confirmed});
 }
