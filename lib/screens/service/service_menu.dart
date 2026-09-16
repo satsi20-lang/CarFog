@@ -27,7 +27,8 @@ const Map<String, Map<String, String>> _i18n = {
     'err_price': 'Цена: минимум 0.50 €',
     'err_duration': 'Длительность: 10–120 сек',
     'err_pin': 'PIN — 4 цифры',
-    'compressor_purge_label': 'Продувка компрессора до включения насосов и ТЭНа (сек)',
+    'compressor_purge_label':
+        'Продувка компрессора до включения насосов и ТЭНа (сек)',
     'pump_after_heater_label': 'Работа насоса после выключения ТЭНа (сек)',
     'err_compressor_purge': 'Продувка компрессора: 1–30 сек',
     'err_pump_after_heater': 'Работа насоса после ТЭНа: 1–30 сек',
@@ -41,7 +42,8 @@ const Map<String, Map<String, String>> _i18n = {
     'temp_unavailable': '--',
     'diag_levels': 'Уровни канистр',
     'diag_manual': 'Ручное управление',
-    'diag_manual_warning': 'Осторожно: прямое управление оборудованием, минуя обычную логику работы аппарата',
+    'diag_manual_warning':
+        'Осторожно: прямое управление оборудованием, минуя обычную логику работы аппарата',
     'pump': 'Насос',
     'compressor': 'Компрессор',
     'heater': 'ТЭН испарителя',
@@ -94,12 +96,14 @@ const Map<String, Map<String, String>> _i18n = {
     'cloud_testing': 'Проверка…',
     'cloud_ok': 'Связь есть, событие отправлено',
     'cloud_fail': 'Связи нет — проверь адрес, ключ и токен',
-    'cloud_hint': 'Аппарат работает и без облака. Если выключено — события пишутся только в локальный журнал.',
+    'cloud_hint':
+        'Аппарат работает и без облака. Если выключено — события пишутся только в локальный журнал.',
     'cloud_sync_now': 'Синхронизировать сейчас',
     'cloud_synced': 'Синхронизация выполнена',
     'tab_kiosk': 'Киоск',
     'kiosk_enabled': 'Киоск-режим',
-    'kiosk_hint': 'После включения откроется системный экран выбора домашнего '
+    'kiosk_hint':
+        'После включения откроется системный экран выбора домашнего '
         'приложения — выберите там это приложение. Затем один раз нажмите '
         '«Домой» на планшете: если снова появится диалог выбора — обязательно '
         'выберите это приложение и нажмите «Всегда» (не «Только сейчас»), '
@@ -107,7 +111,8 @@ const Map<String, Map<String, String>> _i18n = {
         'Device Owner и полное закрепление экрана (Lock Task) сюда не входят '
         '— это отдельный шаг перед сдачей аппарата.',
     'kiosk_open_desktop': 'Открыть системный рабочий стол',
-    'kiosk_open_desktop_hint': 'Нужно для обслуживания планшета, пока '
+    'kiosk_open_desktop_hint':
+        'Нужно для обслуживания планшета, пока '
         'включён киоск-режим — без этой кнопки из приложения будет не выйти.',
   },
   'en': {
@@ -125,7 +130,8 @@ const Map<String, Map<String, String>> _i18n = {
     'err_price': 'Price: minimum 0.50 €',
     'err_duration': 'Duration: 10–120 sec',
     'err_pin': 'PIN must be 4 digits',
-    'compressor_purge_label': 'Compressor purge before pumps/heater turn on (sec)',
+    'compressor_purge_label':
+        'Compressor purge before pumps/heater turn on (sec)',
     'pump_after_heater_label': 'Pump run time after heater turns off (sec)',
     'err_compressor_purge': 'Compressor purge: 1–30 sec',
     'err_pump_after_heater': 'Pump after heater: 1–30 sec',
@@ -139,7 +145,8 @@ const Map<String, Map<String, String>> _i18n = {
     'temp_unavailable': '--',
     'diag_levels': 'Canister levels',
     'diag_manual': 'Manual control',
-    'diag_manual_warning': 'Caution: direct hardware control, bypassing normal machine logic',
+    'diag_manual_warning':
+        'Caution: direct hardware control, bypassing normal machine logic',
     'pump': 'Pump',
     'compressor': 'Compressor',
     'heater': 'Evaporator heater',
@@ -192,12 +199,14 @@ const Map<String, Map<String, String>> _i18n = {
     'cloud_testing': 'Testing…',
     'cloud_ok': 'Connected, test event sent',
     'cloud_fail': 'No connection — check URL, key and token',
-    'cloud_hint': 'The machine works without the cloud. When disabled, events are stored in the local log only.',
+    'cloud_hint':
+        'The machine works without the cloud. When disabled, events are stored in the local log only.',
     'cloud_sync_now': 'Sync now',
     'cloud_synced': 'Sync complete',
     'tab_kiosk': 'Kiosk',
     'kiosk_enabled': 'Kiosk mode',
-    'kiosk_hint': 'Once enabled, a system screen opens to pick the default '
+    'kiosk_hint':
+        'Once enabled, a system screen opens to pick the default '
         'home app — choose this app there. Then press "Home" once on the '
         'tablet: if a chooser dialog appears again, pick this app and choose '
         '"Always" (not "Just once") — otherwise automatic recovery after a '
@@ -205,7 +214,8 @@ const Map<String, Map<String, String>> _i18n = {
         'Task) are not part of this — that is a separate step right before '
         'handover.',
     'kiosk_open_desktop': 'Open system desktop',
-    'kiosk_open_desktop_hint': 'Needed to service the tablet while kiosk '
+    'kiosk_open_desktop_hint':
+        'Needed to service the tablet while kiosk '
         'mode is on — without this button there is no way out of the app.',
   },
   'et': {
@@ -223,8 +233,10 @@ const Map<String, Map<String, String>> _i18n = {
     'err_price': 'Hind: minimaalselt 0.50 €',
     'err_duration': 'Kestus: 10–120 sek',
     'err_pin': 'PIN peab olema 4 numbrit',
-    'compressor_purge_label': 'Kompressori puhastus enne pumpade/küttekeha sisselülitamist (sek)',
-    'pump_after_heater_label': 'Pumba töö pärast küttekeha väljalülitamist (sek)',
+    'compressor_purge_label':
+        'Kompressori puhastus enne pumpade/küttekeha sisselülitamist (sek)',
+    'pump_after_heater_label':
+        'Pumba töö pärast küttekeha väljalülitamist (sek)',
     'err_compressor_purge': 'Kompressori puhastus: 1–30 sek',
     'err_pump_after_heater': 'Pump pärast küttekeha: 1–30 sek',
     'available': 'Olemas',
@@ -237,7 +249,8 @@ const Map<String, Map<String, String>> _i18n = {
     'flavor_fallback': 'Lõhn',
     'diag_levels': 'Kanistrite tasemed',
     'diag_manual': 'Käsijuhtimine',
-    'diag_manual_warning': 'Ettevaatust: seadmete otsejuhtimine, mööda tavapärasest töölogikast',
+    'diag_manual_warning':
+        'Ettevaatust: seadmete otsejuhtimine, mööda tavapärasest töölogikast',
     'pump': 'Pump',
     'compressor': 'Kompressor',
     'heater': 'Aurusti küttekeha',
@@ -290,12 +303,14 @@ const Map<String, Map<String, String>> _i18n = {
     'cloud_testing': 'Kontrollin…',
     'cloud_ok': 'Ühendus olemas, sündmus saadetud',
     'cloud_fail': 'Ühendust pole — kontrolli aadressi, võtit ja luba',
-    'cloud_hint': 'Seade töötab ka ilma pilveta. Väljalülitatuna salvestatakse sündmused ainult kohalikku logisse.',
+    'cloud_hint':
+        'Seade töötab ka ilma pilveta. Väljalülitatuna salvestatakse sündmused ainult kohalikku logisse.',
     'cloud_sync_now': 'Sünkroniseeri kohe',
     'cloud_synced': 'Sünkroniseerimine tehtud',
     'tab_kiosk': 'Kiosk',
     'kiosk_enabled': 'Kioski režiim',
-    'kiosk_hint': 'Sisselülitamisel avaneb süsteemi vaikimisi avakuva valiku '
+    'kiosk_hint':
+        'Sisselülitamisel avaneb süsteemi vaikimisi avakuva valiku '
         'ekraan — vali seal see rakendus. Seejärel vajuta tahvlil üks kord '
         '"Avakuva": kui ilmub uuesti valikudialoog, vali kindlasti see '
         'rakendus ja "Alati" (mitte "Ainult praegu") — vastasel juhul ei '
@@ -303,7 +318,8 @@ const Map<String, Map<String, String>> _i18n = {
         'täielik ekraani kinnitamine (Lock Task) siia ei kuulu — see on '
         'eraldi samm vahetult enne seadme üleandmist.',
     'kiosk_open_desktop': 'Ava süsteemi töölaud',
-    'kiosk_open_desktop_hint': 'Vajalik tahvli hooldamiseks, kui kioski '
+    'kiosk_open_desktop_hint':
+        'Vajalik tahvli hooldamiseks, kui kioski '
         'režiim on sees — ilma selle nuputa ei pääse rakendusest välja.',
   },
 };
@@ -316,7 +332,8 @@ class ServiceMenuScreen extends StatefulWidget {
 }
 
 class _ServiceMenuScreenState extends State<ServiceMenuScreen> {
-  int _tab = 0; // 0=Настройки, 1=Ароматы, 2=Диагностика, 3=Датчики, 4=Журнал, 5=Облако, 6=Киоск
+  int _tab =
+      0; // 0=Настройки, 1=Ароматы, 2=Диагностика, 3=Датчики, 4=Журнал, 5=Облако, 6=Киоск
 
   Widget _buildTab() {
     switch (_tab) {
@@ -395,7 +412,9 @@ class _ServiceMenuScreenState extends State<ServiceMenuScreen> {
                     onTap: () => setState(() => _tab = i),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                          vertical: 12, horizontal: 18),
+                        vertical: 12,
+                        horizontal: 18,
+                      ),
                       decoration: BoxDecoration(
                         border: Border(
                           bottom: BorderSide(
@@ -413,8 +432,9 @@ class _ServiceMenuScreenState extends State<ServiceMenuScreen> {
                           color: active
                               ? const Color(0xFF00C6B2)
                               : const Color(0xFF556677),
-                          fontWeight:
-                              active ? FontWeight.bold : FontWeight.normal,
+                          fontWeight: active
+                              ? FontWeight.bold
+                              : FontWeight.normal,
                         ),
                       ),
                     ),
@@ -453,13 +473,16 @@ class _SettingsTabState extends State<_SettingsTab> {
     super.initState();
     final config = context.read<AppNotifier>().config;
     _priceCents = config.treatmentPriceCents;
-    _durationCtrl =
-        TextEditingController(text: config.treatmentDurationS.toString());
+    _durationCtrl = TextEditingController(
+      text: config.treatmentDurationS.toString(),
+    );
     _pinCtrl = TextEditingController(text: config.servicePin);
-    _compressorPurgeCtrl =
-        TextEditingController(text: config.compressorPurgeS.toString());
-    _pumpAfterHeaterCtrl =
-        TextEditingController(text: config.pumpAfterHeaterS.toString());
+    _compressorPurgeCtrl = TextEditingController(
+      text: config.compressorPurgeS.toString(),
+    );
+    _pumpAfterHeaterCtrl = TextEditingController(
+      text: config.pumpAfterHeaterS.toString(),
+    );
   }
 
   @override
@@ -497,11 +520,15 @@ class _SettingsTabState extends State<_SettingsTab> {
       _snack(t['err_pin']!);
       return;
     }
-    if (compressorPurge == null || compressorPurge < 1 || compressorPurge > 30) {
+    if (compressorPurge == null ||
+        compressorPurge < 1 ||
+        compressorPurge > 30) {
       _snack(t['err_compressor_purge']!);
       return;
     }
-    if (pumpAfterHeater == null || pumpAfterHeater < 1 || pumpAfterHeater > 30) {
+    if (pumpAfterHeater == null ||
+        pumpAfterHeater < 1 ||
+        pumpAfterHeater > 30) {
       _snack(t['err_pump_after_heater']!);
       return;
     }
@@ -518,8 +545,7 @@ class _SettingsTabState extends State<_SettingsTab> {
   }
 
   void _snack(String msg) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(msg)));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   @override
@@ -577,11 +603,15 @@ class _SettingsTabState extends State<_SettingsTab> {
                 foregroundColor: Colors.black,
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
               child: Text(
                 t['save']!,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
               ),
             ),
           ),
@@ -649,8 +679,9 @@ class _FlavorsTabState extends State<_FlavorsTab> {
     final updated = notifier.config.copyWith(flavorNames: newNames);
     notifier.saveConfig(updated);
     final t = _i18n[notifier.lang]!;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(t['saved']!)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(t['saved']!)));
   }
 
   @override
@@ -672,11 +703,14 @@ class _FlavorsTabState extends State<_FlavorsTab> {
                 const SizedBox(width: 32),
                 ...['RU', 'EN', 'ET'].map(
                   (l) => Expanded(
-                    child: Text(l,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                            color: Color(0xFF556677),
-                            fontWeight: FontWeight.bold)),
+                    child: Text(
+                      l,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Color(0xFF556677),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -690,8 +724,10 @@ class _FlavorsTabState extends State<_FlavorsTab> {
                 children: [
                   SizedBox(
                     width: 32,
-                    child: Text('${i + 1}',
-                        style: const TextStyle(color: Color(0xFF556677))),
+                    child: Text(
+                      '${i + 1}',
+                      style: const TextStyle(color: Color(0xFF556677)),
+                    ),
                   ),
                   ...List.generate(3, (li) {
                     return Expanded(
@@ -700,11 +736,15 @@ class _FlavorsTabState extends State<_FlavorsTab> {
                         child: TextField(
                           controller: _ctrls[i][li],
                           style: const TextStyle(
-                              color: Colors.white, fontSize: 13),
+                            color: Colors.white,
+                            fontSize: 13,
+                          ),
                           decoration: InputDecoration(
                             isDense: true,
                             contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 8),
+                              horizontal: 8,
+                              vertical: 8,
+                            ),
                             filled: true,
                             fillColor: const Color(0xFF1A2233),
                             border: OutlineInputBorder(
@@ -730,11 +770,16 @@ class _FlavorsTabState extends State<_FlavorsTab> {
                 foregroundColor: Colors.black,
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
-              child: Text(t['save']!,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 16)),
+              child: Text(
+                t['save']!,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
             ),
           ),
         ],
@@ -780,10 +825,19 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
   void initState() {
     super.initState();
     _readEnergy();
-    _energyTimer = Timer.periodic(const Duration(seconds: 3), (_) => _readEnergy());
-    _coinTimer = Timer.periodic(const Duration(milliseconds: 500), (_) => _readCoin());
+    _energyTimer = Timer.periodic(
+      const Duration(seconds: 3),
+      (_) => _readEnergy(),
+    );
+    _coinTimer = Timer.periodic(
+      const Duration(milliseconds: 500),
+      (_) => _readCoin(),
+    );
     _readTemperature();
-    _tempTimer = Timer.periodic(const Duration(seconds: 2), (_) => _readTemperature());
+    _tempTimer = Timer.periodic(
+      const Duration(seconds: 2),
+      (_) => _readTemperature(),
+    );
   }
 
   @override
@@ -876,11 +930,14 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
     return ListView(
       padding: const EdgeInsets.all(24),
       children: [
-        Text(t['diag_levels']!,
-            style: const TextStyle(
-                color: Color(0xFF556677),
-                fontWeight: FontWeight.bold,
-                fontSize: 13)),
+        Text(
+          t['diag_levels']!,
+          style: const TextStyle(
+            color: Color(0xFF556677),
+            fontWeight: FontWeight.bold,
+            fontSize: 13,
+          ),
+        ),
         const SizedBox(height: 12),
         // Ряды по 4 карточки — под ландшафтную ширину. kFlavorCount=4
         // укладывается в один ряд; при 6/8 появятся дополнительные ряды
@@ -896,10 +953,11 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
                   if (col > 0) const SizedBox(width: 10),
                   Expanded(
                     child: _LevelBadge(
-                        index: start + col,
-                        levels: levels,
-                        flavors: flavors,
-                        t: t),
+                      index: start + col,
+                      levels: levels,
+                      flavors: flavors,
+                      t: t,
+                    ),
                   ),
                 ],
               ],
@@ -915,8 +973,10 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
           ),
           child: Row(
             children: [
-              Text('${t['coin_label']}:',
-                  style: const TextStyle(color: Colors.white, fontSize: 14)),
+              Text(
+                '${t['coin_label']}:',
+                style: const TextStyle(color: Colors.white, fontSize: 14),
+              ),
               const SizedBox(width: 8),
               Text(
                 _coinDetected ? t['coin_yes']! : t['coin_no']!,
@@ -940,8 +1000,10 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
           ),
           child: Row(
             children: [
-              Text('${t['temp_label']}:',
-                  style: const TextStyle(color: Colors.white, fontSize: 14)),
+              Text(
+                '${t['temp_label']}:',
+                style: const TextStyle(color: Colors.white, fontSize: 14),
+              ),
               const SizedBox(width: 8),
               Text(
                 _temperature != null
@@ -963,14 +1025,19 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
         const Divider(color: Color(0xFF1A2233)),
         const SizedBox(height: 12),
 
-        Text(t['diag_manual']!,
-            style: const TextStyle(
-                color: Color(0xFF556677),
-                fontWeight: FontWeight.bold,
-                fontSize: 13)),
+        Text(
+          t['diag_manual']!,
+          style: const TextStyle(
+            color: Color(0xFF556677),
+            fontWeight: FontWeight.bold,
+            fontSize: 13,
+          ),
+        ),
         const SizedBox(height: 4),
-        Text(t['diag_manual_warning']!,
-            style: const TextStyle(color: Color(0xFF8899AA), fontSize: 12)),
+        Text(
+          t['diag_manual_warning']!,
+          style: const TextStyle(color: Color(0xFF8899AA), fontSize: 12),
+        ),
         const SizedBox(height: 12),
 
         ...(() {
@@ -981,7 +1048,7 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
             ...List.generate(8, (i) {
               final label = i < kFlavorCount
                   ? '${t['pump']} ${i + 1} '
-                      '(${flavors.length > i ? flavors[i] : '${t['flavor_fallback']} ${i + 1}'})'
+                        '(${flavors.length > i ? flavors[i] : '${t['flavor_fallback']} ${i + 1}'})'
                   : '${t['pump']} ${i + 1}';
               return _ToggleRow(
                 label: label,
@@ -1025,10 +1092,13 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
                   foregroundColor: Colors.black,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10)),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
-                child: Text(t['all_on']!,
-                    style: const TextStyle(fontWeight: FontWeight.bold)),
+                child: Text(
+                  t['all_on']!,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
               ),
             ),
             const SizedBox(width: 12),
@@ -1040,10 +1110,13 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10)),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
-                child: Text(t['all_off']!,
-                    style: const TextStyle(fontWeight: FontWeight.bold)),
+                child: Text(
+                  t['all_off']!,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
               ),
             ),
           ],
@@ -1055,16 +1128,21 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
 
         Row(
           children: [
-            Text(t['diag_energy']!,
-                style: const TextStyle(
-                    color: Color(0xFF556677),
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13)),
+            Text(
+              t['diag_energy']!,
+              style: const TextStyle(
+                color: Color(0xFF556677),
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
+            ),
             const Spacer(),
             TextButton(
               onPressed: _readEnergy,
-              child: Text(t['refresh']!,
-                  style: const TextStyle(color: Color(0xFF00C6B2))),
+              child: Text(
+                t['refresh']!,
+                style: const TextStyle(color: Color(0xFF00C6B2)),
+              ),
             ),
           ],
         ),
@@ -1152,14 +1230,19 @@ class _EnergyMetric extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label,
-            style: const TextStyle(color: Color(0xFF8899AA), fontSize: 12)),
+        Text(
+          label,
+          style: const TextStyle(color: Color(0xFF8899AA), fontSize: 12),
+        ),
         const SizedBox(height: 4),
-        Text('${value.toStringAsFixed(1)} $unit',
-            style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 16)),
+        Text(
+          '${value.toStringAsFixed(1)} $unit',
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+          ),
+        ),
       ],
     );
   }
@@ -1190,6 +1273,13 @@ class _SensorsTabState extends State<_SensorsTab> {
   List<String> _terminalJournal = [];
   Timer? _terminalObserveTimer;
   bool _observing = false;
+  // Защита от повторного входа — один тик делает 2 последовательных
+  // запроса к шине (pollTerminal + getTerminalJournal). Без флага
+  // Timer.periodic всё равно стрелял бы каждые 30 мс, даже если
+  // предыдущий тик ещё не завершился — тики бы копились и накладывались,
+  // а порядок печати в журнале переставал совпадать с реальным порядком
+  // событий. Тот же приём, что и в LevelService._tick.
+  bool _pollingTerminal = false;
   // Последнее известное состояние ВСЕХ 16 входов — только для диагностики
   // "правильный ли канал терминала выбран" (см. _pollTerminalOnce).
   List<bool>? _lastAllChannels;
@@ -1244,49 +1334,66 @@ class _SensorsTabState extends State<_SensorsTab> {
     }
     setState(() => _observing = true);
     _pollTerminalOnce();
+    // 30 мс — тот же интервал, что и на экране оплаты (payment.dart),
+    // чтобы наблюдение здесь честно показывало то же самое, что реально
+    // ловит боевой опрос, а не более грубую картину.
     _terminalObserveTimer = Timer.periodic(
-      const Duration(milliseconds: 100),
+      const Duration(milliseconds: 30),
       (_) => _pollTerminalOnce(),
     );
   }
 
   Future<void> _pollTerminalOnce() async {
-    final channel = int.tryParse(_terminalChannelCtrl.text) ?? 10;
-    final guard = int.tryParse(_terminalGuardCtrl.text) ?? 3000;
-    final poll = await ModbusService.pollTerminal(
-      channel: channel,
-      mode: _terminalMode,
-      guardMs: guard,
-    );
-    final journal = await ModbusService.getTerminalJournal();
+    // Один тик — два последовательных запроса к шине. При 30 мс между
+    // тиками Timer.periodic не ждёт завершения предыдущего вызова — без
+    // этой защиты тики копились бы и накладывались друг на друга,
+    // а порядок печати в журнале переставал совпадать с реальным
+    // порядком событий (то же самое, что и LevelService._tick).
+    if (_pollingTerminal) return;
+    _pollingTerminal = true;
+    try {
+      final channel = int.tryParse(_terminalChannelCtrl.text) ?? 10;
+      final guard = int.tryParse(_terminalGuardCtrl.text) ?? 3000;
+      final poll = await ModbusService.pollTerminal(
+        channel: channel,
+        mode: _terminalMode,
+        guardMs: guard,
+      );
+      final journal = await ModbusService.getTerminalJournal();
 
-    // Диагностика "правильный ли канал выбран" — на случай, если карта
-    // реально прошла, а на настроенном канале ничего не изменилось.
-    // Читаем те же 16 входов, что и раньше (задача 1) — лишнего запроса
-    // к шине не добавляет, отдельная от pollTerminal транзакция. Любое
-    // изменение на ЛЮБОМ канале печатается в лог отладки — видно через
-    // adb logcat.
-    final all = await ModbusService.readAllInputs();
-    if (all != null) {
-      final last = _lastAllChannels;
-      if (last != null) {
-        for (var i = 0; i < all.length && i < last.length; i++) {
-          if (all[i] != last[i]) {
-            debugPrint(
-              'TERMINAL DEBUG: DI$i ${last[i] ? 1 : 0}→${all[i] ? 1 : 0} '
-              'в ${DateTime.now().toIso8601String()}',
-            );
+      // Диагностика "правильный ли канал выбран" — на случай, если карта
+      // реально прошла, а на настроенном канале ничего не изменилось.
+      // poll.all — тот же снимок 16 входов, что уже использован для
+      // channel/confirmed выше (см. ModbusChannel.pollTerminal) — отдельной
+      // транзакции по шине больше нет: раньше здесь был свой readAllInputs,
+      // и на коротких импульсах (~150 мс) он иногда расходился с pollTerminal
+      // на пару миллисекунд, из-за чего часть реальных оплат не попадала в
+      // журнал, хотя фронт был виден именно тут. Любое изменение на ЛЮБОМ
+      // канале печатается в лог отладки — видно через adb logcat.
+      final all = poll?.all;
+      if (all != null) {
+        final last = _lastAllChannels;
+        if (last != null) {
+          for (var i = 0; i < all.length && i < last.length; i++) {
+            if (all[i] != last[i]) {
+              debugPrint(
+                'TERMINAL DEBUG: DI$i ${last[i] ? 1 : 0}→${all[i] ? 1 : 0} '
+                'в ${DateTime.now().toIso8601String()}',
+              );
+            }
           }
         }
+        _lastAllChannels = all;
       }
-      _lastAllChannels = all;
-    }
 
-    if (!mounted) return;
-    setState(() {
-      if (poll != null) _terminalState = poll.state;
-      _terminalJournal = journal;
-    });
+      if (!mounted) return;
+      setState(() {
+        if (poll != null) _terminalState = poll.state;
+        _terminalJournal = journal;
+      });
+    } finally {
+      _pollingTerminal = false;
+    }
   }
 
   Future<void> _clearTerminalJournal() async {
@@ -1339,12 +1446,12 @@ class _SensorsTabState extends State<_SensorsTab> {
               foregroundColor: Colors.black,
               padding: const EdgeInsets.symmetric(vertical: 14),
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
             child: Text(
               _loading ? t['sensors_reading']! : t['sensors_read']!,
-              style:
-                  const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
             ),
           ),
         ),
@@ -1357,8 +1464,9 @@ class _SensorsTabState extends State<_SensorsTab> {
         ],
         const SizedBox(height: 20),
         ...List.generate(8, (i) {
-          final value =
-              _levels != null && _levels!.length > i ? _levels![i] : null;
+          final value = _levels != null && _levels!.length > i
+              ? _levels![i]
+              : null;
           return Padding(
             padding: const EdgeInsets.only(bottom: 10),
             child: _SensorRow(index: i, value: value, t: t),
@@ -1432,12 +1540,12 @@ class _SensorsTabState extends State<_SensorsTab> {
               foregroundColor: Colors.black,
               padding: const EdgeInsets.symmetric(vertical: 14),
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
             child: Text(
               t['save']!,
-              style:
-                  const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
             ),
           ),
         ),
@@ -1460,8 +1568,8 @@ class _SensorsTabState extends State<_SensorsTab> {
                 _terminalState == null
                     ? t['terminal_state_unknown']!
                     : (_terminalState!
-                        ? t['terminal_state_high']!
-                        : t['terminal_state_low']!),
+                          ? t['terminal_state_high']!
+                          : t['terminal_state_low']!),
                 style: TextStyle(
                   color: _terminalState == true
                       ? const Color(0xFF00C6B2)
@@ -1497,12 +1605,16 @@ class _SensorsTabState extends State<_SensorsTab> {
             ),
             const SizedBox(width: 10),
             OutlinedButton(
-              onPressed: _terminalJournal.isEmpty ? null : _clearTerminalJournal,
+              onPressed: _terminalJournal.isEmpty
+                  ? null
+                  : _clearTerminalJournal,
               style: OutlinedButton.styleFrom(
                 foregroundColor: const Color(0xFF556677),
                 side: const BorderSide(color: Color(0xFF556677)),
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 16, vertical: 12),
+                  horizontal: 16,
+                  vertical: 12,
+                ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10),
                 ),
@@ -1535,7 +1647,9 @@ class _SensorsTabState extends State<_SensorsTab> {
                     t['terminal_journal_empty']!,
                     textAlign: TextAlign.center,
                     style: const TextStyle(
-                        color: Color(0xFF556677), fontSize: 12),
+                      color: Color(0xFF556677),
+                      fontSize: 12,
+                    ),
                   ),
                 )
               : ListView.builder(
@@ -1576,7 +1690,9 @@ class _ModeButton extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
         decoration: BoxDecoration(
-          color: selected ? const Color(0xFF00C6B2).withValues(alpha: 0.15) : const Color(0xFF1A2233),
+          color: selected
+              ? const Color(0xFF00C6B2).withValues(alpha: 0.15)
+              : const Color(0xFF1A2233),
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
             color: selected ? const Color(0xFF00C6B2) : const Color(0xFF2E2E2E),
@@ -1604,11 +1720,7 @@ class _SensorRow extends StatelessWidget {
   final bool? value;
   final Map<String, String> t;
 
-  const _SensorRow({
-    required this.index,
-    required this.value,
-    required this.t,
-  });
+  const _SensorRow({required this.index, required this.value, required this.t});
 
   @override
   Widget build(BuildContext context) {
@@ -1636,8 +1748,7 @@ class _SensorRow extends StatelessWidget {
           Container(
             width: 14,
             height: 14,
-            decoration:
-                BoxDecoration(color: dotColor, shape: BoxShape.circle),
+            decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle),
           ),
           const SizedBox(width: 12),
           Text(
@@ -1648,7 +1759,10 @@ class _SensorRow extends StatelessWidget {
           Text(
             label,
             style: TextStyle(
-                color: dotColor, fontWeight: FontWeight.bold, fontSize: 13),
+              color: dotColor,
+              fontWeight: FontWeight.bold,
+              fontSize: 13,
+            ),
           ),
         ],
       ),
@@ -1674,10 +1788,12 @@ class _ToggleRow extends StatelessWidget {
       child: Row(
         children: [
           Expanded(
-            child: Text(label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Colors.white, fontSize: 13)),
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white, fontSize: 13),
+            ),
           ),
           Switch(
             value: value,
@@ -1719,9 +1835,11 @@ class _LevelBadge extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('${index + 1}. $name',
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white, fontSize: 13)),
+          Text(
+            '${index + 1}. $name',
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.white, fontSize: 13),
+          ),
           const SizedBox(height: 4),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -1768,8 +1886,10 @@ class _PriceStepper extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label,
-            style: const TextStyle(color: Color(0xFF8899AA), fontSize: 13)),
+        Text(
+          label,
+          style: const TextStyle(color: Color(0xFF8899AA), fontSize: 13),
+        ),
         const SizedBox(height: 6),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -1779,24 +1899,19 @@ class _PriceStepper extends StatelessWidget {
           ),
           child: Row(
             children: [
-              _StepButton(
-                icon: Icons.remove,
-                onPressed: () => onChanged(-50),
-              ),
+              _StepButton(icon: Icons.remove, onPressed: () => onChanged(-50)),
               Expanded(
                 child: Text(
                   '${(priceCents / 100).toStringAsFixed(2)} €',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold),
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
-              _StepButton(
-                icon: Icons.add,
-                onPressed: () => onChanged(50),
-              ),
+              _StepButton(icon: Icons.add, onPressed: () => onChanged(50)),
             ],
           ),
         ),
@@ -1818,8 +1933,7 @@ class _StepButton extends StatelessWidget {
       icon: Icon(icon, color: const Color(0xFF00C6B2)),
       style: IconButton.styleFrom(
         backgroundColor: const Color(0xFF0A0E1A),
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     );
   }
@@ -1849,9 +1963,10 @@ class _Field extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label,
-            style: const TextStyle(
-                color: Color(0xFF8899AA), fontSize: 13)),
+        Text(
+          label,
+          style: const TextStyle(color: Color(0xFF8899AA), fontSize: 13),
+        ),
         const SizedBox(height: 6),
         TextField(
           controller: controller,
@@ -1866,8 +1981,10 @@ class _Field extends StatelessWidget {
               borderRadius: BorderRadius.circular(10),
               borderSide: BorderSide.none,
             ),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 12,
+            ),
           ),
         ),
       ],
@@ -1915,9 +2032,7 @@ class _JournalTabState extends State<_JournalTab> {
     'unexpected_payment',
   };
 
-  static const _warnTypes = {
-    'low_liquid',
-  };
+  static const _warnTypes = {'low_liquid'};
 
   @override
   void initState() {
@@ -1983,9 +2098,9 @@ class _JournalTabState extends State<_JournalTab> {
     await CloudService.flush();
     await _load();
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Отправка выполнена')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Отправка выполнена')));
   }
 
   Color _colorFor(String type) {
@@ -2032,15 +2147,14 @@ class _JournalTabState extends State<_JournalTab> {
               const SizedBox(width: 12),
               Text(
                 'Событий: ${_events.length}',
-                style: const TextStyle(
-                  color: Color(0xFF556677),
-                  fontSize: 12,
-                ),
+                style: const TextStyle(color: Color(0xFF556677), fontSize: 12),
               ),
               const Spacer(),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: _pending > 0
                       ? const Color(0xFFFFAA00).withValues(alpha: 0.15)
@@ -2246,18 +2360,18 @@ class _CloudTabState extends State<_CloudTab> {
     );
 
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(t['saved']!)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(t['saved']!)));
   }
 
   Future<void> _test() async {
     setState(() => _testing = true);
     await _save();
 
-    final ok = await CloudService.transport.send(
-      CloudService.deviceId,
-      [CloudEvent(type: CloudEventType.appStarted, data: const {'test': true})],
-    );
+    final ok = await CloudService.transport.send(CloudService.deviceId, [
+      CloudEvent(type: CloudEventType.appStarted, data: const {'test': true}),
+    ]);
 
     if (!mounted) return;
     final t = _i18n[context.read<AppNotifier>().lang]!;
@@ -2266,8 +2380,7 @@ class _CloudTabState extends State<_CloudTab> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(ok ? t['cloud_ok']! : t['cloud_fail']!),
-        backgroundColor:
-            ok ? const Color(0xFF00C6B2) : const Color(0xFFE53935),
+        backgroundColor: ok ? const Color(0xFF00C6B2) : const Color(0xFFE53935),
       ),
     );
   }
@@ -2351,7 +2464,9 @@ class _CloudTabState extends State<_CloudTab> {
                   child: Text(
                     t['save']!,
                     style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 16),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
                   ),
                 ),
               ),
@@ -2428,7 +2543,9 @@ class _KioskTabState extends State<_KioskTab> {
     setState(() => _enabled = value);
 
     final notifier = context.read<AppNotifier>();
-    await notifier.saveConfig(notifier.config.copyWith(kioskModeEnabled: value));
+    await notifier.saveConfig(
+      notifier.config.copyWith(kioskModeEnabled: value),
+    );
     await SystemService.setKioskHomeEnabled(value);
 
     if (value) {

@@ -7,9 +7,15 @@ class ModbusService {
 
   // Открыть порт. Вызывать один раз при старте.
   // port: '/dev/ttyS5' — уточнить после запуска find_port.py
-  static Future<bool> open({String port = '/dev/ttyS5', int baud = 9600}) async {
+  static Future<bool> open({
+    String port = '/dev/ttyS5',
+    int baud = 9600,
+  }) async {
     try {
-      final ok = await _channel.invokeMethod<bool>('open', {'port': port, 'baud': baud});
+      final ok = await _channel.invokeMethod<bool>('open', {
+        'port': port,
+        'baud': baud,
+      });
       _open = ok == true;
       return _open;
     } catch (e) {
@@ -148,7 +154,8 @@ class ModbusService {
   // Расход за прошлый (уже завершившийся) календарный месяц (кВт⋅ч).
   static Future<double> getPreviousMonthEnergy() async {
     try {
-      return await _channel.invokeMethod<double>('getPreviousMonthEnergy') ?? 0.0;
+      return await _channel.invokeMethod<double>('getPreviousMonthEnergy') ??
+          0.0;
     } catch (e) {
       debugPrint('ModbusService.getPreviousMonthEnergy error: $e');
       return 0.0;
@@ -213,6 +220,7 @@ class ModbusService {
       return TerminalPoll(
         state: result['state'] as bool,
         confirmed: result['confirmed'] as bool,
+        all: (result['all'] as List?)?.map((e) => e as bool).toList(),
       );
     } catch (e) {
       debugPrint('ModbusService.pollTerminal error: $e');
@@ -247,6 +255,10 @@ class ModbusService {
 class TerminalPoll {
   final bool state;
   final bool confirmed;
+  // Тот же снимок всех 16 входов, что использован для state/confirmed —
+  // для диагностики "на другом ли канале сигнал" на вкладке "Датчики",
+  // без отдельной транзакции по шине (см. ModbusChannel.pollTerminal).
+  final List<bool>? all;
 
-  const TerminalPoll({required this.state, required this.confirmed});
+  const TerminalPoll({required this.state, required this.confirmed, this.all});
 }

@@ -56,6 +56,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
   Timer? _countdownTimer;
   Timer? _terminalTimer;
   bool _terminalEnabled = false;
+  // Защита от повторного входа — Timer.periodic не ждёт завершения
+  // предыдущего асинхронного вызова, при загруженной шине тики могли бы
+  // накладываться друг на друга (тот же приём, что и в LevelService._tick
+  // и на вкладке "Датчики").
+  bool _checkingCoin = false;
+  bool _checkingTerminal = false;
 
   @override
   void initState() {
@@ -77,8 +83,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
     // подключён физически, вход в принципе ничего не значит.
     _terminalEnabled = cfg.paymentTerminalEnabled;
     if (_terminalEnabled) {
+      // 30 мс, не 100 — живой тест показал импульс терминала короче 100 мс
+      // (после укорочения реле), опрос вровень с длиной импульса ловит его
+      // не гарантированно (дело фазы). 30 мс даёт трёхкратный запас на
+      // импульс ~100 мс. Один регистр раз в 30 мс — нагрузка на шину RS485
+      // не растёт заметно (та же логика, что и обоснование единого
+      // 16-битного чтения, см. docs/payment_terminal.md).
       _terminalTimer = Timer.periodic(
-        const Duration(milliseconds: 100),
+        const Duration(milliseconds: 30),
         (_) => _checkTerminal(cfg),
       );
     }
@@ -94,12 +106,18 @@ class _PaymentScreenState extends State<PaymentScreen> {
   }
 
   Future<void> _checkCoin() async {
-    final cents = await ModbusService.getLastCoinCents();
-    if (cents > 0 && mounted) {
-      setState(() => _balanceCents += cents);
-    }
-    if (_balanceCents >= _priceCents) {
-      _proceedToTreatment(paymentMethod: 'coins');
+    if (_checkingCoin) return;
+    _checkingCoin = true;
+    try {
+      final cents = await ModbusService.getLastCoinCents();
+      if (cents > 0 && mounted) {
+        setState(() => _balanceCents += cents);
+      }
+      if (_balanceCents >= _priceCents) {
+        _proceedToTreatment(paymentMethod: 'coins');
+      }
+    } finally {
+      _checkingCoin = false;
     }
   }
 
@@ -110,11 +128,18 @@ class _PaymentScreenState extends State<PaymentScreen> {
   // оплаты 'mixed', чтобы сумма монет не потерялась в отчётности
   // (задача 4.3).
   Future<void> _checkTerminal(AppConfig cfg) async {
-    final poll = await ModbusService.pollTerminal(
-      channel: cfg.paymentTerminalChannel,
-      mode: cfg.paymentTerminalMode,
-      guardMs: cfg.paymentTerminalGuardMs,
-    );
+    if (_checkingTerminal) return;
+    _checkingTerminal = true;
+    final TerminalPoll? poll;
+    try {
+      poll = await ModbusService.pollTerminal(
+        channel: cfg.paymentTerminalChannel,
+        mode: cfg.paymentTerminalMode,
+        guardMs: cfg.paymentTerminalGuardMs,
+      );
+    } finally {
+      _checkingTerminal = false;
+    }
     if (poll != null && poll.confirmed) {
       _proceedToTreatment(
         paymentMethod: _balanceCents > 0 ? 'mixed' : 'card',
@@ -130,10 +155,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
     }
   }
 
-  void _proceedToTreatment({
-    required String paymentMethod,
-    int? coinsCents,
-  }) {
+  void _proceedToTreatment({required String paymentMethod, int? coinsCents}) {
     _coinTimer?.cancel();
     _countdownTimer?.cancel();
     _terminalTimer?.cancel();

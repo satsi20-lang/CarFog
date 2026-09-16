@@ -200,12 +200,32 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
                 val ch = call.argument<Int>("channel") ?: 10
                 val mode = call.argument<String>("mode") ?: "edge"
                 val guardMs = (call.argument<Int>("guardMs") ?: 3000).toLong()
-                val di = modbus?.readDiscreteInputs(SLAVE_DIO, ch, 1, timeoutMs = 150L)
-                if (di == null) {
+                // Раньше здесь был отдельный однобитный запрос (timeoutMs=150) —
+                // отдельная от readAllInputs транзакция, снятая в чуть другой
+                // момент. На коротких импульсах (~100-170 мс, живой тест) этого
+                // достаточно, чтобы один запрос попал в высокий уровень, а
+                // другой — нет, и подтверждённая оплата не запишется в журнал
+                // при том, что фронт виден через readAllInputs. Читаем те же
+                // 16 входов тем же вызовом, что и остальные обработчики — один
+                // и тот же снимок шины для любого потребителя в этом тике.
+                val di = modbus?.readDiscreteInputs(SLAVE_DIO, 0, 16)
+                if (di == null || ch < 0 || ch >= di.size) {
                     result.error("MODBUS", "pollTerminal failed", null)
                 } else {
-                    val raw = di[0]
-                    result.success(mapOf("state" to raw, "confirmed" to pollTerminalEdge(raw, mode, guardMs)))
+                    val raw = di[ch]
+                    // "all" — тот же снимок 16 входов, что уже прочитан для
+                    // channel/confirmed выше, отдаём его же для диагностики
+                    // на вкладке "Датчики" (см. _pollTerminalOnce в
+                    // service_menu.dart) — так проверка "на другом ли канале
+                    // сигнал" не заводит ещё одну отдельную транзакцию по
+                    // шине вдобавок к этой.
+                    result.success(
+                        mapOf(
+                            "state" to raw,
+                            "confirmed" to pollTerminalEdge(raw, mode, guardMs),
+                            "all" to di.map { it },
+                        )
+                    )
                 }
             }
 
