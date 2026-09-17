@@ -125,6 +125,131 @@ class ModbusService {
     }
   }
 
+  // ============================================================
+  // СКАНЕР ШИНЫ (задача "сканер шины Modbus") — произвольные
+  // адрес/функция/регистр, не только устройства из SLAVE_*.
+  // ============================================================
+
+  // Быстрый пробный запрос "занят ли этот адрес" — для перебора диапазона.
+  static Future<bool> scanProbe({
+    required int slaveId,
+    int timeoutMs = 100,
+  }) async {
+    try {
+      return await _channel.invokeMethod<bool>('scanProbe', {
+            'slaveId': slaveId,
+            'timeoutMs': timeoutMs,
+          }) ??
+          false;
+    } catch (e) {
+      debugPrint('ModbusService.scanProbe error: $e');
+      return false;
+    }
+  }
+
+  // funcCode — ровно номер функции Modbus: 0x01 катушки, 0x02 дискретные
+  // входы, 0x03 регистры хранения, 0x04 входные регистры.
+  static Future<ScanReadResult> scanRead({
+    required int slaveId,
+    required int funcCode,
+    required int startAddr,
+    required int count,
+    int timeoutMs = 300,
+  }) async {
+    try {
+      final result = await _channel.invokeMethod<Map>('scanRead', {
+        'slaveId': slaveId,
+        'funcCode': funcCode,
+        'startAddr': startAddr,
+        'count': count,
+        'timeoutMs': timeoutMs,
+      });
+      if (result == null) return const ScanReadResult(status: 'no_response');
+      final status = result['status'] as String? ?? 'no_response';
+      if (status != 'ok') {
+        return ScanReadResult(
+          status: status,
+          exceptionCode: result['exceptionCode'] as int?,
+        );
+      }
+      final raw = (result['values'] as List?) ?? const [];
+      if (funcCode == 0x01 || funcCode == 0x02) {
+        return ScanReadResult(
+          status: 'ok',
+          boolValues: raw.map((e) => e as bool).toList(),
+        );
+      }
+      return ScanReadResult(
+        status: 'ok',
+        intValues: raw.map((e) => e as int).toList(),
+      );
+    } catch (e) {
+      debugPrint('ModbusService.scanRead error: $e');
+      return const ScanReadResult(status: 'no_response');
+    }
+  }
+
+  static Future<bool> scanWriteRegister({
+    required int slaveId,
+    required int addr,
+    required int value,
+  }) async {
+    try {
+      return await _channel.invokeMethod<bool>('scanWriteRegister', {
+            'slaveId': slaveId,
+            'addr': addr,
+            'value': value,
+          }) ??
+          false;
+    } catch (e) {
+      debugPrint('ModbusService.scanWriteRegister error: $e');
+      return false;
+    }
+  }
+
+  static Future<bool> scanWriteCoil({
+    required int slaveId,
+    required int addr,
+    required bool value,
+  }) async {
+    try {
+      return await _channel.invokeMethod<bool>('scanWriteCoil', {
+            'slaveId': slaveId,
+            'addr': addr,
+            'value': value,
+          }) ??
+          false;
+    } catch (e) {
+      debugPrint('ModbusService.scanWriteCoil error: $e');
+      return false;
+    }
+  }
+
+  // Перебор скорости порта — на каждой пробует slaveId, возвращает нашедшую
+  // скорость или null, если ни на одной ответа не было. Порт закрывается
+  // и переоткрывается заново на каждой скорости (иначе это не сработало
+  // бы: порт уже открыт на боевой скорости, идемпотентный open() не тронул
+  // бы его) и обязательно восстанавливается на originalBaud в конце —
+  // независимо от результата, чтобы приложение не осталось без связи.
+  static Future<int?> baudSweep({
+    required int slaveId,
+    List<int> bauds = const [4800, 19200, 38400, 115200],
+    String port = '/dev/ttyS5',
+    int originalBaud = 9600,
+  }) async {
+    try {
+      return await _channel.invokeMethod<int>('baudSweep', {
+        'slaveId': slaveId,
+        'bauds': bauds,
+        'port': port,
+        'originalBaud': originalBaud,
+      });
+    } catch (e) {
+      debugPrint('ModbusService.baudSweep error: $e');
+      return null;
+    }
+  }
+
   // Читает температуру термопары, канал 0-3. Возвращает °C,
   // либо null при ошибке чтения (не путать с настоящим 0°C).
   static Future<double?> readTemperature({int channel = 0}) async {
@@ -271,4 +396,25 @@ class TerminalPoll {
   final bool confirmed;
 
   const TerminalPoll({required this.state, required this.confirmed});
+}
+
+// Результат scanRead (сканер шины) — статус различает три причины
+// неудачи (задача "сканер шины", 1.7), а не сводит их к одному "не
+// получилось":
+//   'ok'          — данные получены, см. boolValues/intValues
+//   'no_response' — устройство не ответило вовсе
+//   'bad_crc'     — ответ пришёл, но контрольная сумма не сошлась
+//   'exception'   — устройство ответило кодом ошибки, см. exceptionCode
+class ScanReadResult {
+  final String status;
+  final int? exceptionCode;
+  final List<bool>? boolValues; // funcCode 0x01/0x02
+  final List<int>? intValues; // funcCode 0x03/0x04, беззнаковые 0..65535
+
+  const ScanReadResult({
+    required this.status,
+    this.exceptionCode,
+    this.boolValues,
+    this.intValues,
+  });
 }

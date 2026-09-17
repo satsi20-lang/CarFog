@@ -64,9 +64,16 @@ class OutputWatchdogService {
     _instance = null;
   }
 
+  // Выключен настройкой (задача "починить обмен по шине", 4.1) — по
+  // умолчанию false: чтение катушек мешало диагностике поломки обмена, а
+  // поведение этой функции на конкретном модуле не до конца подтверждено.
+  // Диагностический режим, включается явно в сервисном меню, когда обмен
+  // по шине подтверждённо исправен.
+  bool _isEnabledByConfig() => notifier.config.outputWatchdogEnabled;
+
   void _begin() {
     notifier.addListener(_onNotifierChanged);
-    _paused = !_isIdleState(notifier.state);
+    _paused = !_isEnabledByConfig() || !_isIdleState(notifier.state);
     _reschedule();
   }
 
@@ -77,7 +84,7 @@ class OutputWatchdogService {
   }
 
   void _onNotifierChanged() {
-    final paused = !_isIdleState(notifier.state);
+    final paused = !_isEnabledByConfig() || !_isIdleState(notifier.state);
     if (paused != _paused) {
       _paused = paused;
       _reschedule();

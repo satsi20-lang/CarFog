@@ -2,6 +2,7 @@ package com.example.dry_fog_app
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import org.json.JSONArray
@@ -37,6 +38,51 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
         // Дублирует SLAVE_DIO как доступный статически — тот же адрес,
         // аварийному обработчику нужен вне экземпляра ModbusChannel.
         const val SLAVE_DIO_STATIC = 5
+
+        private const val TAG = "ModbusChannel"
+    }
+
+    // Единственная точка фактического открытия порта (задача "починить
+    // обмен по шине", 1.1-1.4). @Synchronized — защита от одновременного
+    // вызова из разных мест (1.3); MethodChannel-вызовы и так сериализованы
+    // через общую фоновую очередь, но это дешёвая и явная гарантия, а не
+    // расчёт на побочное свойство очереди.
+    //
+    // Идемпотентно: если порт уже открыт и жив — просто отвечает true, не
+    // трогая существующий экземпляр (не закрывает, не создаёт новый, не
+    // перезапускает stty на уже открытом порту — вторая беда из описания
+    // задачи). Если переоткрытие действительно нужно (порт не был открыт,
+    // либо предыдущий экземпляр закрыт/мёртв) — старый экземпляр сначала
+    // явно закрывается, чтобы не терять файловый дескриптор.
+    //
+    // Каждое фактическое открытие/закрытие — в лог с причиной (1.4): по
+    // логу сразу видно, сколько раз порт реально переоткрывался, не
+    // вычисляя это по косвенным симптомам вроде "устройство не отвечает".
+    @Synchronized
+    private fun openPort(port: String, baud: Int, reason: String): Boolean {
+        val existing = modbus
+        if (existing != null && existing.isOpen()) {
+            return true
+        }
+        if (existing != null) {
+            Log.d(TAG, "openPort: закрываю предыдущий экземпляр перед переоткрытием ($reason)")
+            existing.close()
+            modbus = null
+            activeBus = null
+        }
+        val bus = ModbusRtu()
+        val opened = bus.open(port, baud)
+        return if (opened) {
+            Log.d(TAG, "openPort: порт открыт ($port, причина: $reason)")
+            modbus = bus
+            activeBus = bus
+            true
+        } else {
+            Log.e(TAG, "openPort: не удалось открыть ($port, причина: $reason)")
+            modbus = null
+            activeBus = null
+            false
+        }
     }
 
     // Опрос монетоприёмника РЕЖИМА ОПЛАТЫ — работает только между
@@ -69,17 +115,25 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
 
+            // Идемпотентно (задача "починить обмен по шине" 1.1) — раньше
+            // каждый вызов "open" безусловно создавал новый ModbusRtu и
+            // терял предыдущий БЕЗ close(), не освобождая символьное
+            // устройство. При повторных вызовах (в частности, из цикла
+            // StartupService на шаге 37) на одном /dev/ttyS5 копились
+            // открытые дескрипторы, и ответ мог вычитываться не из того
+            // дескриптора, который отправлял запрос — снаружи это выглядит
+            // как "устройство не отвечает", хотя физически (индикатор на
+            // модуле мигает) запросы доходят.
             "open" -> {
                 val port = call.argument<String>("port") ?: "/dev/ttyS5"
                 val baud = call.argument<Int>("baud") ?: 9600
-                val bus = ModbusRtu()
-                val opened = bus.open(port, baud)
-                modbus = bus
-                activeBus = if (opened) bus else null
-                result.success(opened)
+                result.success(openPort(port, baud, "explicit open() call"))
             }
 
             "close" -> {
+                if (modbus != null) {
+                    Log.d(TAG, "close: закрываю порт (явный вызов close())")
+                }
                 modbus?.close()
                 modbus = null
                 activeBus = null
@@ -142,6 +196,127 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
                 val coils = modbus?.readCoils(SLAVE_DIO, 0, 12, timeoutMs = 150L)
                 if (coils == null) result.error("MODBUS", "readCoils failed", null)
                 else result.success(coils.toList())
+            }
+
+            // ============================================================
+            // СКАНЕР ШИНЫ (задача "сканер шины Modbus") — техник работает с
+            // произвольным устройством/адресом/функцией, не только с теми,
+            // что зашиты в SLAVE_*. Свой поток не заводится (правило
+            // проекта) — вызывается часто, коротко, через уже существующую
+            // фоновую очередь, как и остальной обмен.
+            // ============================================================
+
+            // Быстрый пробный запрос "кто-нибудь ответил на этот адрес" —
+            // для перебора диапазона (задача 2). FC03, 1 регистр с адреса
+            // 0 — не важно, поддерживает ли устройство именно этот регистр:
+            // и успешный ответ, и код ошибки устройства одинаково означают
+            // "адрес занят", разбирает это scanTransact ниже.
+            "scanProbe" -> {
+                val slaveId = call.argument<Int>("slaveId")
+                    ?: return result.error("ARG", "no slaveId", null)
+                val timeoutMs = (call.argument<Int>("timeoutMs") ?: 100).toLong()
+                val r = modbus?.scanTransact(slaveId, 0x03, 0, 1, timeoutMs)
+                    ?: ModbusRtu.ScanResult("no_response")
+                result.success(r.status != "no_response")
+            }
+
+            // Произвольное чтение (задача 1): funcCode ровно как в
+            // документации устройства — 0x01 катушки, 0x02 дискретные
+            // входы, 0x03 регистры хранения, 0x04 входные регистры.
+            // Статус разбирает три разные причины неудачи (задача 1.7) —
+            // Dart-сторона показывает их отдельно, а не как один "не
+            // получилось".
+            "scanRead" -> {
+                val slaveId = call.argument<Int>("slaveId")
+                    ?: return result.error("ARG", "no slaveId", null)
+                val funcCode = call.argument<Int>("funcCode")
+                    ?: return result.error("ARG", "no funcCode", null)
+                val startAddr = call.argument<Int>("startAddr") ?: 0
+                val count = call.argument<Int>("count") ?: 1
+                val timeoutMs = (call.argument<Int>("timeoutMs") ?: 300).toLong()
+                val r = modbus?.scanTransact(slaveId, funcCode, startAddr, count, timeoutMs)
+                    ?: ModbusRtu.ScanResult("no_response")
+                if (r.status != "ok") {
+                    result.success(mapOf("status" to r.status, "exceptionCode" to r.exceptionCode))
+                } else {
+                    val data = r.data!!
+                    if (funcCode == 0x01 || funcCode == 0x02) {
+                        val values = (0 until count).map { i ->
+                            val byteIdx = i / 8
+                            val bitIdx = i % 8
+                            (data[byteIdx].toInt() and (1 shl bitIdx)) != 0
+                        }
+                        result.success(mapOf("status" to "ok", "values" to values))
+                    } else {
+                        val values = (0 until count).map { i ->
+                            ((data[i * 2].toInt() and 0xFF) shl 8) or (data[i * 2 + 1].toInt() and 0xFF)
+                        }
+                        result.success(mapOf("status" to "ok", "values" to values))
+                    }
+                }
+            }
+
+            // Запись одиночного регистра/катушки (задача 3) — опасный
+            // раздел, подтверждение показывает Dart-сторона ДО вызова.
+            "scanWriteRegister" -> {
+                val slaveId = call.argument<Int>("slaveId")
+                    ?: return result.error("ARG", "no slaveId", null)
+                val addr = call.argument<Int>("addr")
+                    ?: return result.error("ARG", "no addr", null)
+                val value = call.argument<Int>("value")
+                    ?: return result.error("ARG", "no value", null)
+                val ok = modbus?.writeSingleRegister(slaveId, addr, value, timeoutMs = 200L) == true
+                result.success(ok)
+            }
+
+            "scanWriteCoil" -> {
+                val slaveId = call.argument<Int>("slaveId")
+                    ?: return result.error("ARG", "no slaveId", null)
+                val addr = call.argument<Int>("addr")
+                    ?: return result.error("ARG", "no addr", null)
+                val value = call.argument<Boolean>("value") ?: false
+                val ok = modbus?.writeSingleCoil(slaveId, addr, value, timeoutMs = 200L) == true
+                result.success(ok)
+            }
+
+            // Перебор скорости порта — диагностика "живой ли адрес на другой
+            // скорости, если 9600 молчит" (задача "починить обмен по шине",
+            // живая калибровка). Открытие идемпотентно (openPort), но само по
+            // себе это не поможет здесь: порт уже открыт на боевой скорости,
+            // и идемпотентный вызов с другой скоростью просто ничего не
+            // сделает. Поэтому здесь порт закрывается явно перед каждой
+            // пробой и восстанавливается на исходной скорости в конце —
+            // ЛЮБОЙ исход (нашли или нет) не должен оставить приложение без
+            // рабочего соединения.
+            "baudSweep" -> {
+                val port = call.argument<String>("port") ?: "/dev/ttyS5"
+                val slaveId = call.argument<Int>("slaveId") ?: 5
+                val bauds = (call.argument<List<Int>>("bauds"))
+                    ?: listOf(4800, 19200, 38400, 115200)
+                val originalBaud = call.argument<Int>("originalBaud") ?: 9600
+
+                modbus?.close()
+                modbus = null
+                activeBus = null
+
+                var foundBaud: Int? = null
+                for (baud in bauds) {
+                    val bus = ModbusRtu()
+                    if (bus.open(port, baud)) {
+                        val probe = bus.scanTransact(slaveId, 0x03, 0, 1, 200L)
+                        if (probe.status != "no_response") {
+                            foundBaud = baud
+                        }
+                    }
+                    bus.close()
+                    if (foundBaud != null) break
+                }
+
+                // Возвращаем рабочую скорость независимо от результата —
+                // остальное приложение не должно остаться без связи из-за
+                // диагностики.
+                openPort(port, originalBaud, "восстановление после перебора скорости")
+                result.success(foundBaud)
             }
 
             // Читает температуру термопары (канал 0-3, возвращает °C × 10).

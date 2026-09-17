@@ -44,6 +44,13 @@ class AppConfig {
   // реагировать на этот вход вообще — по умолчанию выключено.
   bool paymentTerminalEnabled;
 
+  // Сторож выходов (задача "сторож выходов", шаг 37) — по умолчанию
+  // ВЫКЛЮЧЕН (задача "починить обмен по шине", 4.1): периодическое чтение
+  // катушек мешало диагностике поломки обмена, поведение чтения катушек
+  // на конкретном модуле не до конца подтверждено. Диагностический
+  // режим — включать явно, когда обмен по шине подтверждённо исправен.
+  bool outputWatchdogEnabled;
+
   Map<String, List<String>> flavorNames;
 
   AppConfig({
@@ -62,6 +69,7 @@ class AppConfig {
     this.paymentTerminalMode = 'edge',
     this.paymentTerminalGuardMs = 3000,
     this.paymentTerminalEnabled = false,
+    this.outputWatchdogEnabled = false,
     Map<String, List<String>>? flavorNames,
   }) : flavorNames =
            flavorNames ??
@@ -114,6 +122,7 @@ class AppConfig {
     String? paymentTerminalMode,
     int? paymentTerminalGuardMs,
     bool? paymentTerminalEnabled,
+    bool? outputWatchdogEnabled,
     Map<String, List<String>>? flavorNames,
   }) {
     return AppConfig(
@@ -135,6 +144,8 @@ class AppConfig {
           paymentTerminalGuardMs ?? this.paymentTerminalGuardMs,
       paymentTerminalEnabled:
           paymentTerminalEnabled ?? this.paymentTerminalEnabled,
+      outputWatchdogEnabled:
+          outputWatchdogEnabled ?? this.outputWatchdogEnabled,
       flavorNames: flavorNames ?? this.flavorNames,
     );
   }

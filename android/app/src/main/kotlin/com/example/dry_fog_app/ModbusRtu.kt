@@ -149,7 +149,12 @@ class ModbusRtu {
     }
 
     // FC06: Write Single Register (используется для смены адреса счётчика DDS6619)
-    fun writeSingleRegister(slaveId: Int, addr: Int, value: Int): Boolean {
+    // timeoutMs — явный, как и везде (см. историю про pollTerminal в
+    // ModbusChannel.kt): забытый явный таймаут на массовом обмене
+    // подставляет значение по умолчанию и может держать шину заметно дольше,
+    // чем нужно. Сканеру шины (запись служебных регистров) короткий явный
+    // таймаут особенно важен.
+    fun writeSingleRegister(slaveId: Int, addr: Int, value: Int, timeoutMs: Long = 500): Boolean {
         val req = byteArrayOf(
             slaveId.toByte(),
             0x06,
@@ -158,12 +163,17 @@ class ModbusRtu {
         )
         val reqWithCrc = appendCrc(req)
         // Ответ FC06 — эхо запроса: 6 байт данных + 2 CRC (как FC05)
-        val resp = sendAndReceive(reqWithCrc, 6) ?: return false
+        val resp = sendAndReceive(reqWithCrc, 6, timeoutMs) ?: return false
         return validateResponse(resp, slaveId, 0x06)
     }
 
     // FC16: Write Multiple Registers (запись float/составных значений)
-    fun writeMultipleRegisters(slaveId: Int, startAddr: Int, data: ByteArray): Boolean {
+    fun writeMultipleRegisters(
+        slaveId: Int,
+        startAddr: Int,
+        data: ByteArray,
+        timeoutMs: Long = 500,
+    ): Boolean {
         val quantity = data.size / 2
         val req = byteArrayOf(
             slaveId.toByte(),
@@ -174,14 +184,19 @@ class ModbusRtu {
         ) + data
         val reqWithCrc = appendCrc(req)
         // Ответ FC16 — эхо slave+fc+addr+quantity (без данных): 6 байт + 2 CRC
-        val resp = sendAndReceive(reqWithCrc, 6) ?: return false
+        val resp = sendAndReceive(reqWithCrc, 6, timeoutMs) ?: return false
         return validateResponse(resp, slaveId, 0x10)
     }
 
     // FC03: Read Holding Registers (термопары)
-    fun readHoldingRegisters(slaveId: Int, startAddr: Int, count: Int): IntArray? {
+    fun readHoldingRegisters(
+        slaveId: Int,
+        startAddr: Int,
+        count: Int,
+        timeoutMs: Long = 500,
+    ): IntArray? {
         val req = buildRequest(slaveId, 0x03, startAddr, count)
-        val resp = sendAndReceive(req, 3 + count * 2) ?: return null
+        val resp = sendAndReceive(req, 3 + count * 2, timeoutMs) ?: return null
         if (!validateResponse(resp, slaveId, 0x03)) return null
         val byteCount = resp[2].toInt() and 0xFF
         if (byteCount < count * 2) return null
@@ -195,15 +210,87 @@ class ModbusRtu {
     // на этом устройстве FC03 отдаёт статичные конфигурационные значения,
     // а реальные показания идут именно через FC04). Логика идентична
     // readHoldingRegisters, отличается только function code.
-    fun readInputRegisters(slaveId: Int, startAddr: Int, count: Int): IntArray? {
+    fun readInputRegisters(
+        slaveId: Int,
+        startAddr: Int,
+        count: Int,
+        timeoutMs: Long = 500,
+    ): IntArray? {
         val req = buildRequest(slaveId, 0x04, startAddr, count)
-        val resp = sendAndReceive(req, 3 + count * 2) ?: return null
+        val resp = sendAndReceive(req, 3 + count * 2, timeoutMs) ?: return null
         if (!validateResponse(resp, slaveId, 0x04)) return null
         val byteCount = resp[2].toInt() and 0xFF
         if (byteCount < count * 2) return null
         return IntArray(count) { i ->
             ((resp[3 + i * 2].toInt() and 0xFF) shl 8) or
             (resp[4 + i * 2].toInt() and 0xFF)
+        }
+    }
+
+    // Результат сырой транзакции для сканера шины — с разбором причины
+    // неудачи. Обычные read*/write* выше для остального приложения
+    // намеренно сводят любую неудачу к null/false (там это верное решение
+    // — вызывающему коду важен только факт "не получилось"), но технику,
+    // разбирающему незнакомое устройство, разница принципиальна: "нет
+    // ответа" (адрес не занят/провод не подключён), "битый CRC" (наводка,
+    // не тот адрес отозвался) и "код ошибки устройства" (адрес существует,
+    // но не поддерживает именно эту функцию/регистр) — три разных вывода,
+    // три разных следующих шага.
+    data class ScanResult(
+        val status: String, // "ok" | "no_response" | "bad_crc" | "exception"
+        val exceptionCode: Int? = null,
+        val data: ByteArray? = null, // только данные (без заголовка/CRC), для "ok"
+    )
+
+    // funcCode напрямую (0x01/0x02/0x03/0x04) — сканеру нужны все четыре,
+    // без привязки к типу результата, который для каждой функции свой.
+    fun scanTransact(
+        slaveId: Int,
+        funcCode: Int,
+        addr: Int,
+        count: Int,
+        timeoutMs: Long,
+    ): ScanResult {
+        val req = buildRequest(slaveId, funcCode, addr, count)
+        val expectedDataBytes = if (funcCode == 0x01 || funcCode == 0x02) {
+            1 + ((count + 7) / 8) // 1 байт byte-count + сами биты
+        } else {
+            1 + count * 2 // 1 байт byte-count + сами регистры
+        }
+        ioLock.lock()
+        try {
+            val out = outputStream ?: return ScanResult("no_response")
+            if (inputStream == null) return ScanResult("no_response")
+            return try {
+                out.write(req)
+                out.flush()
+                Thread.sleep(20) // межфреймовая пауза, как и в sendAndReceive
+
+                // Ждём столько же, сколько ожидали бы от успешного ответа —
+                // кадр с кодом ошибки короче (5 байт: slave+fc|0x80+code+CRC),
+                // readWithTimeout всё равно вернёт раньше срока, как только
+                // наберёт эти 5 байт (внутренний цикл проверяет buffer.size
+                // против затребованного количества, здесь оно избыточно —
+                // это ожидаемо и не мешает разбору ниже).
+                val resp = readWithTimeout(2 + expectedDataBytes + 2, timeoutMs)
+                if (resp.size < 5) return ScanResult("no_response")
+                if (!checkCrc(resp)) return ScanResult("bad_crc")
+                if ((resp[0].toInt() and 0xFF) != slaveId) return ScanResult("no_response")
+
+                val respFc = resp[1].toInt() and 0xFF
+                if (respFc == (funcCode or 0x80)) {
+                    return ScanResult("exception", exceptionCode = resp[2].toInt() and 0xFF)
+                }
+                if (respFc != funcCode || resp.size < 2 + expectedDataBytes + 2) {
+                    return ScanResult("no_response")
+                }
+                ScanResult("ok", data = resp.copyOfRange(3, 2 + expectedDataBytes))
+            } catch (e: Exception) {
+                Log.e("ModbusRtu", "scanTransact error: $e")
+                ScanResult("no_response")
+            }
+        } finally {
+            ioLock.unlock()
         }
     }
 

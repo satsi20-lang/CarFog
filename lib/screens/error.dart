@@ -170,6 +170,25 @@ class _ErrorScreenState extends State<ErrorScreen>
                 ),
               ),
 
+              // Невидимая зона долгого нажатия — вход в сервисное меню
+              // (тот же жест, что и на заставке, standby.dart). Без
+              // этого при 'bus_unavailable' техник не мог бы попасть в
+              // "Диагностика" именно тогда, когда это нужнее всего —
+              // экран ошибки не возвращается сам по таймеру, пока шина
+              // не восстановится (см. initState), и без этого выхода
+              // был бы заперт вместе с клиентом.
+              Positioned(
+                left: 0,
+                top: 0,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onLongPress: () => context.read<AppNotifier>().transition(
+                    AppState.servicePinEntry,
+                  ),
+                  child: const SizedBox(width: 80, height: 80),
+                ),
+              ),
+
               // Main content
               Center(
                 child: Padding(

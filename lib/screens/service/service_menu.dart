@@ -114,6 +114,67 @@ const Map<String, Map<String, String>> _i18n = {
     'kiosk_open_desktop_hint':
         'Нужно для обслуживания планшета, пока '
         'включён киоск-режим — без этой кнопки из приложения будет не выйти.',
+    // --- Сканер шины (задача "сканер шины Modbus") ---
+    'tab_scanner': 'Сканер',
+    'scanner_scan_section': 'Поиск устройств',
+    'scanner_scan_from': 'От',
+    'scanner_scan_to': 'До',
+    'scanner_scan_start': 'Начать поиск',
+    'scanner_scan_stop': 'Остановить',
+    'scanner_scan_progress': 'Опрошено',
+    'scanner_scan_empty': 'Пока ничего не найдено',
+    'scanner_known_dio': 'модуль входов-выходов',
+    'scanner_known_thermo': 'термопары',
+    'scanner_known_energy': 'счётчик энергии',
+    'scanner_read_section': 'Чтение регистров',
+    'scanner_slave': 'Адрес устройства',
+    'scanner_func': 'Тип чтения',
+    'scanner_func_coils': 'Катушки (FC01)',
+    'scanner_func_discrete': 'Дискретные входы (FC02)',
+    'scanner_func_holding': 'Регистры хранения (FC03)',
+    'scanner_func_input': 'Входные регистры (FC04)',
+    'scanner_start_addr': 'Начальный адрес',
+    'scanner_count': 'Количество',
+    'scanner_read_btn': 'Прочитать',
+    'scanner_result_addr': 'Регистр',
+    'scanner_result_dec': 'Десятичное',
+    'scanner_result_hex': 'Hex',
+    'scanner_result_signed': 'Знаковое',
+    'scanner_bit_on': 'ВКЛ',
+    'scanner_bit_off': 'ВЫКЛ',
+    'scanner_err_no_response': 'Нет ответа',
+    'scanner_err_bad_crc': 'Неверная контрольная сумма',
+    'scanner_err_exception': 'Устройство вернуло код ошибки',
+    'scanner_write_section': 'Запись регистра',
+    'scanner_write_warning':
+        'Опасно: неверная запись в служебный регистр способна сделать '
+        'устройство недоступным — восстановление потребует подключения в одиночку.',
+    'scanner_write_type': 'Тип записи',
+    'scanner_write_type_register': 'Регистр (FC06)',
+    'scanner_write_type_coil': 'Катушка (FC05)',
+    'scanner_write_addr': 'Адрес регистра',
+    'scanner_write_value': 'Значение',
+    'scanner_write_btn': 'Записать',
+    'scanner_write_confirm_title': 'Подтвердите запись',
+    'scanner_write_confirm_cancel': 'Отмена',
+    'scanner_write_result_readback': 'Перечитано',
+    'scanner_write_result_fail': 'Запись не удалась',
+    'scanner_clear': 'Очистить результаты',
+    // --- Починка обмена по шине (задача "починить обмен по шине") ---
+    'bus_healthy': 'Шина работает',
+    'bus_unhealthy': 'Шина недоступна',
+    'watchdog_enabled': 'Сторож выходов (диагностический режим)',
+    'watchdog_hint':
+        'Периодически сверяет фактическое состояние выходов с ожидаемым '
+        '"всё выключено" в покое. Выключен по умолчанию — включайте, только '
+        'когда обмен по шине подтверждённо исправен.',
+    'scanner_sweep_hint':
+        'Устройство не отвечает ни на одном адресе на текущей скорости? '
+        'Проверьте другие скорости — порт вернётся на рабочую скорость '
+        'после проверки в любом случае.',
+    'scanner_sweep_btn': 'Перебрать скорость (4800/19200/38400/115200)',
+    'scanner_sweep_found': 'Найден на скорости',
+    'scanner_sweep_not_found': 'Не найден ни на одной скорости',
   },
   'en': {
     'menu_title': 'Service menu',
@@ -217,6 +278,67 @@ const Map<String, Map<String, String>> _i18n = {
     'kiosk_open_desktop_hint':
         'Needed to service the tablet while kiosk '
         'mode is on — without this button there is no way out of the app.',
+    // --- Bus scanner ---
+    'tab_scanner': 'Scanner',
+    'scanner_scan_section': 'Device search',
+    'scanner_scan_from': 'From',
+    'scanner_scan_to': 'To',
+    'scanner_scan_start': 'Start search',
+    'scanner_scan_stop': 'Stop',
+    'scanner_scan_progress': 'Probed',
+    'scanner_scan_empty': 'Nothing found yet',
+    'scanner_known_dio': 'I/O module',
+    'scanner_known_thermo': 'thermocouples',
+    'scanner_known_energy': 'energy meter',
+    'scanner_read_section': 'Register read',
+    'scanner_slave': 'Device address',
+    'scanner_func': 'Read type',
+    'scanner_func_coils': 'Coils (FC01)',
+    'scanner_func_discrete': 'Discrete inputs (FC02)',
+    'scanner_func_holding': 'Holding registers (FC03)',
+    'scanner_func_input': 'Input registers (FC04)',
+    'scanner_start_addr': 'Start address',
+    'scanner_count': 'Count',
+    'scanner_read_btn': 'Read',
+    'scanner_result_addr': 'Register',
+    'scanner_result_dec': 'Decimal',
+    'scanner_result_hex': 'Hex',
+    'scanner_result_signed': 'Signed',
+    'scanner_bit_on': 'ON',
+    'scanner_bit_off': 'OFF',
+    'scanner_err_no_response': 'No response',
+    'scanner_err_bad_crc': 'Bad checksum',
+    'scanner_err_exception': 'Device returned an error code',
+    'scanner_write_section': 'Register write',
+    'scanner_write_warning':
+        'Dangerous: a wrong write to a service register can make the '
+        'device unreachable — recovery will need a one-on-one connection.',
+    'scanner_write_type': 'Write type',
+    'scanner_write_type_register': 'Register (FC06)',
+    'scanner_write_type_coil': 'Coil (FC05)',
+    'scanner_write_addr': 'Register address',
+    'scanner_write_value': 'Value',
+    'scanner_write_btn': 'Write',
+    'scanner_write_confirm_title': 'Confirm write',
+    'scanner_write_confirm_cancel': 'Cancel',
+    'scanner_write_result_readback': 'Read back',
+    'scanner_write_result_fail': 'Write failed',
+    'scanner_clear': 'Clear results',
+    // --- Bus exchange fix ---
+    'bus_healthy': 'Bus is working',
+    'bus_unhealthy': 'Bus unavailable',
+    'watchdog_enabled': 'Output watchdog (diagnostic mode)',
+    'watchdog_hint':
+        'Periodically checks that outputs are actually off while idle, as '
+        'expected. Off by default — enable only once bus exchange is '
+        'confirmed healthy.',
+    'scanner_sweep_hint':
+        'Device not answering on any address at the current baud rate? '
+        'Try other baud rates — the port returns to the working rate '
+        'after the check either way.',
+    'scanner_sweep_btn': 'Sweep baud rate (4800/19200/38400/115200)',
+    'scanner_sweep_found': 'Found at baud',
+    'scanner_sweep_not_found': 'Not found at any baud rate',
   },
   'et': {
     'menu_title': 'Teenindusmenüü',
@@ -321,6 +443,67 @@ const Map<String, Map<String, String>> _i18n = {
     'kiosk_open_desktop_hint':
         'Vajalik tahvli hooldamiseks, kui kioski '
         'režiim on sees — ilma selle nuputa ei pääse rakendusest välja.',
+    // --- Siini skanner ---
+    'tab_scanner': 'Skanner',
+    'scanner_scan_section': 'Seadmete otsing',
+    'scanner_scan_from': 'Alates',
+    'scanner_scan_to': 'Kuni',
+    'scanner_scan_start': 'Alusta otsingut',
+    'scanner_scan_stop': 'Peata',
+    'scanner_scan_progress': 'Kontrollitud',
+    'scanner_scan_empty': 'Veel midagi ei leitud',
+    'scanner_known_dio': 'sisend-väljundmoodul',
+    'scanner_known_thermo': 'termopaarid',
+    'scanner_known_energy': 'energiaarvesti',
+    'scanner_read_section': 'Registrite lugemine',
+    'scanner_slave': 'Seadme aadress',
+    'scanner_func': 'Lugemise tüüp',
+    'scanner_func_coils': 'Releed (FC01)',
+    'scanner_func_discrete': 'Diskreetsed sisendid (FC02)',
+    'scanner_func_holding': 'Hoiuregistrid (FC03)',
+    'scanner_func_input': 'Sisendregistrid (FC04)',
+    'scanner_start_addr': 'Algusaadress',
+    'scanner_count': 'Kogus',
+    'scanner_read_btn': 'Loe',
+    'scanner_result_addr': 'Register',
+    'scanner_result_dec': 'Kümnend',
+    'scanner_result_hex': 'Hex',
+    'scanner_result_signed': 'Märgiga',
+    'scanner_bit_on': 'SEES',
+    'scanner_bit_off': 'VÄLJAS',
+    'scanner_err_no_response': 'Vastus puudub',
+    'scanner_err_bad_crc': 'Vigane kontrollsumma',
+    'scanner_err_exception': 'Seade tagastas veakoodi',
+    'scanner_write_section': 'Registri kirjutamine',
+    'scanner_write_warning':
+        'Ohtlik: vale kirje teenindusregistrisse võib muuta seadme '
+        'kättesaamatuks — taastamine nõuab ühendust seadmega üksinda.',
+    'scanner_write_type': 'Kirjutamise tüüp',
+    'scanner_write_type_register': 'Register (FC06)',
+    'scanner_write_type_coil': 'Relee (FC05)',
+    'scanner_write_addr': 'Registri aadress',
+    'scanner_write_value': 'Väärtus',
+    'scanner_write_btn': 'Kirjuta',
+    'scanner_write_confirm_title': 'Kinnita kirjutamine',
+    'scanner_write_confirm_cancel': 'Tühista',
+    'scanner_write_result_readback': 'Tagasi loetud',
+    'scanner_write_result_fail': 'Kirjutamine ebaõnnestus',
+    'scanner_clear': 'Tühjenda tulemused',
+    // --- Siiniühenduse parandus ---
+    'bus_healthy': 'Siin töötab',
+    'bus_unhealthy': 'Siin pole saadaval',
+    'watchdog_enabled': 'Väljundite valvur (diagnostikarežiim)',
+    'watchdog_hint':
+        'Kontrollib perioodiliselt, kas väljundid on tegelikult välja '
+        'lülitatud, kui peaks. Vaikimisi väljas — lülita sisse alles siis, '
+        'kui siiniühendus on kinnitatult korras.',
+    'scanner_sweep_hint':
+        'Seade ei vasta ühelegi aadressile praegusel kiirusel? Proovi '
+        'teisi kiirusi — port taastub töökiirusele igal juhul pärast '
+        'kontrolli.',
+    'scanner_sweep_btn': 'Proovi kiirusi (4800/19200/38400/115200)',
+    'scanner_sweep_found': 'Leitud kiirusel',
+    'scanner_sweep_not_found': 'Ei leitud ühelgi kiirusel',
   },
 };
 
@@ -333,7 +516,7 @@ class ServiceMenuScreen extends StatefulWidget {
 
 class _ServiceMenuScreenState extends State<ServiceMenuScreen> {
   int _tab =
-      0; // 0=Настройки, 1=Ароматы, 2=Диагностика, 3=Датчики, 4=Журнал, 5=Облако, 6=Киоск
+      0; // 0=Настройки, 1=Ароматы, 2=Диагностика, 3=Датчики, 4=Журнал, 5=Облако, 6=Сканер, 7=Киоск
 
   Widget _buildTab() {
     switch (_tab) {
@@ -349,6 +532,8 @@ class _ServiceMenuScreenState extends State<ServiceMenuScreen> {
         return _JournalTab();
       case 5:
         return _CloudTab();
+      case 6:
+        return _ScannerTab();
       default:
         return _KioskTab();
     }
@@ -367,6 +552,7 @@ class _ServiceMenuScreenState extends State<ServiceMenuScreen> {
       t['tab_sensors']!,
       t['tab_journal']!,
       t['tab_cloud']!,
+      t['tab_scanner']!,
       t['tab_kiosk']!,
     ];
 
@@ -821,9 +1007,12 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
   double? _temperature;
   Timer? _tempTimer;
 
+  late bool _watchdogEnabled;
+
   @override
   void initState() {
     super.initState();
+    _watchdogEnabled = context.read<AppNotifier>().config.outputWatchdogEnabled;
     _readEnergy();
     _energyTimer = Timer.periodic(
       const Duration(seconds: 3),
@@ -920,16 +1109,83 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
     });
   }
 
+  // Задача "починить обмен по шине", 4 — по умолчанию выключен, сохраняется
+  // сразу при переключении (тот же приём, что и киоск-режим), без отдельной
+  // кнопки "Сохранить".
+  Future<void> _toggleWatchdog(bool value) async {
+    setState(() => _watchdogEnabled = value);
+    final notifier = context.read<AppNotifier>();
+    await notifier.saveConfig(
+      notifier.config.copyWith(outputWatchdogEnabled: value),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final lang = context.watch<AppNotifier>().lang;
+    final notifier = context.watch<AppNotifier>();
+    final lang = notifier.lang;
     final t = _i18n[lang]!;
-    final levels = context.watch<AppNotifier>().levels;
-    final flavors = context.watch<AppNotifier>().config.flavorNames[lang] ?? [];
+    final levels = notifier.levels;
+    final flavors = notifier.config.flavorNames[lang] ?? [];
+    final busHealthy = notifier.busHealthy;
 
     return ListView(
       padding: const EdgeInsets.all(24),
       children: [
+        // Признак работоспособности шины (задача "починить обмен по
+        // шине", 5.3) — техник должен видеть текущее состояние, не
+        // догадываясь по симптомам вроде "клиенты жалуются, что не
+        // принимает деньги".
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF141B29),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: busHealthy
+                      ? const Color(0xFF00C6B2)
+                      : const Color(0xFFE53935),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                busHealthy ? t['bus_healthy']! : t['bus_unhealthy']!,
+                style: TextStyle(
+                  color: busHealthy
+                      ? const Color(0xFF00C6B2)
+                      : const Color(0xFFE53935),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Сторож выходов (задача "починить обмен по шине", 4) — по
+        // умолчанию выключен, диагностический режим.
+        _ToggleRow(
+          label: t['watchdog_enabled']!,
+          value: _watchdogEnabled,
+          onChanged: _toggleWatchdog,
+        ),
+        const SizedBox(height: 6),
+        Text(
+          t['watchdog_hint']!,
+          style: const TextStyle(color: Color(0xFF556677), fontSize: 12),
+        ),
+        const SizedBox(height: 20),
+        Container(height: 1, color: const Color(0xFF1A2233)),
+        const SizedBox(height: 20),
+
         Text(
           t['diag_levels']!,
           style: const TextStyle(
@@ -1990,6 +2246,961 @@ class _Field extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ============================================================
+// ВКЛАДКА: СКАНЕР ШИНЫ (задача "сканер шины Modbus")
+// ============================================================
+
+// Последние введённые параметры — статические поля класса, не поля
+// State. Вкладки этого сервисного меню не через TabBarView с keep-alive,
+// а через ручной _buildTab()/setState — переключение всегда создаёт
+// новый виджет и новый State, поэтому обычные instance-поля не пережили
+// бы уход с вкладки. Задача 4.4 явно хочет сохранять последний ввод "в
+// пределах запуска приложения" — статические поля переживают
+// пересоздание State, но не переживают перезапуск процесса, что и нужно.
+class _ScannerParams {
+  static int scanFrom = 1;
+  static int scanTo = 247;
+  static int readSlave = 1;
+  static int readFunc = 0x03;
+  static int readStartAddr = 0;
+  static int readCount = 1;
+  static int writeSlave = 1;
+  static String writeType = 'register'; // 'register' | 'coil'
+  static int writeAddr = 0;
+  static int writeValue = 0;
+}
+
+// Известные по конфигурации проекта адреса (ModbusChannel.kt: SLAVE_DIO,
+// SLAVE_THERMO, SLAVE_ENERGY) — подписываются в результатах поиска, если
+// совпали. Дублирование намеренное: у Dart нет доступа к константам
+// нативной стороны, значения нужно держать в синхроне вручную при их
+// изменении там.
+const Map<int, String> _knownSlaves = {
+  1: 'scanner_known_thermo',
+  3: 'scanner_known_energy',
+  5: 'scanner_known_dio',
+};
+
+// Стандартные коды исключений Modbus — протокольные термины, намеренно
+// не переводятся (как и "FC01" в остальном интерфейсе сканера).
+const Map<int, String> _exceptionNames = {
+  1: 'Illegal Function',
+  2: 'Illegal Data Address',
+  3: 'Illegal Data Value',
+  4: 'Slave Device Failure',
+  5: 'Acknowledge',
+  6: 'Slave Device Busy',
+  8: 'Memory Parity Error',
+  10: 'Gateway Path Unavailable',
+  11: 'Gateway Target Device Failed to Respond',
+};
+
+// Разумный предел на количество регистров/битов за один запрос (задача
+// 1.3) — случайный ввод вроде "60000" не должен подвешивать шину надолго.
+// 125 — практический потолок для регистров у большинства Modbus RTU
+// реализаций (2 байта на регистр, укладывается в стандартный размер
+// кадра), одно и то же значение используется и для битовых типов ради
+// простоты интерфейса.
+const int _scannerMaxCount = 125;
+
+class _ScannerTab extends StatefulWidget {
+  @override
+  State<_ScannerTab> createState() => _ScannerTabState();
+}
+
+class _ScannerTabState extends State<_ScannerTab> {
+  // --- Поиск устройств ---
+  late TextEditingController _scanFromCtrl;
+  late TextEditingController _scanToCtrl;
+  bool _scanning = false;
+  bool _scanCancelRequested = false;
+  int _scanProbed = 0;
+  int _scanTotal = 0;
+  final List<int> _scanFound = [];
+
+  // --- Перебор скорости (диагностика "молчащий, но подключённый адрес")
+  late TextEditingController _sweepSlaveCtrl;
+  bool _sweeping = false;
+  String? _sweepResultText;
+  bool? _sweepOk;
+
+  // --- Чтение регистров ---
+  late TextEditingController _readSlaveCtrl;
+  late TextEditingController _readStartCtrl;
+  late TextEditingController _readCountCtrl;
+  late int _readFunc;
+  bool _reading = false;
+  ScanReadResult? _readResult;
+  int _readResultStartAddr = 0;
+
+  // --- Запись регистра (опасно) ---
+  late TextEditingController _writeSlaveCtrl;
+  late TextEditingController _writeAddrCtrl;
+  late TextEditingController _writeValueCtrl;
+  late String _writeType;
+  bool _writing = false;
+  String? _writeResultText;
+  bool? _writeOk;
+
+  @override
+  void initState() {
+    super.initState();
+    _scanFromCtrl = TextEditingController(text: '${_ScannerParams.scanFrom}');
+    _scanToCtrl = TextEditingController(text: '${_ScannerParams.scanTo}');
+    _sweepSlaveCtrl = TextEditingController(text: '5');
+    _readSlaveCtrl = TextEditingController(text: '${_ScannerParams.readSlave}');
+    _readStartCtrl = TextEditingController(
+      text: '${_ScannerParams.readStartAddr}',
+    );
+    _readCountCtrl = TextEditingController(text: '${_ScannerParams.readCount}');
+    _readFunc = _ScannerParams.readFunc;
+    _writeSlaveCtrl = TextEditingController(
+      text: '${_ScannerParams.writeSlave}',
+    );
+    _writeAddrCtrl = TextEditingController(text: '${_ScannerParams.writeAddr}');
+    _writeValueCtrl = TextEditingController(
+      text: '${_ScannerParams.writeValue}',
+    );
+    _writeType = _ScannerParams.writeType;
+  }
+
+  @override
+  void dispose() {
+    // Сканер работает только пока открыта вкладка — при уходе прерываем
+    // перебор адресов (задача 4.2). Цикл проверяет и этот флаг, и
+    // mounted на каждой итерации; уже начатый одиночный запрос (это одна
+    // короткая транзакция) успеет доработать, следующая не начнётся.
+    _scanCancelRequested = true;
+    _scanFromCtrl.dispose();
+    _scanToCtrl.dispose();
+    _sweepSlaveCtrl.dispose();
+    _readSlaveCtrl.dispose();
+    _readStartCtrl.dispose();
+    _readCountCtrl.dispose();
+    _writeSlaveCtrl.dispose();
+    _writeAddrCtrl.dispose();
+    _writeValueCtrl.dispose();
+    super.dispose();
+  }
+
+  void _snack(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  // ---------------- Поиск устройств ----------------
+
+  Future<void> _startScan(Map<String, String> t) async {
+    final from = int.tryParse(_scanFromCtrl.text);
+    final to = int.tryParse(_scanToCtrl.text);
+    if (from == null || to == null || from < 1 || to > 247 || from > to) {
+      _snack('${t['scanner_scan_from']}/${t['scanner_scan_to']}: 1–247');
+      return;
+    }
+    _ScannerParams.scanFrom = from;
+    _ScannerParams.scanTo = to;
+    setState(() {
+      _scanning = true;
+      _scanCancelRequested = false;
+      _scanFound.clear();
+      _scanProbed = 0;
+      _scanTotal = to - from + 1;
+    });
+    // Без своего потока (правило проекта) — обычный последовательный
+    // цикл через уже существующую фоновую очередь, один короткий запрос
+    // за раз. Малый таймаут (100 мс) на пробу — иначе перебор всего
+    // диапазона растянулся бы на минуты (задача 2.2).
+    for (var addr = from; addr <= to; addr++) {
+      if (_scanCancelRequested || !mounted) break;
+      final found = await ModbusService.scanProbe(
+        slaveId: addr,
+        timeoutMs: 100,
+      );
+      if (!mounted) break;
+      setState(() {
+        _scanProbed++;
+        if (found) _scanFound.add(addr);
+      });
+    }
+    if (mounted) setState(() => _scanning = false);
+  }
+
+  void _stopScan() {
+    setState(() => _scanCancelRequested = true);
+  }
+
+  // ---------------- Перебор скорости ----------------
+  // Диагностика "адрес занят, но молчит на боевой скорости" — если
+  // устройство отвечает на нестандартной скорости, поиск на 9600 его
+  // никогда не найдёт. Порт восстанавливается на исходной скорости в
+  // конце в любом случае (см. ModbusChannel.baudSweep) — независимо от
+  // результата.
+
+  Future<void> _runBaudSweep(Map<String, String> t) async {
+    final slave = int.tryParse(_sweepSlaveCtrl.text);
+    if (slave == null || slave < 1 || slave > 247) {
+      _snack('${t['scanner_slave']}: 1–247');
+      return;
+    }
+    setState(() {
+      _sweeping = true;
+      _sweepResultText = null;
+      _sweepOk = null;
+    });
+    final found = await ModbusService.baudSweep(slaveId: slave);
+    if (!mounted) return;
+    setState(() {
+      _sweeping = false;
+      _sweepOk = found != null;
+      _sweepResultText = found != null
+          ? '${t['scanner_sweep_found']}: $found'
+          : t['scanner_sweep_not_found'];
+    });
+  }
+
+  // ---------------- Чтение регистров ----------------
+
+  Future<void> _read(Map<String, String> t) async {
+    final slave = int.tryParse(_readSlaveCtrl.text);
+    final start = int.tryParse(_readStartCtrl.text);
+    final count = int.tryParse(_readCountCtrl.text);
+    if (slave == null || slave < 1 || slave > 247) {
+      _snack('${t['scanner_slave']}: 1–247');
+      return;
+    }
+    if (start == null || start < 0 || start > 65535) {
+      _snack('${t['scanner_start_addr']}: 0–65535');
+      return;
+    }
+    if (count == null || count < 1 || count > _scannerMaxCount) {
+      _snack('${t['scanner_count']}: 1–$_scannerMaxCount');
+      return;
+    }
+    _ScannerParams.readSlave = slave;
+    _ScannerParams.readFunc = _readFunc;
+    _ScannerParams.readStartAddr = start;
+    _ScannerParams.readCount = count;
+    setState(() {
+      _reading = true;
+      _readResult = null;
+    });
+    final result = await ModbusService.scanRead(
+      slaveId: slave,
+      funcCode: _readFunc,
+      startAddr: start,
+      count: count,
+    );
+    if (!mounted) return;
+    setState(() {
+      _readResult = result;
+      _readResultStartAddr = start;
+      _reading = false;
+    });
+  }
+
+  // ---------------- Запись регистра (опасно) ----------------
+
+  Future<void> _confirmAndWrite(Map<String, String> t) async {
+    final slave = int.tryParse(_writeSlaveCtrl.text);
+    final addr = int.tryParse(_writeAddrCtrl.text);
+    final value = int.tryParse(_writeValueCtrl.text);
+    if (slave == null || slave < 1 || slave > 247) {
+      _snack('${t['scanner_slave']}: 1–247');
+      return;
+    }
+    if (addr == null || addr < 0 || addr > 65535) {
+      _snack('${t['scanner_write_addr']}: 0–65535');
+      return;
+    }
+    final maxValue = _writeType == 'coil' ? 1 : 65535;
+    if (value == null || value < 0 || value > maxValue) {
+      _snack('${t['scanner_write_value']}: 0–$maxValue');
+      return;
+    }
+
+    // Подтверждение с точным показом, что и куда будет записано (задача
+    // 3.3) — неверная запись в служебный регистр способна сделать
+    // устройство недоступным.
+    final typeLabel = _writeType == 'coil'
+        ? t['scanner_write_type_coil']!
+        : t['scanner_write_type_register']!;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF141B29),
+        title: Text(
+          t['scanner_write_confirm_title']!,
+          style: const TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          '${t['scanner_slave']}: $slave\n$typeLabel #$addr ← $value',
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(
+              t['scanner_write_confirm_cancel']!,
+              style: const TextStyle(color: Color(0xFF8899AA)),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(
+              t['scanner_write_btn']!,
+              style: const TextStyle(
+                color: Color(0xFFE53935),
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    _ScannerParams.writeSlave = slave;
+    _ScannerParams.writeType = _writeType;
+    _ScannerParams.writeAddr = addr;
+    _ScannerParams.writeValue = value;
+
+    setState(() {
+      _writing = true;
+      _writeResultText = null;
+      _writeOk = null;
+    });
+
+    final ok = _writeType == 'coil'
+        ? await ModbusService.scanWriteCoil(
+            slaveId: slave,
+            addr: addr,
+            value: value == 1,
+          )
+        : await ModbusService.scanWriteRegister(
+            slaveId: slave,
+            addr: addr,
+            value: value,
+          );
+
+    if (!mounted) return;
+    if (!ok) {
+      setState(() {
+        _writing = false;
+        _writeOk = false;
+        _writeResultText = t['scanner_write_result_fail'];
+      });
+      return;
+    }
+
+    // Перечитать тот же регистр и показать результат (задача 3.4).
+    final readBack = _writeType == 'coil'
+        ? await ModbusService.scanRead(
+            slaveId: slave,
+            funcCode: 0x01,
+            startAddr: addr,
+            count: 1,
+          )
+        : await ModbusService.scanRead(
+            slaveId: slave,
+            funcCode: 0x03,
+            startAddr: addr,
+            count: 1,
+          );
+
+    if (!mounted) return;
+    setState(() {
+      _writing = false;
+      _writeOk = true;
+      final readBackValue = readBack.status != 'ok'
+          ? '—'
+          : (_writeType == 'coil'
+                ? (readBack.boolValues?.first == true ? '1' : '0')
+                : readBack.intValues?.first.toString() ?? '—');
+      _writeResultText =
+          '${t['scanner_write_result_readback']}: $readBackValue';
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = _i18n[context.watch<AppNotifier>().lang]!;
+
+    return ListView(
+      padding: const EdgeInsets.all(24),
+      children: [
+        // ---------------- Поиск устройств ----------------
+        Text(
+          t['scanner_scan_section']!,
+          style: const TextStyle(
+            color: Color(0xFF556677),
+            fontWeight: FontWeight.bold,
+            fontSize: 13,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _Field(
+                label: t['scanner_scan_from']!,
+                controller: _scanFromCtrl,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _Field(
+                label: t['scanner_scan_to']!,
+                controller: _scanToCtrl,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: _scanning ? _stopScan : () => _startScan(t),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _scanning
+                  ? const Color(0xFF556677)
+                  : const Color(0xFF00C6B2),
+              foregroundColor: Colors.black,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            child: Text(
+              _scanning ? t['scanner_scan_stop']! : t['scanner_scan_start']!,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+          ),
+        ),
+        if (_scanning || _scanProbed > 0) ...[
+          const SizedBox(height: 10),
+          Text(
+            '${t['scanner_scan_progress']}: $_scanProbed / $_scanTotal',
+            style: const TextStyle(color: Color(0xFF8899AA), fontSize: 13),
+          ),
+        ],
+        const SizedBox(height: 12),
+        if (_scanFound.isEmpty && !_scanning)
+          Text(
+            t['scanner_scan_empty']!,
+            style: const TextStyle(color: Color(0xFF556677), fontSize: 13),
+          )
+        else
+          ..._scanFound.map((addr) {
+            final knownKey = _knownSlaves[addr];
+            return Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFF141B29),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Text(
+                    '$addr',
+                    style: const TextStyle(
+                      color: Color(0xFF00C6B2),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                    ),
+                  ),
+                  if (knownKey != null) ...[
+                    const SizedBox(width: 10),
+                    Text(
+                      t[knownKey]!,
+                      style: const TextStyle(
+                        color: Color(0xFF8899AA),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          }),
+
+        const SizedBox(height: 20),
+        Text(
+          t['scanner_sweep_hint']!,
+          style: const TextStyle(color: Color(0xFF556677), fontSize: 12),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            SizedBox(
+              width: 120,
+              child: _Field(
+                label: t['scanner_slave']!,
+                controller: _sweepSlaveCtrl,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 20),
+                child: OutlinedButton(
+                  onPressed: _sweeping ? null : () => _runBaudSweep(t),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF00C6B2),
+                    side: const BorderSide(color: Color(0xFF00C6B2)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: Text(
+                    t['scanner_sweep_btn']!,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        if (_sweepResultText != null) ...[
+          const SizedBox(height: 10),
+          Text(
+            _sweepResultText!,
+            style: TextStyle(
+              color: _sweepOk == true
+                  ? const Color(0xFF00C6B2)
+                  : const Color(0xFFE53935),
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+
+        const SizedBox(height: 28),
+        Container(height: 1, color: const Color(0xFF1A2233)),
+        const SizedBox(height: 20),
+
+        // ---------------- Чтение регистров ----------------
+        Text(
+          t['scanner_read_section']!,
+          style: const TextStyle(
+            color: Color(0xFF556677),
+            fontWeight: FontWeight.bold,
+            fontSize: 13,
+          ),
+        ),
+        const SizedBox(height: 12),
+        _Field(
+          label: t['scanner_slave']!,
+          controller: _readSlaveCtrl,
+          keyboardType: TextInputType.number,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+        ),
+        const SizedBox(height: 12),
+        Text(
+          t['scanner_func']!,
+          style: const TextStyle(color: Color(0xFF8899AA), fontSize: 13),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            SizedBox(
+              width: 260,
+              child: _ModeButton(
+                label: t['scanner_func_coils']!,
+                selected: _readFunc == 0x01,
+                onTap: () => setState(() => _readFunc = 0x01),
+              ),
+            ),
+            SizedBox(
+              width: 260,
+              child: _ModeButton(
+                label: t['scanner_func_discrete']!,
+                selected: _readFunc == 0x02,
+                onTap: () => setState(() => _readFunc = 0x02),
+              ),
+            ),
+            SizedBox(
+              width: 260,
+              child: _ModeButton(
+                label: t['scanner_func_holding']!,
+                selected: _readFunc == 0x03,
+                onTap: () => setState(() => _readFunc = 0x03),
+              ),
+            ),
+            SizedBox(
+              width: 260,
+              child: _ModeButton(
+                label: t['scanner_func_input']!,
+                selected: _readFunc == 0x04,
+                onTap: () => setState(() => _readFunc = 0x04),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _Field(
+                label: t['scanner_start_addr']!,
+                controller: _readStartCtrl,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _Field(
+                label: t['scanner_count']!,
+                controller: _readCountCtrl,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: _reading ? null : () => _read(t),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF00C6B2),
+              foregroundColor: Colors.black,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            child: Text(
+              t['scanner_read_btn']!,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        if (_readResult != null)
+          _ScanReadResultView(
+            result: _readResult!,
+            t: t,
+            startAddr: _readResultStartAddr,
+          ),
+
+        const SizedBox(height: 28),
+        Container(height: 1, color: const Color(0xFF1A2233)),
+        const SizedBox(height: 20),
+
+        // ---------------- Запись (опасно) ----------------
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFFE53935).withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: const Color(0xFFE53935).withValues(alpha: 0.4),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                t['scanner_write_section']!,
+                style: const TextStyle(
+                  color: Color(0xFFE53935),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                t['scanner_write_warning']!,
+                style: const TextStyle(
+                  color: Color(0xFFE53935),
+                  fontSize: 12,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 16),
+              _Field(
+                label: t['scanner_slave']!,
+                controller: _writeSlaveCtrl,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                t['scanner_write_type']!,
+                style: const TextStyle(color: Color(0xFF8899AA), fontSize: 13),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: _ModeButton(
+                      label: t['scanner_write_type_register']!,
+                      selected: _writeType == 'register',
+                      onTap: () => setState(() => _writeType = 'register'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _ModeButton(
+                      label: t['scanner_write_type_coil']!,
+                      selected: _writeType == 'coil',
+                      onTap: () => setState(() => _writeType = 'coil'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _Field(
+                      label: t['scanner_write_addr']!,
+                      controller: _writeAddrCtrl,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _Field(
+                      label: t['scanner_write_value']!,
+                      controller: _writeValueCtrl,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _writing ? null : () => _confirmAndWrite(t),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFE53935),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: Text(
+                    t['scanner_write_btn']!,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+              ),
+              if (_writeResultText != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _writeResultText!,
+                  style: TextStyle(
+                    color: _writeOk == true
+                        ? const Color(0xFF00C6B2)
+                        : const Color(0xFFE53935),
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 20),
+        if (_scanFound.isNotEmpty ||
+            _readResult != null ||
+            _writeResultText != null)
+          OutlinedButton(
+            onPressed: () => setState(() {
+              _scanFound.clear();
+              _scanProbed = 0;
+              _scanTotal = 0;
+              _readResult = null;
+              _writeResultText = null;
+              _writeOk = null;
+            }),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFF556677),
+              side: const BorderSide(color: Color(0xFF556677)),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            child: Text(t['scanner_clear']!),
+          ),
+      ],
+    );
+  }
+}
+
+// Таблица результата scanRead: адрес/десятичное/hex/знаковое для
+// регистров (задача 1.4/1.5), наглядные бейджи для битовых типов
+// (задача 1.6), текст ошибки вместо пустой таблицы (задача 1.7).
+class _ScanReadResultView extends StatelessWidget {
+  final ScanReadResult result;
+  final Map<String, String> t;
+  final int startAddr;
+
+  const _ScanReadResultView({
+    required this.result,
+    required this.t,
+    required this.startAddr,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (result.status == 'no_response') {
+      return _ScanErrorBox(text: t['scanner_err_no_response']!);
+    }
+    if (result.status == 'bad_crc') {
+      return _ScanErrorBox(text: t['scanner_err_bad_crc']!);
+    }
+    if (result.status == 'exception') {
+      final code = result.exceptionCode;
+      final name = code != null ? _exceptionNames[code] : null;
+      final text =
+          '${t['scanner_err_exception']}: '
+          '$code${name != null ? ' ($name)' : ''}';
+      return _ScanErrorBox(text: text);
+    }
+
+    if (result.boolValues != null) {
+      final values = result.boolValues!;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var i = 0; i < values.length; i++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 70,
+                    child: Text(
+                      '${startAddr + i}',
+                      style: const TextStyle(
+                        color: Color(0xFF8899AA),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: values[i]
+                          ? const Color(0xFF00C6B2).withValues(alpha: 0.15)
+                          : const Color(0xFF1A2233),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      values[i] ? t['scanner_bit_on']! : t['scanner_bit_off']!,
+                      style: TextStyle(
+                        color: values[i]
+                            ? const Color(0xFF00C6B2)
+                            : const Color(0xFF556677),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      );
+    }
+
+    final values = result.intValues ?? const [];
+    return Table(
+      columnWidths: const {
+        0: FlexColumnWidth(1),
+        1: FlexColumnWidth(1.2),
+        2: FlexColumnWidth(1),
+        3: FlexColumnWidth(1.2),
+      },
+      children: [
+        TableRow(
+          children: [
+            _scanCell(t['scanner_result_addr']!, header: true),
+            _scanCell(t['scanner_result_dec']!, header: true),
+            _scanCell(t['scanner_result_hex']!, header: true),
+            _scanCell(t['scanner_result_signed']!, header: true),
+          ],
+        ),
+        for (var i = 0; i < values.length; i++)
+          TableRow(
+            children: [
+              _scanCell('${startAddr + i}'),
+              _scanCell('${values[i]}'),
+              _scanCell(
+                '0x${values[i].toRadixString(16).padLeft(4, '0').toUpperCase()}',
+              ),
+              _scanCell('${values[i] > 32767 ? values[i] - 65536 : values[i]}'),
+            ],
+          ),
+      ],
+    );
+  }
+
+  Widget _scanCell(String text, {bool header = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: header ? const Color(0xFF556677) : Colors.white,
+          fontWeight: header ? FontWeight.bold : FontWeight.normal,
+          fontSize: 13,
+        ),
+      ),
+    );
+  }
+}
+
+class _ScanErrorBox extends StatelessWidget {
+  final String text;
+
+  const _ScanErrorBox({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE53935).withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(
+          color: Color(0xFFE53935),
+          fontSize: 13,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
     );
   }
 }
