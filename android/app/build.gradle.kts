@@ -43,3 +43,9 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // Юнит-тесты CRC16 (задача "смена Slave ID CWT-BK-1616T-S") — обычные
+    // локальные JVM-тесты (src/test), не требуют эмулятора/устройства.
+    testImplementation("junit:junit:4.13.2")
+}

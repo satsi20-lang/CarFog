@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -30,6 +31,32 @@ class CloudEventType {
   // карту в неподходящий момент. Деньги спишутся, услуга не будет
   // оказана — обязательно долетает до оператора.
   static const unexpectedPayment = 'unexpected_payment';
+  // Любой отладочный переключатель сервисного меню, подделывающий
+  // поведение аппарата (задача "контроль цикла по электросчётчику" —
+  // страховка на переключатель имитации отказа монетоприёмника, но
+  // правило общее для всех будущих отладочных режимов): аппарат,
+  // принимающий деньги, не должен уметь спрятать, что он в отладочном
+  // режиме. data несёт код конкретного переключателя и, если включение,
+  // когда он автоматически снимется сам (см. код в service_menu.dart).
+  static const debugModeChanged = 'debug_mode_changed';
+
+  // Аппарат выведен из обслуживания (задача "вывод аппарата из
+  // обслуживания"): код причины и подробности отказа. Уходит ПОСЛЕ
+  // подтверждённой записи признака на диск — сначала запись, потом всё
+  // остальное. Если облака нет — обычная очередь донесёт при появлении
+  // связи.
+  static const outOfService = 'out_of_service';
+  // Признак восстановлен при старте приложения (в том числе fail-closed
+  // 'state_unreadable') — оператор должен узнать об этом раньше клиентов.
+  static const outOfServiceRestored = 'out_of_service_restored';
+  // Снят вручную на месте из сервисного меню, после успешного пробного
+  // цикла. Удалённого снятия нет и не будет.
+  static const outOfServiceCleared = 'out_of_service_cleared';
+  // Пробный цикл из сервисного меню (результат: passed true/false).
+  static const outOfServiceTrial = 'out_of_service_trial';
+  // Внесённая сумма пропала из-за отмены/таймаута оплаты (деньги не
+  // возвращаются монетоприёмником — оператору нужен след).
+  static const paymentAbandoned = 'payment_abandoned';
 }
 
 // ============================================================
@@ -362,22 +389,64 @@ class CloudService {
     final event = CloudEvent(type: type, data: data);
     await _enqueue(event);
     await _appendHistory(event);
-    await flush();
+    // Отправка НЕ ждётся: она идёт по сети и при отказе занимала бы
+    // вызывающий код (экран ошибки клиента) на несколько таймаутов подряд.
+    // Событие уже сохранено в очереди и уйдёт само.
+    unawaited(flush());
   }
+
+  // Операции с очередью (добавить/удалить отправленное) идут строго по
+  // одной: параллельные чтение-изменение-запись SharedPreferences теряли
+  // или дублировали события (при старте "восстановлено" и "запущено"
+  // уходят одновременно).
+  static Future<void> _queueLock = Future.value();
+  static Future<T> _serial<T>(Future<T> Function() action) {
+    final result = _queueLock.then((_) => action());
+    _queueLock = result.then((_) {}, onError: (_) {});
+    return result;
+  }
+
+  static bool _flushing = false;
+  static bool _flushAgain = false;
 
   // Попытаться отправить всё, что накопилось.
   // Нет связи — события остаются в очереди до следующего раза.
   static Future<void> flush() async {
+    // Одна отправка за раз; если во время неё пришли новые события —
+    // сразу после неё уходит следующая порция.
+    if (_flushing) {
+      _flushAgain = true;
+      return;
+    }
+    _flushing = true;
     try {
-      final queue = await events();
-      if (queue.isEmpty) return;
-
-      final ok = await transport.send(deviceId, queue);
-      if (ok) await clearQueue();
+      do {
+        _flushAgain = false;
+        final queue = await events();
+        if (queue.isEmpty) break;
+        final ok = await transport.send(deviceId, queue);
+        if (!ok) break;
+        // Удаляются ровно отправленные: очередь только растёт с конца, так
+        // что это первые queue.length записей. Всё добавленное за время
+        // отправки остаётся.
+        await _removeSent(queue.length);
+      } while (_flushAgain);
     } catch (e) {
       debugPrint('CloudService.flush error: $e');
+    } finally {
+      _flushing = false;
     }
   }
+
+  static Future<void> _removeSent(int count) => _serial(() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getStringList(_queueKey) ?? [];
+    if (raw.length <= count) {
+      await prefs.remove(_queueKey);
+    } else {
+      await prefs.setStringList(_queueKey, raw.sublist(count));
+    }
+  });
 
   // Прочитать очередь (для вкладки Журнал в сервисном меню).
   static Future<List<CloudEvent>> events() async {
@@ -393,10 +462,10 @@ class CloudService {
     }
   }
 
-  static Future<void> clearQueue() async {
+  static Future<void> clearQueue() => _serial(() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_queueKey);
-  }
+  });
 
   // Полная история событий аппарата, новые в конце.
   // Не зависит от того, доставлены события в облако или нет.
@@ -437,7 +506,7 @@ class CloudService {
     }
   }
 
-  static Future<void> _enqueue(CloudEvent event) async {
+  static Future<void> _enqueue(CloudEvent event) => _serial(() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final raw = prefs.getStringList(_queueKey) ?? [];
@@ -452,5 +521,5 @@ class CloudService {
     } catch (e) {
       debugPrint('CloudService._enqueue error: $e');
     }
-  }
+  });
 }

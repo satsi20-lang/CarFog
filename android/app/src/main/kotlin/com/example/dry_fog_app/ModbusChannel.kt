@@ -17,7 +17,7 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
     private var modbus: ModbusRtu? = null
 
     // Slave IDs согласно схеме проекта
-    private val SLAVE_DIO = 5        // MBSL16DI16DO сменил адрес через FC16, подтверждено сканом
+    private val SLAVE_DIO = 5        // CWT-BK-1616 (плата BSM-1616RB), адрес сменён с 1 на 5
     private val SLAVE_THERMO = 1     // HLS-KWL-4TC заводской адрес, конфликт устранён
     private val SLAVE_ENERGY = 3     // DDS6619-039
 
@@ -40,6 +40,58 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
         const val SLAVE_DIO_STATIC = 5
 
         private const val TAG = "ModbusChannel"
+
+        // Эталонная сигнатура модуля ввода-вывода CWT-BK-1616 (плата
+        // BSM-1616RB) — регистры 0x000C-0x000F, сняты дампом живого модуля
+        // 2026-09-27 при смене адреса 1→5 (задача "правки визарда смены
+        // Slave ID по итогам живого прогона"). Природа значений не
+        // установлена (похоже на версию прошивки/серийный номер), но они
+        // стабильны и не совпадают с другими устройствами на шине —
+        // используются только чтобы отличить модуль ввода-вывода от
+        // постороннего устройства на указанном адресе перед опасной
+        // записью в служебные регистры.
+        val DIO_SIGNATURE = intArrayOf(0x4307, 0x312D, 0x4D54, 0x4354)
+
+        // Монетоприёмник — калибровка импульсов DI8. Зеркало
+        // CoinAcceptorCalibration (lib/models/bus_map.dart) — платформенный
+        // канал не даёт общий файл констант, см. заголовок bus_map.dart.
+        // Приёмник физически заменён 2026-08-21 (docs/coin_acceptor.md):
+        // 1 импульс → 1€, 2 и более → 2€. Старая калибровка (2/4 импульса)
+        // относилась к демонтированному устройству.
+        const val COIN_CENTS_FOR_1_PULSE = 100
+        const val COIN_CENTS_FOR_2_PLUS_PULSES = 200
+        const val COIN_POLL_INTERVAL_MS = 80L
+        const val COIN_POLL_TIMEOUT_MS = 150L
+        // Пауза между импульсами внутри одной монеты, после которой серия
+        // считается завершённой — подобрано по факту (см. bus_map.dart:
+        // реальные паузы доходили до ~430 мс, порог 350 мс рвал монету).
+        const val COIN_SERIES_GAP_MS = 600L
+        // Порог неудачных чтений ПОДРЯД (уже после немедленного повтора
+        // каждой), после которого окно приёма монет закрывается — "отказ
+        // вместо недосчёта" (задача "готовность оплаты", п.3). Не измерено,
+        // взято по порядку величины: при таймауте 150 мс на попытку это
+        // около 1,5 с устойчивой тишины на шине — достаточно, чтобы
+        // отличить реальную проблему связи от одиночного сбоя.
+        const val COIN_MAX_CONSECUTIVE_FAILURES = 5
+
+        // Страховка отладочного тумблера "имитировать отказ монетоприёмника"
+        // (задача "контроль цикла по электросчётчику", фаза 2) — 30 минут с
+        // огромным запасом хватает на любой реальный тест на стенде, а
+        // аппарат, забытый в этом режиме на смену, не должен молча терять
+        // монетную выручку.
+        const val COIN_SIMULATED_DOWN_AUTO_OFF_MS = 30 * 60 * 1000L
+
+        // То же правило для отладочного тумблера "заморозить показание
+        // температуры" (задача "детектор отказа датчика температуры"):
+        // подмена показания термопары на аппарате, который принимает
+        // деньги, не должна уметь спрятаться и жить месяцами.
+        const val TEMPERATURE_FROZEN_AUTO_OFF_MS = 30 * 60 * 1000L
+
+        // Термопара HLS-KWL-4TC — регистр знаковый (см. readHoldingRegisters,
+        // возвращает беззнаковое 0..65535). toShort() реинтерпретирует как
+        // знаковое 16-бит перед делением на 10, иначе -7.6°C превращается в
+        // бессмысленные +6546.0°C (задача "контроль цикла по электросчётчику").
+        fun parseThermocoupleRaw(raw: Int): Double = raw.toShort().toDouble() / 10.0
     }
 
     // Единственная точка фактического открытия порта (задача "починить
@@ -58,11 +110,16 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
     // Каждое фактическое открытие/закрытие — в лог с причиной (1.4): по
     // логу сразу видно, сколько раз порт реально переоткрывался, не
     // вычисляя это по косвенным симптомам вроде "устройство не отвечает".
+    //
+    // Возвращает ModbusRtu.OpenResult, а не Boolean (задача "эксклюзивное
+    // открытие последовательного порта") — "порт занят другим процессом"
+    // раньше было неотличимо от "порт не найден"/"нет прав": оба варианта
+    // одинаково молча проваливались в один и тот же false.
     @Synchronized
-    private fun openPort(port: String, baud: Int, reason: String): Boolean {
+    private fun openPort(port: String, baud: Int, reason: String): ModbusRtu.OpenResult {
         val existing = modbus
         if (existing != null && existing.isOpen()) {
-            return true
+            return ModbusRtu.OpenResult.Ok
         }
         if (existing != null) {
             Log.d(TAG, "openPort: закрываю предыдущий экземпляр перед переоткрытием ($reason)")
@@ -70,19 +127,226 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
             modbus = null
             activeBus = null
         }
-        val bus = ModbusRtu()
-        val opened = bus.open(port, baud)
-        return if (opened) {
-            Log.d(TAG, "openPort: порт открыт ($port, причина: $reason)")
-            modbus = bus
-            activeBus = bus
-            true
-        } else {
-            Log.e(TAG, "openPort: не удалось открыть ($port, причина: $reason)")
-            modbus = null
-            activeBus = null
-            false
+        val bus = ModbusRtu(context)
+        val result = bus.open(port, baud)
+        return when (result) {
+            is ModbusRtu.OpenResult.Ok -> {
+                Log.d(TAG, "openPort: порт открыт ($port, причина: $reason)")
+                modbus = bus
+                activeBus = bus
+                result
+            }
+            is ModbusRtu.OpenResult.Busy -> {
+                Log.e(
+                    TAG,
+                    "openPort: порт занят другим процессом ($port, причина: $reason, " +
+                        "pid=${result.holderPid})"
+                )
+                modbus = null
+                activeBus = null
+                result
+            }
+            is ModbusRtu.OpenResult.Failed -> {
+                Log.e(TAG, "openPort: не удалось открыть ($port, причина: $reason)")
+                modbus = null
+                activeBus = null
+                result
+            }
         }
+    }
+
+    // Процедура смены Slave ID (задача "правки визарда смены Slave ID по
+    // итогам живого прогона" — переписана после живого теста на реальном
+    // модуле, старая версия ошибочно трактовала два штатных признака как
+    // отказ). Разбита на две фазы с остановкой между ними: применение
+    // нового адреса требует снятия и подачи питания на модуль, и сколько
+    // это займёт у оператора — неизвестно, поэтому Dart-сторона хранит
+    // состояние между фазами не в памяти, а в SharedPreferences (переживает
+    // не только сворачивание, но и перезапуск процесса).
+    //
+    // Фаза 1 — опознание (если не пропущено) + запись адреса + фиксация:
+    //  1а. Код скорости 0x0002: значение 3 — это Chint DDSU666 (счётчик,
+    //      следующий на этой шине), а не модуль ввода-вывода — стоп сразу,
+    //      без чтения сигнатуры (дешевле).
+    //  1б. Чтение сигнатуры 0x000C-0x000F по oldAddr, сверка с DIO_SIGNATURE.
+    //     Несовпадение или отказ чтения — стоп, запись не начинается вообще.
+    //  2. Запись newAddr в 0x0000 на oldAddr (FC06) — эхо должно прийти,
+    //     это подтверждено на живом модуле; код исключения или тишина здесь
+    //     — реальная ошибка, стоп.
+    //  3. Пауза 200 мс.
+    //  4. Фиксация: запись 111 в 0x0009 на oldAddr (FC06). Код исключения —
+    //     ошибка, стоп. Тишина — ШТАТНОЕ поведение (модуль в этот момент
+    //     пишет EEPROM и не обслуживает UART), не ошибка, идём дальше.
+    // Регистр 0x0009 командный и самоочищающийся — всегда читается как 0,
+    // поэтому здесь и не должно быть никакой проверки чтением этого
+    // регистра ни в фазе 1, ни в фазе 2.
+    private fun changeSlaveIdPhase1(
+        oldAddr: Int,
+        newAddr: Int,
+        skipIdentification: Boolean,
+    ): Map<String, Any?> {
+        val log = mutableListOf<String>()
+        val bus = modbus
+        if (bus == null) {
+            log.add("Порт не открыт — операция невозможна.")
+            return mapOf("ok" to false, "log" to log, "blocked" to true)
+        }
+
+        if (!skipIdentification) {
+            // Второй слой опознания, перед сигнатурой: код скорости в
+            // 0x0002 — тот же регистр, что и у модуля ввода-вывода, но
+            // разная кодировка у разных производителей. CWT-BK-1616 отдаёт
+            // 96 (9600 бод / 100), счётчик Chint DDSU666 — 3 (собственная
+            // кодировка производителя, тоже 9600 бод). Следующее устройство
+            // на этой шине — именно DDSU666, дешевле поймать это одним
+            // регистром, чем читать все четыре сигнатуры ради того же
+            // вывода.
+            log.add("Опознание: проверка кода скорости (0x0002) по адресу $oldAddr…")
+            val speedProbe = bus.scanTransact(oldAddr, 0x03, 0x0002, 1, 300L)
+            if (speedProbe.status == "ok" && speedProbe.data != null) {
+                val speedCode =
+                    ((speedProbe.data[0].toInt() and 0xFF) shl 8) or
+                        (speedProbe.data[1].toInt() and 0xFF)
+                if (speedCode == 3) {
+                    log.add(
+                        "Код скорости 0x0002 = 3 — кодировка энергосчётчика Chint " +
+                            "DDSU666 (модуль ввода-вывода вернул бы 96 на той же " +
+                            "скорости). На адресе $oldAddr отвечает энергосчётчик, " +
+                            "а не модуль ввода-вывода. Запись отменена."
+                    )
+                    return mapOf("ok" to false, "log" to log, "blocked" to true)
+                }
+            }
+
+            log.add("Опознание: чтение сигнатуры (0x000C–0x000F) по адресу $oldAddr…")
+            val sig = bus.scanTransact(oldAddr, 0x03, 0x000C, 4, 300L)
+            if (sig.status != "ok" || sig.data == null) {
+                log.add(
+                    "Не удалось прочитать сигнатуру (${sig.status}) — " +
+                        "на адресе $oldAddr нет ответа. Запись отменена."
+                )
+                return mapOf("ok" to false, "log" to log, "blocked" to true)
+            }
+            val values = IntArray(4) { i ->
+                ((sig.data[i * 2].toInt() and 0xFF) shl 8) or (sig.data[i * 2 + 1].toInt() and 0xFF)
+            }
+            if (!values.contentEquals(DIO_SIGNATURE)) {
+                val got = values.joinToString(" ") { "0x%04X".format(it) }
+                log.add(
+                    "Сигнатура не совпадает (получено $got) — на адресе $oldAddr " +
+                        "отвечает устройство с другой сигнатурой. Это не модуль " +
+                        "ввода-вывода. Запись отменена."
+                )
+                return mapOf("ok" to false, "log" to log, "blocked" to true)
+            }
+            log.add("Сигнатура совпадает — это модуль ввода-вывода.")
+        } else {
+            log.add("Опознание пропущено оператором.")
+        }
+
+        log.add("Запись нового ID=$newAddr на адрес $oldAddr…")
+        val writeId = bus.scanWriteSingleRegister(oldAddr, 0x0000, newAddr, 300L)
+        when (writeId.status) {
+            "ok" -> log.add("Эхо получено — команда принята.")
+            "exception" -> {
+                log.add(
+                    "Устройство вернуло код ошибки ${writeId.exceptionCode} на запись " +
+                        "адреса — операция остановлена."
+                )
+                return mapOf("ok" to false, "log" to log, "blocked" to false)
+            }
+            else -> {
+                log.add(
+                    "Нет ответа на запись адреса (${writeId.status}) — операция остановлена."
+                )
+                return mapOf("ok" to false, "log" to log, "blocked" to false)
+            }
+        }
+
+        Thread.sleep(200)
+        log.add("Пауза 200 мс выдержана.")
+
+        log.add("Фиксация: запись 111 в 0x0009 на адресе $oldAddr…")
+        val fix = bus.scanWriteSingleRegister(oldAddr, 0x0009, 111, 300L)
+        when (fix.status) {
+            "ok" -> log.add("Эхо получено на команду фиксации.")
+            "exception" -> {
+                log.add(
+                    "Устройство вернуло код ошибки ${fix.exceptionCode} на фиксацию — " +
+                        "операция остановлена."
+                )
+                return mapOf("ok" to false, "log" to log, "blocked" to false)
+            }
+            else -> log.add(
+                "Ответ на команду фиксации не получен — это штатное поведение, " +
+                    "модуль пишет EEPROM."
+            )
+        }
+
+        return mapOf("ok" to true, "log" to log, "blocked" to false)
+    }
+
+    // Фаза 2 — запускается оператором кнопкой "Продолжить проверку" после
+    // снятия и подачи питания на модуль:
+    //  1. Чтение 0x0000 по newAddr — совпадение со значением newAddr,
+    //     подтверждение.
+    //  2. Контрольный выстрел: чтение 0x0000 по oldAddr — здесь ДОЛЖНА быть
+    //     тишина. Если старый адрес отвечает — отдельная явная ошибка:
+    //     модуль на двух адресах даст наложение кадров на общей шине.
+    //  3. Дамп 16 регистров по newAddr — для проверки, что скорость и
+    //     чётность не изменились вместе с адресом.
+    private fun changeSlaveIdPhase2(oldAddr: Int, newAddr: Int): Map<String, Any?> {
+        val log = mutableListOf<String>()
+        val bus = modbus
+        if (bus == null) {
+            log.add("Порт не открыт — операция невозможна.")
+            return mapOf("ok" to false, "log" to log)
+        }
+
+        log.add("Проверка нового адреса $newAddr…")
+        val newRead = bus.scanTransact(newAddr, 0x03, 0x0000, 1, 300L)
+        val newValue = if (newRead.status == "ok" && newRead.data != null) {
+            ((newRead.data[0].toInt() and 0xFF) shl 8) or (newRead.data[1].toInt() and 0xFF)
+        } else {
+            null
+        }
+        val newOk = newValue == newAddr
+        log.add(
+            if (newOk) "Новый адрес отвечает, ID=$newValue — подтверждено."
+            else "Новый адрес не отвечает корректно (${newRead.status}" +
+                (if (newValue != null) ", получено $newValue" else "") + ")."
+        )
+
+        log.add("Контрольный выстрел: проверка, что старый адрес $oldAddr молчит…")
+        val oldRead = bus.scanTransact(oldAddr, 0x03, 0x0000, 1, 300L)
+        val oldSilent = oldRead.status == "no_response"
+        log.add(
+            if (oldSilent) "Старый адрес молчит — конфликта нет."
+            else "ОШИБКА: старый адрес $oldAddr всё ещё отвечает (${oldRead.status}). " +
+                "Модуль, откликающийся на двух адресах, даст наложение кадров на общей шине."
+        )
+
+        var dump: List<Int>? = null
+        if (newOk) {
+            val dumpRead = bus.scanTransact(newAddr, 0x03, 0x0000, 16, 300L)
+            if (dumpRead.status == "ok" && dumpRead.data != null) {
+                dump = (0 until 16).map { i ->
+                    ((dumpRead.data[i * 2].toInt() and 0xFF) shl 8) or
+                        (dumpRead.data[i * 2 + 1].toInt() and 0xFF)
+                }
+                log.add("Дамп 16 регистров по адресу $newAddr прочитан.")
+            } else {
+                log.add("Не удалось прочитать дамп настроек (${dumpRead.status}).")
+            }
+        }
+
+        return mapOf(
+            "ok" to (newOk && oldSilent),
+            "log" to log,
+            "newAddrOk" to newOk,
+            "oldAddrSilent" to oldSilent,
+            "dump" to dump,
+        )
     }
 
     // Опрос монетоприёмника РЕЖИМА ОПЛАТЫ — работает только между
@@ -92,6 +356,53 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
     private val lastCoinCents = AtomicInteger(0)
     private var paymentPollingThread: Thread? = null
     private val paymentPollingActive = AtomicBoolean(false)
+    // "Отказ вместо недосчёта" (задача "контроль цикла по электросчётчику,
+    // температурный режим, готовность оплаты") — coinFailureCount копится
+    // за всё окно оплаты (для записи в отчёт о транзакции), coinAcceptorDown
+    // взводится один раз при COIN_MAX_CONSECUTIVE_FAILURES неудачах подряд
+    // и снимается только новым startPaymentCoinCounting().
+    private val coinFailureCount = AtomicInteger(0)
+    private val coinAcceptorDown = AtomicBoolean(false)
+
+    // Отладочный переключатель сервисного меню ("имитировать отказ
+    // монетоприёмника") — подделывает getCoinAcceptorStatus() без единого
+    // обращения к шине. Воспроизводится сколько угодно раз одинаково, не
+    // зависит от того, как именно отваливается реальная связь, и не
+    // рискует железом — в отличие от физического разрыва RS485. Сознательно
+    // НЕ сбрасывается при уходе с вкладки "Диагностика" — тест проверяется
+    // на реальном экране оплаты, за пределами этой вкладки.
+    //
+    // Но аппарат с домашним экраном работает месяцами без перезапуска —
+    // если техник забудет выключить тумблер, приём монет молча перестанет
+    // работать на неопределённый срок, и никто не поймёт почему (задача
+    // "контроль цикла по электросчётчику", фаза 2, страховка). Поэтому
+    // здесь, а не только в Dart-коде тумблера — гарантия автосброса через
+    // COIN_SIMULATED_DOWN_AUTO_OFF_MS, которая переживёт даже полный
+    // перезапуск сервисного меню/экрана оплаты. Правило одно и то же для
+    // любых будущих отладочных переключателей на этом аппарате: то, что
+    // принимает деньги, не должно уметь спрятаться в отладочном режиме.
+    private val coinAcceptorSimulatedDown = AtomicBoolean(false)
+    private val coinSimulatedDownAutoOffHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val coinSimulatedDownAutoOffRunnable = Runnable {
+        coinAcceptorSimulatedDown.set(false)
+    }
+
+    // Отладочная "заморозка" показания термопары (задача "детектор отказа
+    // датчика температуры", часть 2, п.11) — readTemperature() отдаёт
+    // ПОСЛЕДНЕЕ успешно прочитанное значение вместо шины, как залипший
+    // датчик. Нужна, чтобы проверить детекторы, не вынимая термопару из
+    // клеммника. Те же правила, что у тумблера монетоприёмника: живёт до
+    // ручного выключения, но не дольше TEMPERATURE_FROZEN_AUTO_OFF_MS,
+    // состояние читается Dart-ом (вкладка "Диагностика" и регулярная
+    // отправка состояния в облако) — спрятаться не может.
+    @Volatile private var lastTemperatureC: Double? = null
+    private val temperatureFrozen = AtomicBoolean(false)
+    @Volatile private var frozenTemperatureC: Double? = null
+    private val temperatureFreezeAutoOffHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val temperatureFreezeAutoOffRunnable = Runnable {
+        temperatureFrozen.set(false)
+        frozenTemperatureC = null
+    }
 
     // Платёжный терминал (задача "терминал") — в отличие от монетоприёмника,
     // здесь НЕТ своего потока: правило проекта на этот шаг прямо запрещает
@@ -127,7 +438,18 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
             "open" -> {
                 val port = call.argument<String>("port") ?: "/dev/ttyS5"
                 val baud = call.argument<Int>("baud") ?: 9600
-                result.success(openPort(port, baud, "explicit open() call"))
+                val opened = openPort(port, baud, "explicit open() call")
+                result.success(
+                    when (opened) {
+                        is ModbusRtu.OpenResult.Ok -> mapOf("ok" to true)
+                        is ModbusRtu.OpenResult.Busy -> mapOf(
+                            "ok" to false,
+                            "code" to "PORT_BUSY",
+                            "pid" to opened.holderPid,
+                        )
+                        is ModbusRtu.OpenResult.Failed -> mapOf("ok" to false)
+                    }
+                )
             }
 
             "close" -> {
@@ -170,19 +492,28 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
                 result.success(ok)
             }
 
-            // Выключает ВСЕ выходы (safe_all_off). Таймаут 150 мс на каждый
-            // канал явно (не 500 по умолчанию) — этот путь вызывается в
-            // повторяющемся цикле при старте, пока шина не ответит (задача
-            // "гарантированное выключение"), и должен быстро проваливаться
-            // на мёртвой шине, а не копить по 6 секунд на 12 каналах.
+            // Выключает нагрузки (safe_all_off) одним кадром FC15 вместо
+            // прежних 12 отдельных FC05 (задача "свести карту шины и
+            // каналов", живой замер 27.09.2026: кадр 05 0F 00 00 00 0A ...,
+            // ответ 05 0F 00 00 00 0A D4 48). Раньше обрыв связи посреди
+            // цикла из 12 запросов мог оставить часть выходов поднятой —
+            // ровно то, от чего должен защищать сторож выходов. Один кадр —
+            // либо проходит целиком, либо нет, середины не бывает.
+            //
+            // Диапазон 0..9 (насосы 0-7, компрессор 8, ТЭН 9) НАМЕРЕННО не
+            // включает 10/11 (индикаторные LED): красный индикатор должен
+            // продолжать сигнализировать аварию, а не гаснуть вместе с
+            // нагрузками при каждом safeAllOff. Таймаут 150 мс — этот путь
+            // вызывается в повторяющемся цикле при старте, пока шина не
+            // ответит, и должен быстро проваливаться на мёртвой шине.
             "safeAllOff" -> {
-                var ok = true
-                for (ch in 0..11) {
-                    if (modbus?.writeSingleCoil(SLAVE_DIO, ch, false, timeoutMs = 150L) != true) {
-                        ok = false
-                    }
-                }
-                result.success(ok)
+                val r = modbus?.scanWriteMultipleCoils(
+                    SLAVE_DIO,
+                    0,
+                    List(10) { false },
+                    timeoutMs = 150L,
+                ) ?: ModbusRtu.ScanResult("no_response")
+                result.success(r.status == "ok")
             }
 
             // Читает фактическое состояние всех 12 используемых выходов
@@ -279,6 +610,37 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
                 result.success(ok)
             }
 
+            // FC15 — запись нескольких катушек одним кадром. Статус разбирает
+            // три исхода отдельно (как и scanRead), потому что для этого теста
+            // важно различить "не ответил" от "ответил отказом" (05 8F 01 —
+            // функция не поддерживается).
+            "scanWriteMultipleCoils" -> {
+                val slaveId = call.argument<Int>("slaveId")
+                    ?: return result.error("ARG", "no slaveId", null)
+                val addr = call.argument<Int>("addr")
+                    ?: return result.error("ARG", "no addr", null)
+                val values = call.argument<List<Boolean>>("values")
+                    ?: return result.error("ARG", "no values", null)
+                val r = modbus?.scanWriteMultipleCoils(slaveId, addr, values, timeoutMs = 300L)
+                    ?: ModbusRtu.ScanResult("no_response")
+                result.success(mapOf("status" to r.status, "exceptionCode" to r.exceptionCode))
+            }
+
+            // FC16 — запись нескольких регистров одним кадром. Нужна для
+            // устройств без FC06 (Chint DDSU666 — заявляет в мануале только
+            // 03 на чтение и 16 на запись, даже для одного регистра).
+            "scanWriteMultipleRegisters" -> {
+                val slaveId = call.argument<Int>("slaveId")
+                    ?: return result.error("ARG", "no slaveId", null)
+                val addr = call.argument<Int>("addr")
+                    ?: return result.error("ARG", "no addr", null)
+                val values = call.argument<List<Int>>("values")
+                    ?: return result.error("ARG", "no values", null)
+                val r = modbus?.scanWriteMultipleRegisters(slaveId, addr, values, timeoutMs = 300L)
+                    ?: ModbusRtu.ScanResult("no_response")
+                result.success(mapOf("status" to r.status, "exceptionCode" to r.exceptionCode))
+            }
+
             // Перебор скорости порта — диагностика "живой ли адрес на другой
             // скорости, если 9600 молчит" (задача "починить обмен по шине",
             // живая калибровка). Открытие идемпотентно (openPort), но само по
@@ -301,8 +663,8 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
 
                 var foundBaud: Int? = null
                 for (baud in bauds) {
-                    val bus = ModbusRtu()
-                    if (bus.open(port, baud)) {
+                    val bus = ModbusRtu(context)
+                    if (bus.open(port, baud) == ModbusRtu.OpenResult.Ok) {
                         val probe = bus.scanTransact(slaveId, 0x03, 0, 1, 200L)
                         if (probe.status != "no_response") {
                             foundBaud = baud
@@ -319,6 +681,56 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
                 result.success(foundBaud)
             }
 
+            // Диагностика "чётность отличается от ожидаемой" (задача "Chint
+            // DDSU666: найти счётчик") — временно переоткрывает порт с
+            // указанной чётностью, чтобы сканер адресов мог поработать на
+            // ней (сам сканер шлёт запросы через уже открытый modbus, см.
+            // scanProbe/scanRead — отдельного параметра чётности у них нет).
+            // Как и baudSweep, не восстанавливает ничего сама — вызывающая
+            // сторона обязана вызвать этот же метод с parity="none" после
+            // диагностики, иначе приложение останется без связи с боевым
+            // модулем.
+            "openWithParity" -> {
+                val port = call.argument<String>("port") ?: "/dev/ttyS5"
+                val baud = call.argument<Int>("baud") ?: 9600
+                val parity = call.argument<String>("parity") ?: "none"
+
+                modbus?.close()
+                modbus = null
+                activeBus = null
+
+                val bus = ModbusRtu(context)
+                val ok = bus.open(port, baud, parity) == ModbusRtu.OpenResult.Ok
+                if (ok) {
+                    modbus = bus
+                    activeBus = bus
+                } else {
+                    bus.close()
+                }
+                result.success(ok)
+            }
+
+            // Управляемая смена Slave ID нового модуля — фаза 1 (опознание
+            // + запись адреса + фиксация), см. changeSlaveIdPhase1.
+            "changeSlaveIdPhase1" -> {
+                val oldAddr = call.argument<Int>("oldAddr")
+                    ?: return result.error("ARG", "no oldAddr", null)
+                val newAddr = call.argument<Int>("newAddr")
+                    ?: return result.error("ARG", "no newAddr", null)
+                val skipIdentification = call.argument<Boolean>("skipIdentification") ?: false
+                result.success(changeSlaveIdPhase1(oldAddr, newAddr, skipIdentification))
+            }
+
+            // Фаза 2 — запускается оператором после снятия/подачи питания
+            // на модуль, см. changeSlaveIdPhase2.
+            "changeSlaveIdPhase2" -> {
+                val oldAddr = call.argument<Int>("oldAddr")
+                    ?: return result.error("ARG", "no oldAddr", null)
+                val newAddr = call.argument<Int>("newAddr")
+                    ?: return result.error("ARG", "no newAddr", null)
+                result.success(changeSlaveIdPhase2(oldAddr, newAddr))
+            }
+
             // Читает температуру термопары (канал 0-3, возвращает °C × 10).
             // Регистр знаковый (термопара может отдавать отрицательные
             // значения и коды "нет датчика" вроде -500.0°C) — readHoldingRegisters
@@ -326,11 +738,40 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
             // через toShort() перед делением, иначе, например, -12.4°C
             // превращается в бессмысленные +6541.2°C.
             "readTemperature" -> {
-                val ch = call.argument<Int>("channel") ?: 0
-                val regs = modbus?.readHoldingRegisters(SLAVE_THERMO, ch, 1)
-                if (regs == null) result.error("MODBUS", "readTemperature failed", null)
-                else result.success(regs[0].toShort().toDouble() / 10.0)
+                val frozen = frozenTemperatureC
+                if (temperatureFrozen.get() && frozen != null) {
+                    // Отладочная заморозка — шины нет вообще, как у залипшего
+                    // датчика, который продолжает отдавать одно и то же.
+                    result.success(frozen)
+                } else {
+                    val ch = call.argument<Int>("channel") ?: 0
+                    val regs = modbus?.readHoldingRegisters(SLAVE_THERMO, ch, 1)
+                    if (regs == null) result.error("MODBUS", "readTemperature failed", null)
+                    else {
+                        val value = parseThermocoupleRaw(regs[0])
+                        lastTemperatureC = value
+                        result.success(value)
+                    }
+                }
             }
+
+            // Включает/выключает отладочную заморозку показания термопары.
+            // Возвращает значение, на котором заморожено (null при
+            // выключении или если заморозить было нечем — ни одного
+            // успешного чтения и шина не отвечает).
+            "setTemperatureFrozen" -> {
+                val on = call.argument<Boolean>("value") ?: false
+                result.success(setTemperatureFrozen(on))
+            }
+
+            // Реальное состояние заморозки — вкладка "Диагностика"
+            // пересоздаётся при переключении, а флаг живёт дольше неё.
+            "getTemperatureFrozen" -> result.success(
+                mapOf(
+                    "frozen" to temperatureFrozen.get(),
+                    "value" to frozenTemperatureC,
+                )
+            )
 
             // Читает данные счётчика энергии DDS6619: напряжение (В), ток (А),
             // мощность (Вт), общий накопленный расход (кВт⋅ч). Всегда
@@ -383,7 +824,21 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
             }
 
             // Номинал последней принятой монеты в центах (0 = новой монеты нет)
-            "getLastCoinCents" -> result.success(getLastCoinCents())
+            "getCoinAcceptorStatus" -> result.success(getCoinAcceptorStatus())
+
+            // Сервисное меню, отладочный переключатель "имитировать отказ
+            // монетоприёмника" — см. setCoinAcceptorSimulatedDown().
+            "setCoinAcceptorSimulatedDown" -> {
+                setCoinAcceptorSimulatedDown(call.argument<Boolean>("value") ?: false)
+                result.success(null)
+            }
+
+            // Флаг живёт в памяти нативного слоя дольше, чем виджет вкладки
+            // "Диагностика" (сознательно не сбрасывается при уходе с неё,
+            // см. коммент у setCoinAcceptorSimulatedDown в service_menu.dart)
+            // — при пересоздании вкладки тумблер должен показать РЕАЛЬНОЕ
+            // состояние, а не всегда "выключено".
+            "getCoinAcceptorSimulatedDown" -> result.success(coinAcceptorSimulatedDown.get())
 
             // Один опрос платёжного терминала — читает канал, сравнивает с
             // прошлым известным состоянием, при фронте пишет в журнал и, если
@@ -452,6 +907,25 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
     // (таймаут 500мс на каждую) это держало общую последовательную очередь
     // Modbus занятой до ~4 секунд лишний раз — за это время любой другой
     // вызов (например setDO тумблера насоса) просто ждал своей очереди.
+    // Блок измерений DDSU666 начинается с 0x2000, каждая величина — IEEE-754
+    // float32 в двух регистрах, старшее слово первым (сверено вживую
+    // 27.09.2026: 0x436D199A и 0x436CE666 на двух последовательных чтениях
+    // дали ~237,1 В и ~236,6 В — реалистичный разброс сетевого напряжения).
+    // Только FC03 — счётчик по документации поддерживает исключительно 03
+    // на чтение и 16 на запись, FC04 (readInputRegisters) он не
+    // поддерживает вовсе; прежняя реализация ходила через FC04 по
+    // смещениям 0x0000/0x0003/0x0008/0x001D — те пришли из того же
+    // недостоверного источника, что и ошибочное прочтение 0x0002 как
+    // скорости (задача "Chint DDSU666: найти счётчик"), реальный мануал
+    // их не подтвердил. Молчаливый результат старого кода — не "0", а
+    // null на каждом чтении: readInputRegisters возвращал null на
+    // неподдерживаемой функции, и UI просто не обновлял дефолтные нули.
+    private fun readEnergyFloat(addr: Int): Double? {
+        val regs = modbus?.readHoldingRegisters(SLAVE_ENERGY, addr, 2) ?: return null
+        val bits = (regs[0].toLong() shl 16) or (regs[1].toLong() and 0xFFFF)
+        return Float.fromBits(bits.toInt()).toDouble()
+    }
+
     private fun readEnergyValues(forceFresh: Boolean = false): Map<String, Double>? {
         val cached = energyCache
         val now = System.currentTimeMillis()
@@ -459,22 +933,15 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
             return cached
         }
 
-        val voltageReg = modbus?.readInputRegisters(SLAVE_ENERGY, 0x0000, 1)
-        val currentReg = modbus?.readInputRegisters(SLAVE_ENERGY, 0x0003, 1)
-        val powerReg = modbus?.readInputRegisters(SLAVE_ENERGY, 0x0008, 1)
-        // Общий счётчик энергии — 32-битное значение (Long) в двух регистрах.
-        val totalRegs = modbus?.readInputRegisters(SLAVE_ENERGY, 0x001D, 2)
-        if (voltageReg == null || currentReg == null || powerReg == null || totalRegs == null) {
-            return null
-        }
-        val highWord = totalRegs[0]
-        val lowWord = totalRegs[1]
-        val totalEnergy = ((highWord.toLong() shl 16) or lowWord.toLong()) * 0.01
+        val voltage = readEnergyFloat(0x2000) ?: return null
+        val current = readEnergyFloat(0x2002) ?: return null
+        val power = readEnergyFloat(0x2004) ?: return null
+        val totalEnergy = readEnergyFloat(0x4000) ?: return null
 
         val result = mapOf(
-            "voltage" to voltageReg[0].toDouble() / 10.0,
-            "current" to currentReg[0].toDouble() / 100.0,
-            "power" to powerReg[0].toDouble(),
+            "voltage" to voltage,
+            "current" to current,
+            "power" to power,
             "totalEnergy" to totalEnergy
         )
         energyCache = result
@@ -545,43 +1012,68 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
 
     // Запускает фоновый поток, опрашивающий DI8 (монетоприёмник) на время
     // экрана оплаты. Считает импульсы (переход false→true = один импульс)
-    // одной монеты; пауза >350мс без новых импульсов завершает монету и
-    // определяет номинал по количеству накопленных импульсов. Не запускает
-    // второй поток, если один уже работает.
+    // одной монеты; пауза без новых импульсов дольше COIN_SERIES_GAP_MS
+    // завершает монету и определяет номинал по количеству накопленных
+    // импульсов. Не запускает второй поток, если один уже работает.
+    //
+    // "Отказ вместо недосчёта" (задача "контроль цикла по электросчётчику,
+    // готовность оплаты", п.4): неудачное чтение тика немедленно повторяется
+    // один раз (импульс короткий, обычные 80 мс до следующего тика рискуют
+    // его целиком пропустить). Если и повтор не удался — считаем это
+    // неудачей: копим в coinFailureCount (уходит в отчёт о транзакции) и,
+    // при нескольких подряд, взводим coinAcceptorDown и ОБНУЛЯЕМ текущую
+    // незавершённую серию импульсов, не пытаясь угадать её номинал —
+    // раньше именно тут двухевровая монета молча становилась одноевровой.
     private fun startPaymentCoinCounting() {
         if (paymentPollingActive.get()) return
         paymentPollingActive.set(true)
+        // Монета, принятая после последнего опроса прошлого окна (или во
+        // время имитации отказа), не должна достаться следующему клиенту.
+        lastCoinCents.set(0)
+        coinFailureCount.set(0)
+        coinAcceptorDown.set(false)
         paymentPollingThread = Thread {
             var previousState = false
             var pulseCount = 0
             var lastPulseTime = 0L
+            var consecutiveFailures = 0
             while (paymentPollingActive.get()) {
-                val current = modbus?.readDiscreteInputs(SLAVE_DIO, 8, 1, timeoutMs = 150L)
-                    ?.getOrNull(0)
+                var current = modbus?.readDiscreteInputs(
+                    SLAVE_DIO, 8, 1, timeoutMs = COIN_POLL_TIMEOUT_MS
+                )?.getOrNull(0)
+                if (current == null) {
+                    current = modbus?.readDiscreteInputs(
+                        SLAVE_DIO, 8, 1, timeoutMs = COIN_POLL_TIMEOUT_MS
+                    )?.getOrNull(0)
+                }
                 val now = System.currentTimeMillis()
                 if (current != null) {
+                    consecutiveFailures = 0
                     if (!previousState && current) {
                         // Восходящий фронт — один импульс монеты.
                         pulseCount++
                         lastPulseTime = now
                     }
                     previousState = current
+                } else {
+                    consecutiveFailures++
+                    coinFailureCount.incrementAndGet()
+                    if (consecutiveFailures >= COIN_MAX_CONSECUTIVE_FAILURES) {
+                        pulseCount = 0
+                        coinAcceptorDown.set(true)
+                    }
                 }
-                // Диагностика (лог CoinDebug с таймштампами) показала: реальные
-                // паузы МЕЖДУ импульсами внутри одной монеты у этого приёмника
-                // доходят до ~430мс. Порог завершения серии должен быть заметно
-                // больше этого максимума, иначе монету рвёт на части (короткий
-                // порог 350мс, который стоял здесь раньше, был ниже этого и
-                // приводил именно к такому разрыву).
-                if (pulseCount > 0 && now - lastPulseTime > 600) {
-                    // Новый монетоприёмник (заменён): 1 импульс → 1€, 2 и более → 2€
-                    // (перекалибровано — см. docs/coin_acceptor.md).
-                    val cents = if (pulseCount <= 1) 100 else 200
+                if (pulseCount > 0 && now - lastPulseTime > COIN_SERIES_GAP_MS) {
+                    val cents = if (pulseCount <= 1) {
+                        COIN_CENTS_FOR_1_PULSE
+                    } else {
+                        COIN_CENTS_FOR_2_PLUS_PULSES
+                    }
                     lastCoinCents.set(cents)
                     pulseCount = 0
                 }
                 try {
-                    Thread.sleep(80)
+                    Thread.sleep(COIN_POLL_INTERVAL_MS)
                 } catch (e: InterruptedException) {
                     // Поток останавливается — выходим из цикла на следующей проверке флага.
                 }
@@ -595,7 +1087,67 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
         paymentPollingThread = null
     }
 
-    private fun getLastCoinCents(): Int = lastCoinCents.getAndSet(0)
+    // Заменяет прежний getLastCoinCents(): отдаёт разом номинал, счётчик
+    // неудачных чтений за окно и флаг отказа приёма — payment.dart решает,
+    // что делать, по всем трём сразу, одной транзакцией метод-канала.
+    // Имитация (см. coinAcceptorSimulatedDown) подделывает результат ДО
+    // любого обращения к реальным полям — cents всегда 0, чтобы тест не
+    // мог случайно кому-то зачислить баланс.
+    private fun getCoinAcceptorStatus(): Map<String, Any> {
+        if (coinAcceptorSimulatedDown.get()) {
+            return mapOf(
+                "cents" to 0,
+                "failureCount" to COIN_MAX_CONSECUTIVE_FAILURES,
+                "down" to true,
+            )
+        }
+        return mapOf(
+            "cents" to lastCoinCents.getAndSet(0),
+            "failureCount" to coinFailureCount.get(),
+            "down" to coinAcceptorDown.get(),
+        )
+    }
+
+    // Сервисное меню: включает/выключает "заморозку" показания термопары
+    // (задача "детектор отказа датчика температуры", п.11): readTemperature
+    // отдаёт последнее прочитанное значение, шину не трогает. Каждое
+    // включение (пере)заводит таймер автосброса на
+    // TEMPERATURE_FROZEN_AUTO_OFF_MS (30 мин) — страховка от забытого
+    // тумблера. Возвращает значение, на котором заморожено, либо null.
+    private fun setTemperatureFrozen(value: Boolean): Double? {
+        temperatureFreezeAutoOffHandler.removeCallbacks(temperatureFreezeAutoOffRunnable)
+        if (!value) {
+            temperatureFrozen.set(false)
+            frozenTemperatureC = null
+            return null
+        }
+        // "Последнее значение" — то, что реально прочитано до этого; если
+        // ещё ни разу не читали, читаем один раз прямо сейчас.
+        var base = lastTemperatureC
+        if (base == null) {
+            val regs = modbus?.readHoldingRegisters(SLAVE_THERMO, 0, 1)
+            if (regs != null) base = parseThermocoupleRaw(regs[0])
+        }
+        if (base == null) return null
+        frozenTemperatureC = base
+        temperatureFrozen.set(true)
+        temperatureFreezeAutoOffHandler.postDelayed(
+            temperatureFreezeAutoOffRunnable,
+            TEMPERATURE_FROZEN_AUTO_OFF_MS,
+        )
+        return base
+    }
+
+    private fun setCoinAcceptorSimulatedDown(value: Boolean) {
+        coinAcceptorSimulatedDown.set(value)
+        coinSimulatedDownAutoOffHandler.removeCallbacks(coinSimulatedDownAutoOffRunnable)
+        if (value) {
+            coinSimulatedDownAutoOffHandler.postDelayed(
+                coinSimulatedDownAutoOffRunnable,
+                COIN_SIMULATED_DOWN_AUTO_OFF_MS,
+            )
+        }
+    }
 
     // Один тик опроса терминала: обновляет terminalLastState, пишет фронт в
     // журнал (с длительностью предыдущего состояния — по этому можно
@@ -643,6 +1195,38 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
         terminalLastConfirmedAt = now
         addTerminalLog("ОПЛАТА ЗАСЧИТАНА (режим $mode)")
         return true
+    }
+
+    // Движок Flutter этого экземпляра уничтожается вместе с Activity
+    // (MainActivity.onDestroy): Dart больше не управляет шиной. Раньше порт
+    // и его блокировка оставались за этим экземпляром, и пересозданная
+    // Activity (после обесточивания приложение стартовало дважды — оба раза
+    // в одном процессе) получала "порт занят" от СВОЕГО ЖЕ PID: шина у
+    // видимого экрана оставалась мёртвой до ручного перезапуска. Здесь:
+    // остановить опрос монет, по возможности погасить выходы (нагрузки не
+    // должны остаться включёнными без управляющего), закрыть порт.
+    fun release() {
+        paymentPollingActive.set(false)
+        coinAcceptorAutoOffHandlerCleanup()
+        val bus = modbus ?: return
+        try {
+            bus.scanWriteMultipleCoils(SLAVE_DIO, 0, List(10) { false }, timeoutMs = 150L)
+        } catch (e: Throwable) {
+            Log.e(TAG, "release: safeAllOff не удался: $e")
+        }
+        try {
+            bus.close()
+        } catch (e: Throwable) {
+            Log.e(TAG, "release: close не удался: $e")
+        }
+        modbus = null
+        if (activeBus === bus) activeBus = null
+        Log.w(TAG, "release: порт освобождён (движок уничтожен)")
+    }
+
+    private fun coinAcceptorAutoOffHandlerCleanup() {
+        temperatureFreezeAutoOffHandler.removeCallbacks(temperatureFreezeAutoOffRunnable)
+        coinSimulatedDownAutoOffHandler.removeCallbacks(coinSimulatedDownAutoOffRunnable)
     }
 
     private fun addTerminalLog(line: String) {

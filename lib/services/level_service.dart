@@ -38,6 +38,15 @@ class LevelService {
   bool? _terminalLastAmbient;
   DateTime? _terminalLastAmbientEventAt;
 
+  // Быстрый опрос терминала на выведенном аппарате: клиент мог приложить
+  // карту и получить списание за услугу, которой не будет, а 3-секундный
+  // тик ловит импульс 131 мс с вероятностью около 4% (живой тест B5,
+  // 02.10.2026). Шина в этом состоянии свободна, поэтому здесь, как на
+  // экране оплаты, опрос частый и с защитной паузой на стороне Kotlin.
+  static const Duration _fastInterval = Duration(milliseconds: 50);
+  Timer? _fastTimer;
+  bool _fastRunning = false;
+
   LevelService._(this.notifier);
 
   static const Duration interval = Duration(seconds: 3);
@@ -89,15 +98,58 @@ class LevelService {
     notifier.addListener(_onNotifierChanged);
     _paused = _isFullyPausedState(notifier.state);
     _reschedule();
+    _syncFastTerminal();
   }
 
   void _end() {
     notifier.removeListener(_onNotifierChanged);
     _timer?.cancel();
     _timer = null;
+    _fastTimer?.cancel();
+    _fastTimer = null;
+  }
+
+  bool get _wantsFastTerminal =>
+      notifier.state == AppState.outOfService &&
+      notifier.config.paymentTerminalEnabled;
+
+  void _syncFastTerminal() {
+    if (_wantsFastTerminal) {
+      _fastTimer ??= Timer.periodic(_fastInterval, (_) => _fastTick());
+    } else {
+      _fastTimer?.cancel();
+      _fastTimer = null;
+    }
+  }
+
+  Future<void> _fastTick() async {
+    if (_fastRunning || !_wantsFastTerminal) return;
+    _fastRunning = true;
+    try {
+      final cfg = notifier.config;
+      final poll = await ModbusService.pollTerminal(
+        channel: cfg.paymentTerminalChannel,
+        mode: cfg.paymentTerminalMode,
+        guardMs: cfg.paymentTerminalGuardMs,
+      );
+      if (poll != null && poll.confirmed) {
+        _terminalLastAmbientEventAt = DateTime.now();
+        await CloudService.report(
+          CloudEventType.unexpectedPayment,
+          data: {
+            'state': notifier.state.name,
+            'out_of_service': true,
+            'detected_by': 'fast_poll',
+          },
+        );
+      }
+    } finally {
+      _fastRunning = false;
+    }
   }
 
   void _onNotifierChanged() {
+    _syncFastTerminal();
     final paused = _isFullyPausedState(notifier.state);
     if (paused != _paused) {
       // Выход из паузы (обычно — уход с экрана оплаты). Терминал держит
@@ -140,7 +192,8 @@ class LevelService {
         await _reportLevelTransitions(levels);
       }
 
-      await _checkTerminalAmbient(all);
+      // Быстрый опрос уже следит за терминалом — не дублировать событие.
+      if (_fastTimer == null) await _checkTerminalAmbient(all);
     } finally {
       _running = false;
     }
@@ -198,7 +251,13 @@ class LevelService {
 
     await CloudService.report(
       CloudEventType.unexpectedPayment,
-      data: {'state': notifier.state.name},
+      // Сигнал терминала при выводе из обслуживания никакого цикла не
+      // запускает (оплата заблокирована), но событие остаётся: терминал
+      // физически независим от приложения, клиенту могли списать деньги.
+      data: {
+        'state': notifier.state.name,
+        if (notifier.isOutOfService) 'out_of_service': true,
+      },
     );
   }
 }

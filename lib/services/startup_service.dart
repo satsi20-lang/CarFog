@@ -1,5 +1,6 @@
 import 'dart:async';
 import '../models/app_state.dart';
+import '../models/bus_map.dart';
 import 'cloud_service.dart';
 import 'modbus_service.dart';
 
@@ -10,7 +11,7 @@ import 'modbus_service.dart';
 // при холодном старте, когда порт/шина ещё не готовы, выключение молча не
 // происходило и никто об этом не узнавал. Выходы оставались в том
 // состоянии, в котором их поднял сам модуль при подаче питания — включая
-// ТЭН на 2 кВт.
+// ТЭН (≈1,43 кВт по замеру 29.09.2026, см. PowerSignature.heaterW).
 //
 // Аппаратные меры (руками, вне этого кода) остаются обязательными и не
 // заменяются программными: состояние выходов модуля MBSL16DI16DO при
@@ -28,7 +29,7 @@ import 'modbus_service.dart';
 // только после нескольких подряд неудачных команд — не на каждую
 // единичную.
 class StartupService {
-  static const _port = '/dev/ttyS5'; // уточнить после find_port.py
+  static const _port = BusParams.port;
 
   // Первые попытки — часто (шина может ответить уже через пару секунд
   // после подачи питания), дальше интервал растёт — не молотить шину
@@ -58,17 +59,18 @@ class StartupService {
     var reported = false;
     var consecutiveCommandFailures = 0;
 
-    var opened = await ModbusService.open(port: _port);
+    var openResult = await ModbusService.open(port: _port);
+    var opened = openResult.ok;
 
     while (true) {
       attempt++;
 
-      // Успех определяется ответом самой команды выключения (эхо
-      // запроса на каждый из 12 каналов, см. ModbusRtu.writeSingleCoil/
-      // ModbusChannel "safeAllOff") — не чтением катушек. Поведение
-      // чтения катушек на конкретном модуле не подтверждено, и если оно
-      // ведёт себя иначе, чем ожидалось, такая проверка проваливалась бы
-      // всегда, и цикл не завершился бы никогда.
+      // Успех определяется ответом самой команды выключения (эхо кадра
+      // FC15, см. ModbusRtu.scanWriteMultipleCoils/ModbusChannel
+      // "safeAllOff") — не чтением катушек. Поведение чтения катушек на
+      // конкретном модуле не подтверждено, и если оно ведёт себя иначе,
+      // чем ожидалось, такая проверка проваливалась бы всегда, и цикл не
+      // завершился бы никогда.
       final ok = opened && await ModbusService.safeAllOff();
       if (ok) {
         notifier.setBusHealthy(true);
@@ -93,19 +95,32 @@ class StartupService {
       // снова, когда решили, что переоткрытие оправдано.
       if (!opened || consecutiveCommandFailures >= _reopenAfterFailures) {
         consecutiveCommandFailures = 0;
-        opened = await ModbusService.open(port: _port);
+        openResult = await ModbusService.open(port: _port);
+        opened = openResult.ok;
       }
 
       if (!reported && attempt >= _reportAfterAttempts) {
         reported = true;
+        // PORT_BUSY (задача "эксклюзивное открытие последовательного
+        // порта") — отдельный код события и видимая деталь на вкладке
+        // Диагностика, не просто "не открылся": техник должен сразу
+        // понять, что делать (закрыть приложение полностью), а не гадать
+        // по логу час, как в прошлый раз.
+        final busy = openResult.code == 'PORT_BUSY';
         await CloudService.report(
           CloudEventType.hardwareError,
           data: {
-            'code': opened ? 'startup_shutdown_failed' : 'modbus_open_failed',
+            'code': busy
+                ? 'modbus_port_busy'
+                : (opened ? 'startup_shutdown_failed' : 'modbus_open_failed'),
             'attempts': attempt,
             'port': _port,
+            if (busy && openResult.pid != null) 'busy_pid': openResult.pid,
           },
         );
+        if (busy) {
+          notifier.setBusBusyInfo(_port, openResult.pid);
+        }
       }
 
       await Future.delayed(attempt <= _fastAttempts ? _fastDelay : _slowDelay);

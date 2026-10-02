@@ -23,6 +23,11 @@ class OutputWatchdogService {
   Timer? _timer;
   bool _running = false;
   bool _paused = false;
+  // Только восстановление связи: сторож выключен настройкой или состояние
+  // не "покой", но клиент стоит на экране "шина недоступна" — признак
+  // "шина исправна" после старта восстанавливает только сторож, поэтому
+  // без этого режима экран не закрывался бы никогда.
+  bool _recoveryOnly = false;
   int _consecutiveFailures = 0;
 
   OutputWatchdogService._(this.notifier);
@@ -36,6 +41,10 @@ class OutputWatchdogService {
   // таймауты). Несколько подряд — уже потеря связи.
   static const _failuresUntilUnhealthy = 3;
 
+  // Сколько первых выходов контролирует и гасит сторож (насосы 0-7,
+  // компрессор 8, ТЭН 9) — ровно диапазон safeAllOff.
+  static const _watchedOutputs = 10;
+
   // Активен только там, где выходы ЗАКОНОМЕРНО должны быть выключены —
   // не во время оплаты/подготовки/обработки/продувки (там включены
   // законно, задача 3.4) и не в сервисном меню (там техник управляет
@@ -46,6 +55,9 @@ class OutputWatchdogService {
       case AppState.standby:
       case AppState.selectFlavor:
       case AppState.finished:
+      // Выведенный из обслуживания аппарат стоит с выключенными выходами
+      // — если модуль что-то поднял сам, сторож это поймает и погасит.
+      case AppState.outOfService:
         return true;
       default:
         return false;
@@ -71,10 +83,19 @@ class OutputWatchdogService {
   // по шине подтверждённо исправен.
   bool _isEnabledByConfig() => notifier.config.outputWatchdogEnabled;
 
+  bool _waitingForBus() =>
+      notifier.state == AppState.error && notifier.errorCode == 'bus_unavailable';
+
   void _begin() {
     notifier.addListener(_onNotifierChanged);
-    _paused = !_isEnabledByConfig() || !_isIdleState(notifier.state);
+    _recompute();
     _reschedule();
+  }
+
+  void _recompute() {
+    final full = _isEnabledByConfig() && _isIdleState(notifier.state);
+    _recoveryOnly = !full && _waitingForBus();
+    _paused = !full && !_recoveryOnly;
   }
 
   void _end() {
@@ -84,11 +105,10 @@ class OutputWatchdogService {
   }
 
   void _onNotifierChanged() {
-    final paused = !_isEnabledByConfig() || !_isIdleState(notifier.state);
-    if (paused != _paused) {
-      _paused = paused;
-      _reschedule();
-    }
+    final wasPaused = _paused;
+    final wasRecovery = _recoveryOnly;
+    _recompute();
+    if (wasPaused != _paused || wasRecovery != _recoveryOnly) _reschedule();
   }
 
   void _reschedule() {
@@ -114,20 +134,29 @@ class OutputWatchdogService {
       _consecutiveFailures = 0;
       notifier.setBusHealthy(true);
 
-      final onIndex = coils.indexWhere((v) => v);
+      if (_recoveryOnly) return; // связь жива — это всё, что здесь нужно
+
+      // Сторожу важны только выходы, которые гасит safeAllOff (0..9:
+      // насосы, компрессор, ТЭН). Индикаторные светодиоды (10, 11)
+      // safeAllOff не трогает намеренно: горящий красный после аварийного
+      // перезапуска сыпал бы событием каждые 3 с, а погасить его сторож
+      // всё равно не может.
+      final onIndex = coils.take(_watchedOutputs).toList().indexWhere((v) => v);
       if (onIndex == -1) return; // всё выключено, как и ожидалось
 
       // Что-то включено там, где по логике аппарата включённого быть не
       // может — немедленно выключаем всё и перепроверяем (задача 3.2).
       await ModbusService.safeAllOff();
       final recheck = await ModbusService.readCoils();
+      final confirmedOff = recheck != null &&
+          !recheck.take(_watchedOutputs).any((v) => v);
       await CloudService.report(
         CloudEventType.hardwareError,
         data: {
           'code': 'unexpected_output_on',
           'channel': onIndex,
           'state': notifier.state.name,
-          'confirmed_off': recheck != null && !recheck.any((v) => v),
+          'confirmed_off': confirmedOff,
         },
       );
     } finally {

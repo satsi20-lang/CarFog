@@ -11,11 +11,14 @@ import 'screens/preparing.dart';
 import 'screens/treating.dart';
 import 'screens/finished.dart';
 import 'screens/error.dart';
+import 'screens/out_of_service.dart';
 import 'screens/service/service_pin.dart';
 import 'screens/service/service_menu.dart';
 import 'services/cloud_service.dart';
 import 'services/config_service.dart';
 import 'services/level_service.dart';
+import 'services/modbus_service.dart';
+import 'services/out_of_service_service.dart';
 import 'services/output_watchdog_service.dart';
 import 'services/startup_service.dart';
 import 'services/sync_service.dart';
@@ -34,6 +37,17 @@ void main() async {
 
   final notifier = AppNotifier()..config = config;
 
+  // Вывод аппарата из обслуживания (задача "вывод аппарата из
+  // обслуживания", требования 2-5): состояние восстанавливается ДО runApp —
+  // раньше, чем экран станет доступен клиенту, иначе скачок напряжения
+  // снимал бы блокировку. Fail-closed: хранилище не читается или запись
+  // повреждена → аппарат выведен (state_unreadable); чистое первое
+  // включение (записи нет совсем) — рабочее состояние.
+  final restoredOutOfService = await OutOfServiceService.restore();
+  if (restoredOutOfService != null) {
+    notifier.enterOutOfService(restoredOutOfService);
+  }
+
   // Облачный слой. Транспорт выбирается по сохранённым настройкам —
   // если облако не настроено/выключено, работает локальный лог.
   CloudService.configure(
@@ -43,6 +57,12 @@ void main() async {
     anonKey: config.cloudAnonKey,
     token: config.cloudToken,
   );
+
+  // Оператор должен узнать об этом раньше клиентов — событие уходит сразу
+  // (при отсутствии связи ляжет в обычную очередь).
+  if (restoredOutOfService != null) {
+    unawaited(OutOfServiceService.reportRestored(restoredOutOfService));
+  }
 
   SyncService.start(notifier);
   LevelService.start(notifier);
@@ -71,12 +91,18 @@ void main() async {
     if (reason == 'crash') {
       await CloudService.report(
         CloudEventType.appStartedAfterCrash,
-        data: launchDiagnostics,
+        data: {'probable_cause': 'software_crash', ...launchDiagnostics},
       );
     } else {
       await CloudService.report(
         CloudEventType.appStarted,
-        data: {if (reason == 'boot') 'reason': 'boot', ...launchDiagnostics},
+        data: {
+          if (reason == 'boot') ...{
+            'reason': 'boot',
+            'probable_cause': await _detectBootCause(notifier),
+          },
+          ...launchDiagnostics,
+        },
       );
     }
   }());
@@ -96,6 +122,27 @@ void main() async {
   runApp(
     ChangeNotifierProvider.value(value: notifier, child: const DryFogApp()),
   );
+}
+
+// Причина перезапуска. Признак 'crash' ставит только обработчик падения
+// процесса (DryFogApplication) — если он сработал, это ТОЧНО падение софта
+// ('software_crash'), гадать не нужно. При пропадании питания обработчик не
+// успевает ничего поставить: аппарат просто загружается заново (причина
+// 'boot'), поэтому прежняя ветка "power_loss внутри события об аварии"
+// никогда не могла быть верной, а сравнение с отметкой "после последней
+// сессии" и порог 0.001 кВт·ч (меньше шага счётчика 0.01) ничего не
+// доказывали. Теперь для 'boot' — честное "перезагрузка устройства", с
+// пометкой, отвечал ли счётчик энергии (если нет — вероятно, питание узла
+// шкафа пропадало, а не только перезагрузился планшет).
+Future<String> _detectBootCause(AppNotifier notifier) async {
+  if (!notifier.config.energyMeterInstalled) return 'device_restart';
+  const attempts = 3;
+  const retryDelay = Duration(seconds: 2);
+  for (var i = 0; i < attempts; i++) {
+    if (await ModbusService.readEnergy() != null) return 'device_restart';
+    await Future.delayed(retryDelay);
+  }
+  return 'device_restart_meter_unreachable';
 }
 
 class DryFogApp extends StatelessWidget {
@@ -123,7 +170,20 @@ class AppRouter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AppNotifier>().state;
+    final notifier = context.watch<AppNotifier>();
+    final state = notifier.state;
+    // Второй рубеж защиты (первый — AppNotifier.transition): пока аппарат
+    // выведен из обслуживания, показывается только экран "не работает",
+    // какое бы состояние ни стояло. Исключения — PIN/сервисное меню
+    // (техник) и экран ошибки (объяснение клиенту, чья оплата уже прошла к
+    // моменту отказа; сам возвращается на экран "не работает").
+    if (notifier.isOutOfService &&
+        state != AppState.outOfService &&
+        state != AppState.servicePinEntry &&
+        state != AppState.serviceMenu &&
+        state != AppState.error) {
+      return const OutOfServiceScreen();
+    }
     switch (state) {
       case AppState.selectLanguage:
         return const LanguageSelectScreen();
@@ -149,6 +209,8 @@ class AppRouter extends StatelessWidget {
         return const ServicePinScreen();
       case AppState.serviceMenu:
         return const ServiceMenuScreen();
+      case AppState.outOfService:
+        return const OutOfServiceScreen();
     }
   }
 }

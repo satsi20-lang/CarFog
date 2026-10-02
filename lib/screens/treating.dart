@@ -2,7 +2,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
+import '../models/bus_map.dart';
+import '../models/out_of_service.dart';
+import '../services/cloud_service.dart';
+import '../services/cycle_energy_service.dart';
+import '../services/heater_safety_monitor.dart';
+import '../services/heater_shutdown_service.dart';
 import '../services/modbus_service.dart';
+import '../services/out_of_service_service.dart';
 import '../services/session_service.dart';
 import '../widgets/fog_background.dart';
 import '../widgets/lang_switcher.dart';
@@ -19,6 +26,11 @@ const Map<String, Map<String, String>> i18n = {
     'shutdown_sub': 'Продувка системы, пожалуйста подождите',
     'flavor': 'Аромат',
     'seconds': 'с',
+    'cancel': 'Отмена',
+    'cancel_title': 'Остановить процедуру?',
+    'cancel_body': 'Оплата не возвращается автоматически. Процедура будет прервана.',
+    'cancel_yes': 'Остановить',
+    'cancel_no': 'Продолжить',
   },
   'en': {
     'compressor_title': 'STARTING COMPRESSOR',
@@ -31,6 +43,11 @@ const Map<String, Map<String, String>> i18n = {
     'shutdown_sub': 'Purging the system, please wait',
     'flavor': 'Fragrance',
     'seconds': 's',
+    'cancel': 'Cancel',
+    'cancel_title': 'Stop the procedure?',
+    'cancel_body': 'Payment is not refunded automatically. The procedure will be interrupted.',
+    'cancel_yes': 'Stop',
+    'cancel_no': 'Continue',
   },
   'et': {
     'compressor_title': 'KOMPRESSORI KÄIVITAMINE',
@@ -43,6 +60,11 @@ const Map<String, Map<String, String>> i18n = {
     'shutdown_sub': 'Süsteemi puhastamine, palun oota',
     'flavor': 'Lõhn',
     'seconds': 's',
+    'cancel': 'Tühista',
+    'cancel_title': 'Peata protseduur?',
+    'cancel_body': 'Makset ei tagastata automaatselt. Protseduur katkestatakse.',
+    'cancel_yes': 'Peata',
+    'cancel_no': 'Jätka',
   },
 };
 
@@ -68,11 +90,38 @@ class _TreatingScreenState extends State<TreatingScreen>
   Timer? _ledBlinkTimer;
   bool _ledOn = false;
 
-  // Термостат испарителя: поддерживает температуру в коридоре 225–235°C
-  // на всё время экрана (компрессор/обработка/продувка), пока явно не
-  // отменён — см. _nextPhase() (treating→shutdown) и dispose().
+  // Термостат испарителя: поддерживает температуру гистерезисом
+  // HeaterThresholds.maintainLowC..maintainHighC (bus_map.dart) на всё
+  // время экрана (компрессор/обработка/продувка), пока явно не отменён —
+  // см. _nextPhase() (treating→shutdown) и dispose().
   Timer? _heaterTimer;
   double _currentTemp = 0.0;
+  // Известное состояние реле ТЭНа (null — ещё не решали) и время
+  // последнего РЕАЛЬНОГО переключения — вместе с
+  // HeaterThresholds.maintainMinToggleInterval не дают гистерезису
+  // дёргать реле чаще разумного на границе коридора (задача "контроль
+  // цикла по электросчётчику", правка температурного режима, п.6).
+  bool? _heaterOn;
+  DateTime? _lastHeaterToggleAt;
+  int _heaterToggleCount = 0;
+
+  // Детекторы отказа датчика температуры при включённом ТЭНе (задача
+  // "детектор отказа датчика температуры"). В режиме обработки с жидкостью
+  // работают только out_of_range и stale: температура на плато при
+  // включённом ТЭНе здесь не измерялась, поэтому no_rise и energy_budget
+  // (рассчитанные на сухой прогрев) отключены.
+  final HeaterSafetyMonitor _monitor = HeaterSafetyMonitor(
+    checkNoRise: false,
+    checkEnergy: false,
+  );
+  bool _faulted = false;
+  bool _cancelling = false;
+
+  // Термостат вправе управлять реле только пока этот флаг поднят. Снимается
+  // ПЕРВЫМ делом при конце обработки/отказе: тик, который уже ждал ответа
+  // термопары, после await проверяет флаг и не включает ТЭН обратно
+  // поверх явного выключения (гонка в конце обработки).
+  bool _thermostatActive = true;
 
   late AnimationController _blinkController;
   late Animation<Color?> _bgColorAnim;
@@ -104,16 +153,245 @@ class _TreatingScreenState extends State<TreatingScreen>
 
     _startPhase(_Phase.compressor, _compressorDelay);
 
+    // ТЭН физически включён ещё с прогрева (preparing.dart оставляет его
+    // включённым) — контроль датчика продолжается без разрыва.
+    _monitor.heaterCommanded(true);
+
     _heaterTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
+      if (_faulted) return;
       final temp = await ModbusService.readTemperature();
-      if (temp == null || !mounted) return;
-      setState(() => _currentTemp = temp);
-      if (temp < 225.0) {
-        await ModbusService.setHeater(true);
-      } else if (temp > 235.0) {
-        await ModbusService.setHeater(false);
+      if (!mounted || _faulted || !_thermostatActive) return;
+      final fault = _monitor.observeTemperature(temp);
+      if (fault != null) {
+        await _sensorFault(fault, temp);
+        return;
       }
+      // Плохое чтение (null / обрыв / нереалистично) — не принимаем по нему
+      // решений: -500°C как "ниже порога включения" включило бы ТЭН.
+      if (!HeaterSafetyMonitor.isUsable(temp)) return;
+      setState(() => _currentTemp = temp!);
+      // Аварийный потолок: в прогреве он есть, в обработке раньше не было
+      // совсем — при залипшем реле от перегрева защищал бы только
+      // аппаратный термовыключатель.
+      if (temp! >= HeaterThresholds.overheatAbortC) {
+        await _overheat(temp);
+        return;
+      }
+      await _applyHeaterHysteresis(temp);
     });
+  }
+
+  // Сработал детектор отказа датчика температуры при включённом ТЭНе во
+  // время обработки: немедленно safeAllOff() (ТЭН, насосы, компрессор;
+  // светодиоды он НЕ гасит — их гасит ModbusService.ledsOff()), запись о детекторе, hardware_error
+  // 'heater_sensor_fault' с подтипом, вывод из обслуживания
+  // 'temp_sensor_fault'. Услуга здесь оказана частично (в отличие от
+  // отказа в прогреве), поэтому serviceNotDelivered НЕ ставится — о том,
+  // возвращать ли деньги, решает оператор по записи сессии (reason,
+  // duration_s, phase). Мощность/напряжение — последние прочитанные
+  // отсчётом CycleEnergyService, без лишнего обращения к шине до записи.
+  Future<void> _sensorFault(HeaterFault fault, double? lastTemp) async {
+    if (_faulted) return;
+    _stopCycleTimers();
+    final notifier = context.read<AppNotifier>();
+    // safeAllOff не трогает светодиоды (красный должен сигналить аварию на
+    // исправном аппарате), но на выведенном аппарате зелёный "идёт
+    // обработка" гореть не должен. Подтверждение выключения ТЭНа — внутри.
+    final shutdown = _shutdownAll(notifier, 'treating_sensor_fault');
+    // Доля оказанной услуги — чтобы оператор мог решить о возврате по
+    // записи: сколько секунд обработки (фаза treating) прошло из
+    // запланированных. До начала обработки (компрессор) — 0, после — 100.
+    final plannedS = _treatmentDuration;
+    final doneS = _treatmentDoneS(plannedS);
+    final extra = <String, dynamic>{
+      'subtype': fault.subtype,
+      'reason': fault.reason,
+      'treatment_planned_s': plannedS,
+      'treatment_done_s': doneS,
+      'treatment_share_pct': plannedS == 0 ? 0 : (doneS * 100 / plannedS).round(),
+      'power_w': ?CycleEnergyService.lastPowerW,
+      'voltage_v': ?CycleEnergyService.lastVoltageV,
+      'phase': _phase.name,
+      ...fault.details,
+    };
+    await OutOfServiceService.trip(
+      notifier,
+      code: OutOfServiceCode.tempSensorFault,
+      details: extra,
+      alongside: shutdown,
+      showScreen: false,
+    );
+    await CloudService.report(
+      CloudEventType.hardwareError,
+      data: {'code': 'heater_sensor_fault', 'temp_c': ?lastTemp, ...extra},
+    );
+    // phase/subtype/доля оказанной услуги — и в записи сессии, откуда
+    // оператор решает о возврате, а не только в hardware_error.
+    await SessionService.interrupt(
+      'heater_sensor_fault',
+      extra: {
+        'phase': _phase.name,
+        'subtype': fault.subtype,
+        'treatment_planned_s': plannedS,
+        'treatment_done_s': doneS,
+        'treatment_share_pct': extra['treatment_share_pct'],
+      },
+    );
+    notifier.goToError('heater_sensor_fault');
+  }
+
+  // Клиент сам остановил процедуру кнопкой "Отмена". В запись сессии идёт
+  // reason 'cancelled_by_client' и СТАДИЯ (stage): компрессор / обработка —
+  // вместе с долей оказанной услуги по времени. По этой записи оператор
+  // отличает "клиент сам остановил" (возврат не положен или частичный) от
+  // отказа оборудования (service_delivered:false, hardware_error) и решает
+  // о возврате средств. Остановка — как при отказе: всё выключается, ТЭН с
+  // подтверждением. Деньги не возвращаются автоматически.
+  Future<void> _onCancel() async {
+    if (_faulted || _cancelling || _phase == _Phase.shutdown) return;
+    final lang = context.read<AppNotifier>().lang;
+    final t = i18n[lang]!;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(t['cancel_title']!),
+        content: Text(t['cancel_body']!),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(t['cancel_no']!),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(t['cancel_yes']!),
+          ),
+        ],
+      ),
+    );
+    // Пока шёл диалог, цикл мог закончиться или сломаться сам.
+    if (confirmed != true || !mounted || _faulted || _cancelling) return;
+    if (_phase == _Phase.shutdown) return;
+    _cancelling = true;
+    _faulted = true; // термостат и тики больше ничего не делают
+    _stopCycleTimers();
+    final notifier = context.read<AppNotifier>();
+    final plannedS = _treatmentDuration;
+    final doneS = _treatmentDoneS(plannedS);
+    final stage = _phase == _Phase.compressor ? 'compressor' : 'treating';
+    await _shutdownAll(notifier, 'treating_client_cancel');
+    await SessionService.interrupt(
+      'cancelled_by_client',
+      extra: {
+        'cancelled_by': 'client',
+        'stage': stage,
+        'treatment_planned_s': plannedS,
+        'treatment_done_s': doneS,
+        'treatment_share_pct':
+            plannedS == 0 ? 0 : (doneS * 100 / plannedS).round(),
+      },
+    );
+    notifier.resetSession();
+  }
+
+  // Перегрев в обработке: тот же порог, что и в прогреве. Обычная ошибка
+  // с возвратом к ожиданию (не вывод из обслуживания): перегрев сам по себе
+  // не доказывает отказ аппарата, а если ТЭН не выключается — это поймает
+  // ensureOff и выведет аппарат.
+  Future<void> _overheat(double temp) async {
+    if (_faulted) return;
+    _faulted = true;
+    _stopCycleTimers();
+    final notifier = context.read<AppNotifier>();
+    await _shutdownAll(notifier, 'treating_overheat');
+    final plannedS = _treatmentDuration;
+    final doneS = _treatmentDoneS(plannedS);
+    final extra = <String, dynamic>{
+      'phase': _phase.name,
+      'treatment_planned_s': plannedS,
+      'treatment_done_s': doneS,
+      'treatment_share_pct': plannedS == 0 ? 0 : (doneS * 100 / plannedS).round(),
+    };
+    await CloudService.report(
+      CloudEventType.hardwareError,
+      data: {'code': 'overheat', 'temp_c': temp, ...extra},
+    );
+    await SessionService.interrupt('overheat', extra: extra);
+    notifier.goToError('overheat');
+  }
+
+  // Снять управление реле и остановить таймеры экрана.
+  void _stopCycleTimers() {
+    _thermostatActive = false;
+    _timer?.cancel();
+    _heaterTimer?.cancel();
+    _stopRedBlink();
+    _blinkController.stop();
+  }
+
+  // Выключить всё и убедиться, что ТЭН выключен.
+  Future<void> _shutdownAll(AppNotifier notifier, String where) async {
+    await ModbusService.safeAllOff();
+    await ModbusService.ledsOff();
+    await HeaterShutdownService.ensureOff(where, notifier: notifier);
+  }
+
+  int _treatmentDoneS(int plannedS) => switch (_phase) {
+    _Phase.compressor => 0,
+    _Phase.treating => (plannedS - _secondsLeft).clamp(0, plannedS),
+    _Phase.shutdown => plannedS,
+  };
+
+  // Решает, нужно ли переключить реле ТЭНа, и переключает не чаще
+  // HeaterThresholds.maintainMinToggleInterval от последнего РЕАЛЬНОГО
+  // переключения — внутри коридора (temp между low и high) решения нет,
+  // держим текущее состояние реле как есть.
+  Future<void> _applyHeaterHysteresis(double temp) async {
+    bool? wantOn;
+    if (temp < HeaterThresholds.maintainLowC) {
+      wantOn = true;
+    } else if (temp > HeaterThresholds.maintainHighC) {
+      wantOn = false;
+    }
+    if (wantOn == null || wantOn == _heaterOn) return;
+
+    // Ниже жёсткого пола пауза не действует вообще — температура падает,
+    // греть нужно немедленно, а не ждать (решение оператора 28.09.2026).
+    final now = DateTime.now();
+    if (temp >= HeaterThresholds.maintainHardFloorC) {
+      final last = _lastHeaterToggleAt;
+      if (last != null && now.difference(last) < HeaterThresholds.maintainMinToggleInterval) {
+        return;
+      }
+    }
+
+    // Флаг проверяется синхронно прямо перед командой: между проверкой и
+    // отправкой нет await, поэтому конец обработки (флаг снят до его
+    // собственного выключения ТЭНа) не может оказаться "между".
+    if (!_thermostatActive || _faulted) return;
+    final notifier = context.read<AppNotifier>();
+    final ok = await ModbusService.setHeater(wantOn);
+    // Состояние реле "запоминается" только после подтверждённой записи:
+    // раньше неудача выключения оставляла _heaterOn=false, и следующий тик
+    // считал, что делать нечего, пока ТЭН продолжал греть.
+    if (ok) {
+      _lastHeaterToggleAt = now;
+      _heaterOn = wantOn;
+      _heaterToggleCount++;
+      _monitor.heaterCommanded(wantOn, tempC: temp);
+    } else if (!wantOn) {
+      // Не удалось выключить — не ждать следующего тика: форсированное
+      // выключение с подтверждением (при провале — вывод из обслуживания).
+      if (await HeaterShutdownService.ensureOff('treating_thermostat', notifier: notifier)) {
+        _heaterOn = false;
+        _monitor.heaterCommanded(false, tempC: temp);
+      } else {
+        _faulted = true;
+        _stopCycleTimers();
+        await _shutdownAll(notifier, 'treating_thermostat');
+        await SessionService.interrupt('heater_off_unconfirmed');
+        notifier.goToError('heater_failure');
+      }
+    }
   }
 
   void _startPhase(_Phase phase, int seconds) {
@@ -176,12 +454,32 @@ class _TreatingScreenState extends State<TreatingScreen>
         // Обработка завершена — насос+ТЭН+LED выкл, компрессор продувает.
         // Термостат отменяем ДО setHeater(false) — иначе он через 3 сек
         // снова включит ТЭН поверх этого явного выключения.
+        _thermostatActive = false;
         _heaterTimer?.cancel();
+        debugPrint(
+          'TreatingScreen: реле ТЭНа переключилось $_heaterToggleCount раз за цикл',
+        );
         _stopRedBlink();
         _blinkController.stop();
         _blinkController.reset();
         await ModbusService.setPump(_flavorIndex, false);
-        await ModbusService.setHeater(false); // на случай если был включён
+        // Выключение ТЭНа подтверждается чтением катушки; не подтвердилось
+        // — аппарат выводится из обслуживания (HeaterShutdownService).
+        if (!mounted || _faulted) return;
+        final notifier = context.read<AppNotifier>();
+        final heaterOff = await HeaterShutdownService.ensureOff(
+          'treating_end',
+          notifier: notifier,
+        );
+        if (!heaterOff) {
+          _faulted = true;
+          _timer?.cancel();
+          await ModbusService.safeAllOff();
+          await ModbusService.ledsOff();
+          await SessionService.interrupt('heater_off_unconfirmed');
+          notifier.goToError('heater_failure');
+          return;
+        }
         await ModbusService.setLedGreen(false);
         await ModbusService.setLedRed(false);
         if (!mounted) return;
@@ -208,7 +506,11 @@ class _TreatingScreenState extends State<TreatingScreen>
     _blinkController.dispose();
     // Аварийная гарантия: что бы ни случилось с экраном (уход, ошибка,
     // hot reload) — все выходы гарантированно выключаются.
-    unawaited(ModbusService.safeAllOff());
+    _thermostatActive = false;
+    unawaited(() async {
+      await ModbusService.safeAllOff();
+      await HeaterShutdownService.ensureOff('treating_dispose');
+    }());
     super.dispose();
   }
 
@@ -356,6 +658,24 @@ class _TreatingScreenState extends State<TreatingScreen>
                               ),
                             ],
                           ),
+                          if (_phase != _Phase.shutdown) ...[
+                            const SizedBox(height: 20),
+                            SizedBox(
+                              width: double.infinity,
+                              height: 48,
+                              child: OutlinedButton(
+                                onPressed: _onCancel,
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.white70,
+                                  side: const BorderSide(color: Colors.white38),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                ),
+                                child: Text(t['cancel']!),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),

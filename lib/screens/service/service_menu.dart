@@ -4,10 +4,15 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../models/app_state.dart';
+import '../../models/bus_map.dart';
 import '../../widgets/lang_switcher.dart';
+import '../../models/out_of_service.dart';
 import '../../services/cloud_service.dart';
+import '../../services/heater_trial_service.dart';
 import '../../services/modbus_service.dart';
+import '../../services/out_of_service_service.dart';
 import '../../services/sync_service.dart';
 import '../../services/system_service.dart';
 
@@ -32,6 +37,9 @@ const Map<String, Map<String, String>> _i18n = {
     'pump_after_heater_label': 'Работа насоса после выключения ТЭНа (сек)',
     'err_compressor_purge': 'Продувка компрессора: 1–30 сек',
     'err_pump_after_heater': 'Работа насоса после ТЭНа: 1–30 сек',
+    'tariff_label': 'Тариф на электроэнергию (€/кВт·ч)',
+    'err_tariff': 'Тариф: неотрицательное число',
+    'idle_cost_label': 'Стоимость простоя за сутки (справочно)',
     'available': 'Есть',
     'empty_level': 'Пусто',
     'flavor_fallback': 'Аромат',
@@ -40,6 +48,7 @@ const Map<String, Map<String, String>> _i18n = {
     'coin_no': 'НЕТ',
     'temp_label': 'Температура',
     'temp_unavailable': '--',
+    'not_installed': 'не установлено',
     'diag_levels': 'Уровни канистр',
     'diag_manual': 'Ручное управление',
     'diag_manual_warning':
@@ -85,6 +94,7 @@ const Map<String, Map<String, String>> _i18n = {
     'energy_total': 'Общий счётчик',
     'energy_monthly': 'За текущий месяц',
     'energy_previous_month': 'За прошлый месяц',
+    'last_cycle_voltage': 'Напряжение сети (последний цикл)',
     'unit_kwh': 'кВт⋅ч',
     'tab_cloud': 'Облако',
     'cloud_enabled': 'Отправлять данные в облако',
@@ -123,6 +133,10 @@ const Map<String, Map<String, String>> _i18n = {
     'scanner_scan_stop': 'Остановить',
     'scanner_scan_progress': 'Опрошено',
     'scanner_scan_empty': 'Пока ничего не найдено',
+    'scanner_scan_parity': 'Чётность (для этого поиска)',
+    'scanner_parity_none': 'Нет',
+    'scanner_parity_odd': 'Odd',
+    'scanner_parity_even': 'Even',
     'scanner_known_dio': 'модуль входов-выходов',
     'scanner_known_thermo': 'термопары',
     'scanner_known_energy': 'счётчик энергии',
@@ -159,15 +173,78 @@ const Map<String, Map<String, String>> _i18n = {
     'scanner_write_confirm_cancel': 'Отмена',
     'scanner_write_result_readback': 'Перечитано',
     'scanner_write_result_fail': 'Запись не удалась',
+    'scanner_fc15_section': 'Групповая запись катушек (FC15)',
+    'scanner_fc15_warning':
+        'Опасно: пишет несколько выходов одним кадром. Только выключение — '
+        'при живой фазе и сухих насосах включение группой одним касанием '
+        'невосстановимо, а нужного сценария для этого нет.',
+    'scanner_fc15_off': 'Все ВЫКЛ (0)',
+    'scanner_fc15_btn': 'Записать группой (FC15)',
+    'scanner_fc15_ok': 'Принято',
+    'scanner_fc16_section': 'Запись регистра группой (FC16)',
+    'scanner_fc16_warning':
+        'Для устройств без FC06 (например, счётчик энергии Chint DDSU666 — '
+        'по документации только 03 на чтение и 16 на запись, даже для '
+        'одного регистра). Одна попытка, без автоповторов.',
+    'scanner_fc16_btn': 'Записать (FC16)',
     'scanner_clear': 'Очистить результаты',
     // --- Починка обмена по шине (задача "починить обмен по шине") ---
     'bus_healthy': 'Шина работает',
     'bus_unhealthy': 'Шина недоступна',
+    'diag_port_busy': 'Порт занят другим процессом:',
     'watchdog_enabled': 'Сторож выходов (диагностический режим)',
     'watchdog_hint':
         'Периодически сверяет фактическое состояние выходов с ожидаемым '
         '"всё выключено" в покое. Выключен по умолчанию — включайте, только '
         'когда обмен по шине подтверждённо исправен.',
+    'diag_devices_section': 'Устройства на шине',
+    'diag_device_thermo': 'Термопара',
+    'diag_device_energy': 'Счётчик энергии',
+    'diag_device_coin': 'Монетоприёмник',
+    'diag_simulate_coin_down': 'Имитировать отказ монетоприёмника',
+    'diag_simulate_coin_down_hint':
+        'Подделывает статус на аппарате, шину не трогает — для проверки доплаты картой и ухода в ошибку. Живёт до ручного выключения, но не дольше 30 минут (потом гаснет сам), переживает переход на экран оплаты — не забудьте выключить после теста.',
+    'diag_freeze_temp': 'Заморозить показание температуры',
+    'diag_freeze_temp_hint':
+        'Отладка: термопара «залипает» на последнем значении, шину не читает — для проверки детекторов отказа датчика. Проверка идёт с ВКЛЮЧЁННЫМ ТЭНом: техник стоит рядом и готов отключить питание. Живёт до ручного выключения, автоснятие через 30 минут, видно в облаке.',
+    'diag_freeze_temp_failed': 'Заморозить нечем: нет ни одного чтения температуры',
+    'oos_status_ok': 'Аппарат принимает оплату',
+    'oos_status_blocked': 'ВЫВЕДЕН ИЗ ОБСЛУЖИВАНИЯ — оплата заблокирована',
+    'oos_reason': 'Причина',
+    'oos_since': 'С',
+    'oos_code_heater_no_power': 'отказ нагрева (ТЭН не дал мощности)',
+    'oos_code_temp_sensor_fault': 'отказ датчика температуры / убегающий нагрев',
+    'oos_code_heat_timeout': 'прогрев не достиг цели за 180 с',
+    'oos_code_heater_off_unconfirmed': 'выключение ТЭНа не подтверждено (возможно, залипло реле)',
+    'oos_code_state_unreadable': 'состояние не читается (fail-closed при старте)',
+    'oos_trial_btn': 'Пробный цикл (без оплаты)',
+    'oos_trial_running': 'Идёт пробный цикл…',
+    'oos_trial_hint':
+        'Греет ТЭН несколько секунд, проверяет мощность и рост температуры. Блокировку сам не снимает и оплату клиентам не открывает.',
+    'oos_trial_pass': 'Пробный цикл пройден — блокировку можно снять (15 минут)',
+    'oos_trial_pass_healthy': 'Пробный цикл пройден',
+    'oos_trial_fail': 'Пробный цикл провален',
+    'oos_trial_too_hot': 'Испаритель горячий — подождите остывания',
+    'oos_trial_busy': 'Пробный цикл сейчас недоступен',
+    'oos_trial_no_thermo': 'Термопара не отмечена как установленная — пробный цикл невозможен',
+    'oos_trial_cancelled': 'Пробный цикл прерван',
+    'oos_clear_btn': 'Снять блокировку',
+    'oos_clear_hint':
+        'Только на месте и только после успешного пробного цикла. Удалённо снять нельзя.',
+    'oos_clear_confirm_title': 'Снять блокировку?',
+    'oos_clear_confirm_body':
+        'Аппарат снова начнёт принимать оплату. Убедитесь, что неисправность устранена, а пробный цикл прошёл.',
+    'oos_cleared': 'Блокировка снята',
+    'oos_clear_failed': 'Не удалось снять блокировку — пройдите пробный цикл заново',
+    'diag_seconds_suffix': ' с',
+    'diag_confirm_title': 'Подтвердите включение',
+    'diag_confirm_body':
+        'Нагрузка будет включена на реальном оборудовании и автоматически '
+        'выключится через 10 секунд. Продолжить?',
+    'diag_cold_start_btn': 'Проверить состояние после включения питания',
+    'diag_cold_start_error': 'Не удалось прочитать состояние выходов',
+    'diag_cold_start_ok': 'Все выходы выключены — состояние в норме',
+    'diag_cold_start_fail': 'Внимание, выходы включены',
     'scanner_sweep_hint':
         'Устройство не отвечает ни на одном адресе на текущей скорости? '
         'Проверьте другие скорости — порт вернётся на рабочую скорость '
@@ -175,6 +252,35 @@ const Map<String, Map<String, String>> _i18n = {
     'scanner_sweep_btn': 'Перебрать скорость (4800/19200/38400/115200)',
     'scanner_sweep_found': 'Найден на скорости',
     'scanner_sweep_not_found': 'Не найден ни на одной скорости',
+    // --- Смена Slave ID (задача "смена Slave ID CWT-BK-1616T-S") ---
+    'scanner_id_section': 'Смена Slave ID (CWT-BK-1616T-S)',
+    'scanner_id_warning':
+        'Опасно: процедура пишет служебные регистры устройства напрямую. '
+        'Ошибка на середине способна оставить модуль в состоянии, которое '
+        'потом трудно разобрать. Каждый шаг записывается в журнал ниже.',
+    'scanner_id_old': 'Текущий адрес',
+    'scanner_id_new': 'Новый адрес',
+    'scanner_id_btn': 'Записать и сохранить',
+    'scanner_id_confirm_title': 'Подтвердите смену адреса',
+    'scanner_id_confirm_write': 'Записать адрес',
+    'scanner_id_confirm_into': 'в устройство на адресе',
+    'scanner_id_skip': 'Пропустить опознание',
+    'scanner_id_skip_hint':
+        'Только при замене модуля на экземпляр с другой прошивкой — '
+        'сигнатура тогда не совпадёт с эталоном, хотя устройство настоящее. '
+        'В остальных случаях не включать: без опознания запись может уйти '
+        'в постороннее устройство на этом адресе.',
+    'scanner_id_power_cycle_hint':
+        'Снимите питание с модуля на 10 секунд, затем подайте обратно. '
+        'Когда модуль перезапустится — нажмите «Продолжить проверку».',
+    'scanner_id_verify_btn': 'Продолжить проверку',
+    'scanner_id_cancel_wait': 'Отменить ожидание',
+    'scanner_id_dump_title': 'Дамп 16 регистров после смены',
+    'scanner_id_new_addr_confirmed': 'Новый адрес подтверждён чтением',
+    'scanner_id_old_still_responds':
+        'Старый адрес всё ещё отвечает — конфликт адресов на общей шине. '
+        'Модуль, откликающийся на двух адресах, даст наложение кадров и '
+        'плавающие ошибки CRC.',
   },
   'en': {
     'menu_title': 'Service menu',
@@ -196,6 +302,9 @@ const Map<String, Map<String, String>> _i18n = {
     'pump_after_heater_label': 'Pump run time after heater turns off (sec)',
     'err_compressor_purge': 'Compressor purge: 1–30 sec',
     'err_pump_after_heater': 'Pump after heater: 1–30 sec',
+    'tariff_label': 'Electricity tariff (€/kWh)',
+    'err_tariff': 'Tariff: non-negative number',
+    'idle_cost_label': 'Daily idle cost (reference only)',
     'available': 'OK',
     'empty_level': 'Empty',
     'flavor_fallback': 'Fragrance',
@@ -204,6 +313,7 @@ const Map<String, Map<String, String>> _i18n = {
     'coin_no': 'NO',
     'temp_label': 'Temperature',
     'temp_unavailable': '--',
+    'not_installed': 'not installed',
     'diag_levels': 'Canister levels',
     'diag_manual': 'Manual control',
     'diag_manual_warning':
@@ -249,6 +359,7 @@ const Map<String, Map<String, String>> _i18n = {
     'energy_total': 'Total meter',
     'energy_monthly': 'This month',
     'energy_previous_month': 'Previous month',
+    'last_cycle_voltage': 'Grid voltage (last cycle)',
     'unit_kwh': 'kWh',
     'tab_cloud': 'Cloud',
     'cloud_enabled': 'Send data to the cloud',
@@ -287,6 +398,10 @@ const Map<String, Map<String, String>> _i18n = {
     'scanner_scan_stop': 'Stop',
     'scanner_scan_progress': 'Probed',
     'scanner_scan_empty': 'Nothing found yet',
+    'scanner_scan_parity': 'Parity (for this search)',
+    'scanner_parity_none': 'None',
+    'scanner_parity_odd': 'Odd',
+    'scanner_parity_even': 'Even',
     'scanner_known_dio': 'I/O module',
     'scanner_known_thermo': 'thermocouples',
     'scanner_known_energy': 'energy meter',
@@ -323,15 +438,78 @@ const Map<String, Map<String, String>> _i18n = {
     'scanner_write_confirm_cancel': 'Cancel',
     'scanner_write_result_readback': 'Read back',
     'scanner_write_result_fail': 'Write failed',
+    'scanner_fc15_section': 'Group coil write (FC15)',
+    'scanner_fc15_warning':
+        'Danger: writes several outputs in one frame. Off only — with live '
+        'phase power and dry pumps, a group turn-on from one tap is '
+        'unrecoverable, and there is no scenario that needs it.',
+    'scanner_fc15_off': 'All OFF (0)',
+    'scanner_fc15_btn': 'Write group (FC15)',
+    'scanner_fc15_ok': 'Accepted',
+    'scanner_fc16_section': 'Group register write (FC16)',
+    'scanner_fc16_warning':
+        'For devices without FC06 (e.g. the Chint DDSU666 energy meter — '
+        'per its manual only 03 read and 16 write, even for one register). '
+        'One attempt, no auto-retry.',
+    'scanner_fc16_btn': 'Write (FC16)',
     'scanner_clear': 'Clear results',
     // --- Bus exchange fix ---
     'bus_healthy': 'Bus is working',
     'bus_unhealthy': 'Bus unavailable',
+    'diag_port_busy': 'Port occupied by another process:',
     'watchdog_enabled': 'Output watchdog (diagnostic mode)',
     'watchdog_hint':
         'Periodically checks that outputs are actually off while idle, as '
         'expected. Off by default — enable only once bus exchange is '
         'confirmed healthy.',
+    'diag_devices_section': 'Devices on the bus',
+    'diag_device_thermo': 'Thermocouple',
+    'diag_device_energy': 'Energy meter',
+    'diag_device_coin': 'Coin acceptor',
+    'diag_simulate_coin_down': 'Simulate coin acceptor failure',
+    'diag_simulate_coin_down_hint':
+        'Fakes the status on the device, never touches the bus — for testing the card top-up and error branches. Stays on until switched off, but no longer than 30 minutes (then switches itself off), survives leaving for the payment screen — remember to turn it off after testing.',
+    'diag_freeze_temp': 'Freeze temperature reading',
+    'diag_freeze_temp_hint':
+        'Debug: the thermocouple "sticks" at its last value, the bus is not read — for testing the sensor-fault detectors. The test runs with the heater ON: the technician stays next to the machine ready to cut power. Stays on until switched off, auto-off after 30 minutes, visible in the cloud.',
+    'diag_freeze_temp_failed': 'Nothing to freeze: no temperature reading yet',
+    'oos_status_ok': 'Machine is accepting payments',
+    'oos_status_blocked': 'OUT OF SERVICE — payments blocked',
+    'oos_reason': 'Reason',
+    'oos_since': 'Since',
+    'oos_code_heater_no_power': 'heater failure (no heater power)',
+    'oos_code_temp_sensor_fault': 'temperature sensor fault / runaway heating',
+    'oos_code_heat_timeout': 'preheat did not reach the target in 180 s',
+    'oos_code_heater_off_unconfirmed': 'heater switch-off not confirmed (relay may be stuck)',
+    'oos_code_state_unreadable': 'state unreadable (fail-closed at startup)',
+    'oos_trial_btn': 'Trial cycle (no payment)',
+    'oos_trial_running': 'Trial cycle running…',
+    'oos_trial_hint':
+        'Heats for a few seconds and checks heater power and temperature rise. Does not lift the block by itself and does not open payments to customers.',
+    'oos_trial_pass': 'Trial cycle passed — the block can be lifted (15 minutes)',
+    'oos_trial_pass_healthy': 'Trial cycle passed',
+    'oos_trial_fail': 'Trial cycle failed',
+    'oos_trial_too_hot': 'Evaporator is hot — wait for it to cool',
+    'oos_trial_busy': 'Trial cycle is not available right now',
+    'oos_trial_no_thermo': 'Thermocouple is not marked as installed — trial cycle is not possible',
+    'oos_trial_cancelled': 'Trial cycle interrupted',
+    'oos_clear_btn': 'Lift the block',
+    'oos_clear_hint':
+        'On site only, and only after a successful trial cycle. It cannot be lifted remotely.',
+    'oos_clear_confirm_title': 'Lift the block?',
+    'oos_clear_confirm_body':
+        'The machine will start accepting payments again. Make sure the fault is fixed and the trial cycle passed.',
+    'oos_cleared': 'Block lifted',
+    'oos_clear_failed': 'Could not lift the block — run the trial cycle again',
+    'diag_seconds_suffix': ' s',
+    'diag_confirm_title': 'Confirm activation',
+    'diag_confirm_body':
+        'This load will be switched on on real hardware and will '
+        'automatically switch off after 10 seconds. Continue?',
+    'diag_cold_start_btn': 'Check state after power-on',
+    'diag_cold_start_error': 'Failed to read output state',
+    'diag_cold_start_ok': 'All outputs are off — state is normal',
+    'diag_cold_start_fail': 'Warning: outputs are on',
     'scanner_sweep_hint':
         'Device not answering on any address at the current baud rate? '
         'Try other baud rates — the port returns to the working rate '
@@ -339,6 +517,36 @@ const Map<String, Map<String, String>> _i18n = {
     'scanner_sweep_btn': 'Sweep baud rate (4800/19200/38400/115200)',
     'scanner_sweep_found': 'Found at baud',
     'scanner_sweep_not_found': 'Not found at any baud rate',
+    // --- Change Slave ID (CWT-BK-1616T-S) ---
+    'scanner_id_section': 'Change Slave ID (CWT-BK-1616T-S)',
+    'scanner_id_warning':
+        'Dangerous: this writes the device\'s service registers directly. '
+        'A failure midway can leave the module in a state that is hard to '
+        'recover. Every step is written to the log below.',
+    'scanner_id_old': 'Current address',
+    'scanner_id_new': 'New address',
+    'scanner_id_btn': 'Write and save',
+    'scanner_id_confirm_title': 'Confirm address change',
+    'scanner_id_confirm_write': 'Write address',
+    'scanner_id_confirm_into': 'into the device at address',
+    'scanner_id_skip': 'Skip identification',
+    'scanner_id_skip_hint':
+        'Only when replacing the module with a unit running different '
+        'firmware — its signature will then not match the reference even '
+        'though the device is genuine. Otherwise leave off: without '
+        'identification the write can land on an unrelated device at this '
+        'address.',
+    'scanner_id_power_cycle_hint':
+        'Power off the module for 10 seconds, then power it back on. Once '
+        'the module has restarted, tap "Continue check".',
+    'scanner_id_verify_btn': 'Continue check',
+    'scanner_id_cancel_wait': 'Cancel waiting',
+    'scanner_id_dump_title': 'Dump of 16 registers after the change',
+    'scanner_id_new_addr_confirmed': 'New address confirmed by reading',
+    'scanner_id_old_still_responds':
+        'The old address still responds — address conflict on the shared '
+        'bus. A module answering on two addresses will cause frame overlap '
+        'and intermittent CRC errors.',
   },
   'et': {
     'menu_title': 'Teenindusmenüü',
@@ -361,6 +569,9 @@ const Map<String, Map<String, String>> _i18n = {
         'Pumba töö pärast küttekeha väljalülitamist (sek)',
     'err_compressor_purge': 'Kompressori puhastus: 1–30 sek',
     'err_pump_after_heater': 'Pump pärast küttekeha: 1–30 sek',
+    'tariff_label': 'Elektritariif (€/kWh)',
+    'err_tariff': 'Tariif: mittenegatiivne arv',
+    'idle_cost_label': 'Seisaku maksumus ööpäevas (info)',
     'available': 'Olemas',
     'empty_level': 'Tühi',
     'coin_label': 'Münt',
@@ -368,6 +579,7 @@ const Map<String, Map<String, String>> _i18n = {
     'coin_no': 'EI',
     'temp_label': 'Temperatuur',
     'temp_unavailable': '--',
+    'not_installed': 'paigaldamata',
     'flavor_fallback': 'Lõhn',
     'diag_levels': 'Kanistrite tasemed',
     'diag_manual': 'Käsijuhtimine',
@@ -414,6 +626,7 @@ const Map<String, Map<String, String>> _i18n = {
     'energy_total': 'Koguarvesti',
     'energy_monthly': 'Sel kuul',
     'energy_previous_month': 'Eelmisel kuul',
+    'last_cycle_voltage': 'Võrgupinge (viimane tsükkel)',
     'unit_kwh': 'kWh',
     'tab_cloud': 'Pilv',
     'cloud_enabled': 'Saada andmed pilve',
@@ -452,6 +665,10 @@ const Map<String, Map<String, String>> _i18n = {
     'scanner_scan_stop': 'Peata',
     'scanner_scan_progress': 'Kontrollitud',
     'scanner_scan_empty': 'Veel midagi ei leitud',
+    'scanner_scan_parity': 'Paarsus (selle otsingu jaoks)',
+    'scanner_parity_none': 'Puudub',
+    'scanner_parity_odd': 'Odd',
+    'scanner_parity_even': 'Even',
     'scanner_known_dio': 'sisend-väljundmoodul',
     'scanner_known_thermo': 'termopaarid',
     'scanner_known_energy': 'energiaarvesti',
@@ -488,15 +705,78 @@ const Map<String, Map<String, String>> _i18n = {
     'scanner_write_confirm_cancel': 'Tühista',
     'scanner_write_result_readback': 'Tagasi loetud',
     'scanner_write_result_fail': 'Kirjutamine ebaõnnestus',
+    'scanner_fc15_section': 'Mitme väljundi korraga kirjutamine (FC15)',
+    'scanner_fc15_warning':
+        'Ohtlik: kirjutab mitu väljundit ühe kaadriga. Ainult väljalülitus — '
+        'reaalse faasipingega ja kuivade pumpadega oleks grupi sisselülitus '
+        'ühe puudutusega parandamatu, ja seda vajavat stsenaariumi pole.',
+    'scanner_fc15_off': 'Kõik VÄLJAS (0)',
+    'scanner_fc15_btn': 'Kirjuta grupina (FC15)',
+    'scanner_fc15_ok': 'Vastu võetud',
+    'scanner_fc16_section': 'Registri kirjutamine grupina (FC16)',
+    'scanner_fc16_warning':
+        'Seadmetele, millel pole FC06 (nt Chint DDSU666 energiaarvesti — '
+        'juhendi järgi ainult 03 lugemiseks ja 16 kirjutamiseks, isegi ühe '
+        'registri jaoks). Üks katse, ilma automaatse korduseta.',
+    'scanner_fc16_btn': 'Kirjuta (FC16)',
     'scanner_clear': 'Tühjenda tulemused',
     // --- Siiniühenduse parandus ---
     'bus_healthy': 'Siin töötab',
     'bus_unhealthy': 'Siin pole saadaval',
+    'diag_port_busy': 'Port on hõivatud teise protsessi poolt:',
     'watchdog_enabled': 'Väljundite valvur (diagnostikarežiim)',
     'watchdog_hint':
         'Kontrollib perioodiliselt, kas väljundid on tegelikult välja '
         'lülitatud, kui peaks. Vaikimisi väljas — lülita sisse alles siis, '
         'kui siiniühendus on kinnitatult korras.',
+    'diag_devices_section': 'Seadmed siinil',
+    'diag_device_thermo': 'Termopaar',
+    'diag_device_energy': 'Energiaarvesti',
+    'diag_device_coin': 'Mündivastuvõtja',
+    'diag_simulate_coin_down': 'Simuleeri mündivastuvõtja riket',
+    'diag_simulate_coin_down_hint':
+        'Võltsib oleku seadmes, siini ei puuduta — kaardiga juurdemaksu ja veaharu testimiseks. Püsib sees, kuni lülitad käsitsi välja, kuid mitte kauem kui 30 minutit (siis lülitub ise välja); jääb aktiivseks ka maksekuvale minnes — ära unusta pärast testimist välja lülitada.',
+    'diag_freeze_temp': 'Külmuta temperatuurinäit',
+    'diag_freeze_temp_hint':
+        'Silumine: termopaar «kleepub» viimase väärtuse külge, siini ei loeta — anduririkke tuvastajate testimiseks. Test käib SISSELÜLITATUD küttekehaga: tehnik seisab kõrval ja on valmis toite katkestama. Püsib sees kuni käsitsi väljalülitamiseni, 30 minuti pärast lülitub ise välja, nähtav pilves.',
+    'diag_freeze_temp_failed': 'Pole mida külmutada: temperatuuri pole veel loetud',
+    'oos_status_ok': 'Seade võtab makseid vastu',
+    'oos_status_blocked': 'HOOLDUSEST VÄLJAS — maksed blokeeritud',
+    'oos_reason': 'Põhjus',
+    'oos_since': 'Alates',
+    'oos_code_heater_no_power': 'kütte rike (küttekeha ei andnud võimsust)',
+    'oos_code_temp_sensor_fault': 'temperatuuriandurite rike / kontrollimatu kuumutamine',
+    'oos_code_heat_timeout': 'eelsoojendus ei saavutanud sihti 180 s jooksul',
+    'oos_code_heater_off_unconfirmed': 'küttekeha väljalülitust ei kinnitatud (relee võib olla kinni)',
+    'oos_code_state_unreadable': 'olek ei ole loetav (fail-closed käivitusel)',
+    'oos_trial_btn': 'Prooviring (ilma makseta)',
+    'oos_trial_running': 'Prooviring käib…',
+    'oos_trial_hint':
+        'Kuumutab paar sekundit, kontrollib küttekeha võimsust ja temperatuuri tõusu. Blokeeringut ise ei eemalda ega ava kliendile makseid.',
+    'oos_trial_pass': 'Prooviring läbitud — blokeeringu võib eemaldada (15 minutit)',
+    'oos_trial_pass_healthy': 'Prooviring läbitud',
+    'oos_trial_fail': 'Prooviring ebaõnnestus',
+    'oos_trial_too_hot': 'Aurusti on kuum — oota jahtumist',
+    'oos_trial_busy': 'Prooviring ei ole praegu saadaval',
+    'oos_trial_no_thermo': 'Termopaari ei ole paigaldatuks märgitud — prooviring pole võimalik',
+    'oos_trial_cancelled': 'Prooviring katkestati',
+    'oos_clear_btn': 'Eemalda blokeering',
+    'oos_clear_hint':
+        'Ainult kohapeal ja ainult pärast edukat proovirinki. Kaugelt eemaldada ei saa.',
+    'oos_clear_confirm_title': 'Eemalda blokeering?',
+    'oos_clear_confirm_body':
+        'Seade hakkab taas makseid vastu võtma. Veendu, et rike on kõrvaldatud ja prooviring läbitud.',
+    'oos_cleared': 'Blokeering eemaldatud',
+    'oos_clear_failed': 'Blokeeringut ei õnnestunud eemaldada — tee prooviring uuesti',
+    'diag_seconds_suffix': ' s',
+    'diag_confirm_title': 'Kinnita sisselülitamine',
+    'diag_confirm_body':
+        'Koormus lülitatakse sisse pärisseadmel ja lülitub automaatselt '
+        'välja 10 sekundi pärast. Jätkata?',
+    'diag_cold_start_btn': 'Kontrolli olekut pärast sisselülitamist',
+    'diag_cold_start_error': 'Väljundite oleku lugemine ebaõnnestus',
+    'diag_cold_start_ok': 'Kõik väljundid väljas — olek on korras',
+    'diag_cold_start_fail': 'Tähelepanu, väljundid on sees',
     'scanner_sweep_hint':
         'Seade ei vasta ühelegi aadressile praegusel kiirusel? Proovi '
         'teisi kiirusi — port taastub töökiirusele igal juhul pärast '
@@ -504,6 +784,36 @@ const Map<String, Map<String, String>> _i18n = {
     'scanner_sweep_btn': 'Proovi kiirusi (4800/19200/38400/115200)',
     'scanner_sweep_found': 'Leitud kiirusel',
     'scanner_sweep_not_found': 'Ei leitud ühelgi kiirusel',
+    // --- Slave ID muutmine (CWT-BK-1616T-S) ---
+    'scanner_id_section': 'Slave ID muutmine (CWT-BK-1616T-S)',
+    'scanner_id_warning':
+        'Ohtlik: protseduur kirjutab otse seadme teenindusregistritesse. '
+        'Viga poole peal võib jätta mooduli olekusse, mida on hiljem raske '
+        'lahti harutada. Iga samm kirjutatakse allolevasse logisse.',
+    'scanner_id_old': 'Praegune aadress',
+    'scanner_id_new': 'Uus aadress',
+    'scanner_id_btn': 'Kirjuta ja salvesta',
+    'scanner_id_confirm_title': 'Kinnita aadressi muutmine',
+    'scanner_id_confirm_write': 'Kirjuta aadress',
+    'scanner_id_confirm_into': 'seadmesse aadressil',
+    'scanner_id_skip': 'Jäta tuvastus vahele',
+    'scanner_id_skip_hint':
+        'Ainult mooduli asendamisel teise firmware\'iga eksemplariga — '
+        'selle signatuur ei lange siis etaloniga kokku, kuigi seade on '
+        'ehtne. Muidu jäta välja lülitatuks: ilma tuvastuseta võib '
+        'kirjutamine sattuda sellel aadressil olevasse võõrasse seadmesse.',
+    'scanner_id_power_cycle_hint':
+        'Lülita moodul 10 sekundiks vooluvõrgust välja, seejärel lülita '
+        'uuesti sisse. Kui moodul on taaskäivitunud, vajuta "Jätka '
+        'kontrolli".',
+    'scanner_id_verify_btn': 'Jätka kontrolli',
+    'scanner_id_cancel_wait': 'Tühista ootamine',
+    'scanner_id_dump_title': 'Vahetusjärgne tõmmis (16 registrit)',
+    'scanner_id_new_addr_confirmed': 'Uus aadress kinnitatud lugemisega',
+    'scanner_id_old_still_responds':
+        'Vana aadress vastab endiselt — aadresside konflikt ühisel siinil. '
+        'Kahel aadressil vastav moodul põhjustab kaadrite kattumist ja '
+        'ajuti tekkivaid CRC vigu.',
   },
 };
 
@@ -525,9 +835,9 @@ class _ServiceMenuScreenState extends State<ServiceMenuScreen> {
       case 1:
         return _FlavorsTab();
       case 2:
-        return const _DiagnosticsTab();
+        return _DiagnosticsTab();
       case 3:
-        return const _SensorsTab();
+        return _SensorsTab();
       case 4:
         return _JournalTab();
       case 5:
@@ -653,6 +963,7 @@ class _SettingsTabState extends State<_SettingsTab> {
   late TextEditingController _pinCtrl;
   late TextEditingController _compressorPurgeCtrl;
   late TextEditingController _pumpAfterHeaterCtrl;
+  late TextEditingController _tariffCtrl;
 
   @override
   void initState() {
@@ -669,6 +980,9 @@ class _SettingsTabState extends State<_SettingsTab> {
     _pumpAfterHeaterCtrl = TextEditingController(
       text: config.pumpAfterHeaterS.toString(),
     );
+    _tariffCtrl = TextEditingController(
+      text: config.idlePowerTariffPerKwh.toStringAsFixed(2),
+    )..addListener(() => setState(() {}));
   }
 
   @override
@@ -677,7 +991,19 @@ class _SettingsTabState extends State<_SettingsTab> {
     _pinCtrl.dispose();
     _compressorPurgeCtrl.dispose();
     _pumpAfterHeaterCtrl.dispose();
+    _tariffCtrl.dispose();
     super.dispose();
+  }
+
+  // Справочная строка (задача "контроль цикла по электросчётчику", фаза 2,
+  // часть 3) — НЕ аналитика, просто перевод известной константы холостого
+  // хода в деньги по редактируемому тарифу, пересчитывается на лету по
+  // полю ввода. PowerSignature.idleW — ПОДТВЕРЖДЕНО замером 29.09.2026.
+  double get _dailyIdleCostEur {
+    final tariff = double.tryParse(_tariffCtrl.text.replaceAll(',', '.'));
+    if (tariff == null) return 0;
+    final dailyKwh = PowerSignature.idleW * 24 / 1000;
+    return dailyKwh * tariff;
   }
 
   void _changePrice(int deltaCents) {
@@ -718,6 +1044,11 @@ class _SettingsTabState extends State<_SettingsTab> {
       _snack(t['err_pump_after_heater']!);
       return;
     }
+    final tariff = double.tryParse(_tariffCtrl.text.replaceAll(',', '.'));
+    if (tariff == null || tariff < 0) {
+      _snack(t['err_tariff']!);
+      return;
+    }
 
     final updated = notifier.config.copyWith(
       treatmentPriceCents: _priceCents,
@@ -725,6 +1056,7 @@ class _SettingsTabState extends State<_SettingsTab> {
       servicePin: pin,
       compressorPurgeS: compressorPurge,
       pumpAfterHeaterS: pumpAfterHeater,
+      idlePowerTariffPerKwh: tariff,
     );
     notifier.saveConfig(updated);
     _snack(t['saved']!);
@@ -778,6 +1110,19 @@ class _SettingsTabState extends State<_SettingsTab> {
             controller: _pumpAfterHeaterCtrl,
             keyboardType: TextInputType.number,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          ),
+          const SizedBox(height: 16),
+          _Field(
+            label: t['tariff_label']!,
+            controller: _tariffCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '${t['idle_cost_label']}: '
+            '${_dailyIdleCostEur.toStringAsFixed(2)} €',
+            style: const TextStyle(color: Color(0xFF556677), fontSize: 13),
           ),
           const SizedBox(height: 32),
           SizedBox(
@@ -985,6 +1330,61 @@ class _DiagnosticsTab extends StatefulWidget {
   State<_DiagnosticsTab> createState() => _DiagnosticsTabState();
 }
 
+// Бэкофф для информационных опросов (задача "убрать бесполезный опрос
+// отсутствующих устройств на шине Modbus") — три неудачи подряд увеличивают
+// интервал опроса в 10 раз (не больше 30 секунд), любой успешный ответ
+// немедленно возвращает обычный интервал. Таймаут самой транзакции (500 мс,
+// ModbusRtu) не трогается — здесь меняется только то, как часто уходит
+// следующая попытка. Отдельный от сторожа выходов механизм
+// (output_watchdog_service.dart) — у сторожа другая задача (быстро заметить
+// потерю связи и погасить выходы), замедлять его нельзя.
+class _BackoffPoll {
+  _BackoffPoll({required this.baseInterval, required this.poll});
+
+  final Duration baseInterval;
+  final Future<bool> Function() poll; // true = успешный ответ
+
+  static const _failuresBeforeBackoff = 3;
+  static const _maxInterval = Duration(seconds: 30);
+
+  Timer? _timer;
+  int _consecutiveFailures = 0;
+  Duration _currentInterval = Duration.zero;
+
+  void start() {
+    _currentInterval = baseInterval;
+    unawaited(_tick());
+    _schedule();
+  }
+
+  void stop() {
+    _timer?.cancel();
+    _timer = null;
+  }
+
+  void _schedule() {
+    _timer?.cancel();
+    _timer = Timer.periodic(_currentInterval, (_) => _tick());
+  }
+
+  Future<void> _tick() async {
+    final ok = await poll();
+    final previous = _currentInterval;
+    if (ok) {
+      _consecutiveFailures = 0;
+      _currentInterval = baseInterval;
+    } else {
+      _consecutiveFailures++;
+      if (_consecutiveFailures >= _failuresBeforeBackoff) {
+        final backedOff = baseInterval * 10;
+        _currentInterval =
+            backedOff > _maxInterval ? _maxInterval : backedOff;
+      }
+    }
+    if (_currentInterval != previous) _schedule();
+  }
+}
+
 class _DiagnosticsTabState extends State<_DiagnosticsTab> {
   final List<bool> _pumpOn = List.filled(8, false);
   bool _compressorOn = false;
@@ -999,55 +1399,306 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
   };
   double _monthlyEnergy = 0.0;
   double _previousMonthEnergy = 0.0;
-  Timer? _energyTimer;
+  _BackoffPoll? _energyPoll;
+
+  // Напряжение сети за последний цикл (задача "контроль цикла по
+  // электросчётчику", фаза 2, часть 3) — среднее CycleEnergyService за
+  // весь цикл, а не мгновенное значение выше (то плавает 227–242 В и само
+  // по себе мало что говорит). Берётся из истории событий, а не отдельным
+  // полем на счётчике — событие session_complete уже несёт grid_voltage_v.
+  double? _lastCycleVoltage;
+  bool _lastCycleVoltageLow = false;
 
   bool _coinDetected = false;
-  Timer? _coinTimer;
+  _BackoffPoll? _coinPoll;
+
+  // Отладочная имитация отказа монетоприёмника (задача "контроль цикла по
+  // электросчётчику") — НЕ часть AppConfig, живёт только в памяти нативного
+  // слоя (см. ModbusService.setCoinAcceptorSimulatedDown). Воспроизводит
+  // ветку отказа сколько угодно раз одинаково, без риска для железа и без
+  // зависимости от способа, которым реально отваливается связь. Специально
+  // НЕ сбрасывается при уходе со вкладки (в отличие от ручного управления
+  // выходами ниже) — тест нужно проверить на реальном экране оплаты,
+  // который лежит за пределами этого таба; сброс по dispose() гасил бы
+  // имитацию раньше, чем payment.dart успевал её увидеть. Гасится вручную
+  // тумблером, перезапуском приложения или сама через 30 минут на
+  // нативной стороне (ModbusChannel.COIN_SIMULATED_DOWN_AUTO_OFF_MS,
+  // фаза 2, страховка) — _simulateDownPoll ниже подхватывает этот
+  // автосброс, пока вкладка открыта, чтобы тумблер не показывал
+  // "включено" уже после того, как аппарат сам всё вернул как было.
+  bool _simulateCoinDown = false;
+  Timer? _simulateDownPoll;
+
+  // Отладочная "заморозка" показания температуры (задача "детектор отказа
+  // датчика температуры", часть 2, п.11) — те же правила, что у тумблера
+  // выше: живёт в нативном слое до ручного выключения, автоснятие через
+  // 30 минут (ModbusChannel.TEMPERATURE_FROZEN_AUTO_OFF_MS), состояние
+  // видно в облаке и в регулярной отправке состояния. Проверка идёт с
+  // физически включённым ТЭНом — техник стоит рядом.
+  bool _freezeTemperature = false;
+  double? _frozenTemperatureValue;
+
+  // Пробный цикл (вывод из обслуживания, требования 15-16).
+  bool _trialRunning = false;
+  String? _trialMessage;
+  bool _trialMessageOk = false;
 
   double? _temperature;
-  Timer? _tempTimer;
+  _BackoffPoll? _tempPoll;
 
   late bool _watchdogEnabled;
+
+  // Флаги "установлено" (задача "убрать бесполезный опрос отсутствующих
+  // устройств") — снятый флаг вообще не заводит опрос соответствующего
+  // устройства, см. initState.
+  late bool _thermoInstalled;
+  late bool _energyMeterInstalled;
+  late bool _coinAcceptorInstalled;
+
+  // --- Автовыключение силовых выходов (задача "тест каналов
+  // ввода-вывода") — любой выход, включённый с этого экрана, гаснет сам
+  // через 10 секунд. Это диагностический экран прямого управления
+  // насосами/компрессором/ТЭНом мимо обычной логики аппарата — таймер
+  // здесь уместен и нужен, в основном рабочем цикле его нет и не должно
+  // быть (отдельное требование задачи).
+  static const _autoOffSeconds = 10;
+  final Map<int, Timer> _pumpOffTimers = {};
+  final Map<int, int> _pumpSecondsLeft = {};
+  Timer? _compressorOffTimer;
+  int? _compressorSecondsLeft;
+  Timer? _heaterOffTimer;
+  int? _heaterSecondsLeft;
 
   @override
   void initState() {
     super.initState();
-    _watchdogEnabled = context.read<AppNotifier>().config.outputWatchdogEnabled;
-    _readEnergy();
-    _energyTimer = Timer.periodic(
-      const Duration(seconds: 3),
-      (_) => _readEnergy(),
-    );
-    _coinTimer = Timer.periodic(
-      const Duration(milliseconds: 500),
-      (_) => _readCoin(),
-    );
-    _readTemperature();
-    _tempTimer = Timer.periodic(
-      const Duration(seconds: 2),
-      (_) => _readTemperature(),
-    );
+    final cfg = context.read<AppNotifier>().config;
+    _watchdogEnabled = cfg.outputWatchdogEnabled;
+    _thermoInstalled = cfg.thermoInstalled;
+    _energyMeterInstalled = cfg.energyMeterInstalled;
+    _coinAcceptorInstalled = cfg.coinAcceptorInstalled;
+
+    // Флаг имитации отказа монетоприёмника живёт в нативном слое дольше,
+    // чем эта вкладка (см. _simulateCoinDown) — при пересоздании вкладки
+    // тумблер обязан показать реальное состояние, а не всегда "выключено".
+    ModbusService.getCoinAcceptorSimulatedDown().then((value) {
+      if (mounted) setState(() => _simulateCoinDown = value);
+    });
+    ModbusService.getTemperatureFrozen().then((r) {
+      if (mounted) {
+        setState(() {
+          _freezeTemperature = r.frozen;
+          _frozenTemperatureValue = r.value;
+        });
+      }
+    });
+    // Раз в минуту, пока вкладка открыта — ловит автосброс через 30 минут,
+    // не дожидаясь пересоздания вкладки (см. коммент у _simulateCoinDown).
+    _simulateDownPoll = Timer.periodic(const Duration(minutes: 1), (_) {
+      ModbusService.getCoinAcceptorSimulatedDown().then((value) {
+        if (mounted && value != _simulateCoinDown) {
+          setState(() => _simulateCoinDown = value);
+        }
+      });
+      ModbusService.getTemperatureFrozen().then((r) {
+        if (mounted && r.frozen != _freezeTemperature) {
+          setState(() {
+            _freezeTemperature = r.frozen;
+            _frozenTemperatureValue = r.value;
+          });
+        }
+      });
+    });
+
+    unawaited(_loadLastCycleVoltage());
+
+    // Снятый флаг "установлено" — опрос этого устройства не заводится
+    // вообще, ни одна транзакция на шину не уходит (задача "убрать
+    // бесполезный опрос отсутствующих устройств").
+    if (_energyMeterInstalled) {
+      _energyPoll = _BackoffPoll(
+        baseInterval: const Duration(seconds: 3),
+        poll: _readEnergy,
+      )..start();
+    }
+    if (_coinAcceptorInstalled) {
+      _coinPoll = _BackoffPoll(
+        baseInterval: const Duration(milliseconds: 500),
+        poll: _readCoin,
+      )..start();
+    }
+    if (_thermoInstalled) {
+      _tempPoll = _BackoffPoll(
+        baseInterval: const Duration(seconds: 2),
+        poll: _readTemperature,
+      )..start();
+    }
   }
 
   @override
   void dispose() {
-    _energyTimer?.cancel();
-    _coinTimer?.cancel();
-    _tempTimer?.cancel();
+    _energyPoll?.stop();
+    _coinPoll?.stop();
+    _tempPoll?.stop();
+    for (final timer in _pumpOffTimers.values) {
+      timer.cancel();
+    }
+    _compressorOffTimer?.cancel();
+    _heaterOffTimer?.cancel();
+    _simulateDownPoll?.cancel();
+    // Выходы сейчас погасит safeAllOff() ниже — пробный цикл вышел бы
+    // "провалом" на исправном аппарате, поэтому он помечается прерванным.
+    HeaterTrialService.cancel();
+    // Уход с экрана — гасит все выходы принудительно (задача "тест
+    // каналов ввода-вывода", требование безопасности). dispose()
+    // синхронный, выключение не обязано его блокировать.
+    unawaited(ModbusService.safeAllOff());
     super.dispose();
   }
 
-  Future<void> _readCoin() async {
-    final detected = await ModbusService.readCoin();
-    if (mounted) setState(() => _coinDetected = detected);
+  void _snack(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  Future<void> _readTemperature() async {
+  Map<String, String> get _t => _i18n[context.read<AppNotifier>().lang]!;
+
+  Future<bool> _confirmLoad(String loadName) async {
+    final t = _t;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF141B29),
+        title: Text(
+          t['diag_confirm_title']!,
+          style: const TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          '${t['diag_confirm_body']} "$loadName"?',
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(
+              t['scanner_write_confirm_cancel']!,
+              style: const TextStyle(color: Color(0xFF8899AA)),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(
+              t['all_on']!,
+              style: const TextStyle(
+                color: Color(0xFFE53935),
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
+  void _armPumpAutoOff(int i) {
+    _pumpOffTimers[i]?.cancel();
+    setState(() => _pumpSecondsLeft[i] = _autoOffSeconds);
+    _pumpOffTimers[i] = Timer.periodic(const Duration(seconds: 1), (timer) {
+      final left = (_pumpSecondsLeft[i] ?? 1) - 1;
+      if (left <= 0) {
+        timer.cancel();
+        _pumpOffTimers.remove(i);
+        if (mounted) setState(() => _pumpSecondsLeft.remove(i));
+        unawaited(_setPump(i, false));
+      } else if (mounted) {
+        setState(() => _pumpSecondsLeft[i] = left);
+      }
+    });
+  }
+
+  void _disarmPumpAutoOff(int i) {
+    _pumpOffTimers.remove(i)?.cancel();
+    if (mounted) setState(() => _pumpSecondsLeft.remove(i));
+  }
+
+  void _armCompressorAutoOff() {
+    _compressorOffTimer?.cancel();
+    setState(() => _compressorSecondsLeft = _autoOffSeconds);
+    _compressorOffTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      final left = (_compressorSecondsLeft ?? 1) - 1;
+      if (left <= 0) {
+        timer.cancel();
+        _compressorOffTimer = null;
+        if (mounted) setState(() => _compressorSecondsLeft = null);
+        unawaited(_setCompressor(false));
+      } else if (mounted) {
+        setState(() => _compressorSecondsLeft = left);
+      }
+    });
+  }
+
+  void _disarmCompressorAutoOff() {
+    _compressorOffTimer?.cancel();
+    _compressorOffTimer = null;
+    if (mounted) setState(() => _compressorSecondsLeft = null);
+  }
+
+  void _armHeaterAutoOff() {
+    _heaterOffTimer?.cancel();
+    setState(() => _heaterSecondsLeft = _autoOffSeconds);
+    _heaterOffTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      final left = (_heaterSecondsLeft ?? 1) - 1;
+      if (left <= 0) {
+        timer.cancel();
+        _heaterOffTimer = null;
+        if (mounted) setState(() => _heaterSecondsLeft = null);
+        unawaited(_setHeater(false));
+      } else if (mounted) {
+        setState(() => _heaterSecondsLeft = left);
+      }
+    });
+  }
+
+  void _disarmHeaterAutoOff() {
+    _heaterOffTimer?.cancel();
+    _heaterOffTimer = null;
+    if (mounted) setState(() => _heaterSecondsLeft = null);
+  }
+
+  // "Проверить состояние после включения питания" — модуль не должен сам
+  // поднимать выходы при подаче питания (см. также сторож выходов,
+  // отдельная задача). Здесь — разовая ручная проверка прямо с этого
+  // экрана, без включённого сторожа.
+  Future<void> _checkColdStart() async {
+    final t = _t;
+    final coils = await ModbusService.readCoils();
+    if (!mounted) return;
+    if (coils == null) {
+      _snack(t['diag_cold_start_error']!);
+    } else if (coils.every((v) => !v)) {
+      _snack(t['diag_cold_start_ok']!);
+    } else {
+      final onChannels = [
+        for (var i = 0; i < coils.length; i++)
+          if (coils[i]) i,
+      ];
+      _snack('${t['diag_cold_start_fail']}: ${onChannels.join(', ')}');
+    }
+  }
+
+  Future<bool> _readCoin() async {
+    final detected = await ModbusService.readCoin();
+    if (mounted) setState(() => _coinDetected = detected ?? false);
+    return detected != null;
+  }
+
+  Future<bool> _readTemperature() async {
     final temp = await ModbusService.readTemperature(channel: 0);
     if (mounted) setState(() => _temperature = temp);
+    return temp != null;
   }
 
-  Future<void> _readEnergy() async {
+  Future<bool> _readEnergy() async {
     final energy = await ModbusService.readEnergy();
     final monthly = await ModbusService.getMonthlyEnergy();
     final previousMonth = await ModbusService.getPreviousMonthEnergy();
@@ -1061,33 +1712,90 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
         _previousMonthEnergy = previousMonth;
       });
     }
+    return energy != null;
+  }
+
+  // Задача "контроль цикла по электросчётчику", фаза 2, часть 3 —
+  // напряжение сети последнего реального цикла, из уже отправленной
+  // истории событий (не отдельный опрос шины). Локальная история хранит
+  // сессии и без облака (LocalLogTransport), так что это работает и без
+  // подключённой панели.
+  Future<void> _loadLastCycleVoltage() async {
+    final history = await CloudService.history();
+    for (final event in history.reversed) {
+      if (event.type != CloudEventType.sessionComplete) continue;
+      final voltage = event.data['grid_voltage_v'];
+      if (voltage is num) {
+        if (mounted) {
+          setState(() {
+            _lastCycleVoltage = voltage.toDouble();
+            _lastCycleVoltageLow = event.data['voltage_low'] == true;
+          });
+        }
+        return;
+      }
+    }
   }
 
   Future<void> _setPump(int i, bool value) async {
     setState(() => _pumpOn[i] = value);
     final ok = await ModbusService.setPump(i, value);
-    if (!ok && mounted) setState(() => _pumpOn[i] = !value);
+    if (!ok && mounted) {
+      setState(() => _pumpOn[i] = !value);
+      return;
+    }
+    if (value) {
+      _armPumpAutoOff(i);
+    } else {
+      _disarmPumpAutoOff(i);
+    }
   }
 
+  // Компрессор и ТЭН — с подтверждением перед включением (задача "тест
+  // каналов ввода-вывода", силовая часть) — насосы не требуют, там нет
+  // такого риска.
   Future<void> _setCompressor(bool value) async {
+    if (value && !await _confirmLoad(_t['compressor']!)) return;
     setState(() => _compressorOn = value);
     final ok = await ModbusService.setCompressor(value);
-    if (!ok && mounted) setState(() => _compressorOn = !value);
+    if (!ok && mounted) {
+      setState(() => _compressorOn = !value);
+      return;
+    }
+    if (value) {
+      _armCompressorAutoOff();
+    } else {
+      _disarmCompressorAutoOff();
+    }
   }
 
   Future<void> _setHeater(bool value) async {
+    if (value && !await _confirmLoad(_t['heater']!)) return;
     setState(() => _heaterOn = value);
     final ok = await ModbusService.setHeater(value);
-    if (!ok && mounted) setState(() => _heaterOn = !value);
+    if (!ok && mounted) {
+      setState(() => _heaterOn = !value);
+      return;
+    }
+    if (value) {
+      _armHeaterAutoOff();
+    } else {
+      _disarmHeaterAutoOff();
+    }
   }
 
   Future<void> _allOn() async {
+    final t = _t;
+    if (!await _confirmLoad('${t['compressor']} + ${t['heater']}')) return;
     setState(() => _busy = true);
     for (var i = 0; i < 8; i++) {
       await ModbusService.setPump(i, true);
+      _armPumpAutoOff(i);
     }
     await ModbusService.setCompressor(true);
+    _armCompressorAutoOff();
     await ModbusService.setHeater(true);
+    _armHeaterAutoOff();
     if (!mounted) return;
     setState(() {
       _pumpOn.fillRange(0, 8, true);
@@ -1099,6 +1807,11 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
 
   Future<void> _allOff() async {
     setState(() => _busy = true);
+    for (var i = 0; i < 8; i++) {
+      _disarmPumpAutoOff(i);
+    }
+    _disarmCompressorAutoOff();
+    _disarmHeaterAutoOff();
     await ModbusService.safeAllOff();
     if (!mounted) return;
     setState(() {
@@ -1120,6 +1833,358 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
     );
   }
 
+  // "Установлено" — техник переключает сразу после физического
+  // подключения/отключения устройства (задача "Chint DDSU666: найти
+  // счётчик"). Переключение сразу запускает/останавливает информационный
+  // опрос — не только сохраняет флаг в конфиг, иначе пришлось бы
+  // объяснять "сохранилось, подействует после ухода со вкладки".
+  Future<void> _toggleEnergyMeterInstalled(bool value) async {
+    setState(() {
+      _energyMeterInstalled = value;
+      if (value) {
+        _energyPoll = _BackoffPoll(
+          baseInterval: const Duration(seconds: 3),
+          poll: _readEnergy,
+        )..start();
+      } else {
+        _energyPoll?.stop();
+        _energyPoll = null;
+      }
+    });
+    final notifier = context.read<AppNotifier>();
+    await notifier.saveConfig(
+      notifier.config.copyWith(energyMeterInstalled: value),
+    );
+  }
+
+  Future<void> _toggleThermoInstalled(bool value) async {
+    setState(() {
+      _thermoInstalled = value;
+      if (value) {
+        _tempPoll = _BackoffPoll(
+          baseInterval: const Duration(seconds: 2),
+          poll: _readTemperature,
+        )..start();
+      } else {
+        _tempPoll?.stop();
+        _tempPoll = null;
+      }
+    });
+    final notifier = context.read<AppNotifier>();
+    await notifier.saveConfig(
+      notifier.config.copyWith(thermoInstalled: value),
+    );
+  }
+
+  Future<void> _toggleCoinAcceptorInstalled(bool value) async {
+    setState(() {
+      _coinAcceptorInstalled = value;
+      if (value) {
+        _coinPoll = _BackoffPoll(
+          baseInterval: const Duration(milliseconds: 500),
+          poll: _readCoin,
+        )..start();
+      } else {
+        _coinPoll?.stop();
+        _coinPoll = null;
+      }
+    });
+    final notifier = context.read<AppNotifier>();
+    await notifier.saveConfig(
+      notifier.config.copyWith(coinAcceptorInstalled: value),
+    );
+  }
+
+  // Отладочный переключатель "имитировать отказ монетоприёмника" — НЕ
+  // часть AppConfig, живёт в памяти нативного слоя (см. коммент у поля
+  // _simulateCoinDown выше). Ничего не читает и не пишет на шину — просто
+  // просит нативную сторону подделать результат getCoinAcceptorStatus();
+  // та же сторона сама снимает имитацию через 30 минут, если забыли (см.
+  // ModbusChannel.COIN_SIMULATED_DOWN_AUTO_OFF_MS).
+  Future<void> _toggleSimulateCoinDown(bool value) async {
+    setState(() => _simulateCoinDown = value);
+    await ModbusService.setCoinAcceptorSimulatedDown(value);
+    // Аппарат, принимающий деньги, не должен уметь спрятать, что он в
+    // отладочном режиме — видно в веб-панели, даже если никто не стоит
+    // рядом с планшетом (задача "контроль цикла по электросчётчику",
+    // фаза 2, страховка).
+    if (value) {
+      unawaited(
+        CloudService.report(
+          CloudEventType.debugModeChanged,
+          data: {
+            'code': 'simulate_coin_acceptor_down',
+            'enabled': true,
+            'auto_off_minutes': 30,
+          },
+        ),
+      );
+    } else {
+      unawaited(
+        CloudService.report(
+          CloudEventType.debugModeChanged,
+          data: {'code': 'simulate_coin_acceptor_down', 'enabled': false},
+        ),
+      );
+    }
+  }
+
+  // Заморозка показания термопары (см. _freezeTemperature). Включение
+  // уходит в облако событием debug_mode_changed, как и у тумблера
+  // монетоприёмника.
+  Future<void> _toggleFreezeTemperature(bool value) async {
+    final frozenAt = await ModbusService.setTemperatureFrozen(value);
+    if (!mounted) return;
+    setState(() {
+      // Если заморозить было нечем (нет ни одного чтения, шина молчит) —
+      // тумблер честно остаётся выключенным.
+      _freezeTemperature = value && frozenAt != null;
+      _frozenTemperatureValue = _freezeTemperature ? frozenAt : null;
+    });
+    if (value && frozenAt == null) {
+      _snack(_t['diag_freeze_temp_failed']!);
+      return;
+    }
+    unawaited(
+      CloudService.report(
+        CloudEventType.debugModeChanged,
+        data: {
+          'code': 'freeze_temperature',
+          'enabled': value,
+          if (value) 'auto_off_minutes': 30,
+          'frozen_at_c': ?frozenAt,
+        },
+      ),
+    );
+  }
+
+  // Пробный цикл без оплаты (вывод из обслуживания, требования 15-16).
+  Future<void> _runTrial() async {
+    final notifier = context.read<AppNotifier>();
+    final t = _t;
+    // Ручные выходы на время пробного цикла блокируются (_busy) и их
+    // автовыключатели (10 с) снимаются: иначе "Всё выкл." или таймер
+    // выключения ТЭНа срывали бы цикл, и исправный аппарат выводился бы из
+    // обслуживания. Что было включено вручную — выключается: цикл сам
+    // владеет выходами.
+    for (var i = 0; i < 8; i++) {
+      _disarmPumpAutoOff(i);
+    }
+    _disarmCompressorAutoOff();
+    _disarmHeaterAutoOff();
+    setState(() {
+      _trialRunning = true;
+      _busy = true;
+      _trialMessage = null;
+      _pumpOn.fillRange(0, 8, false);
+      _compressorOn = false;
+      _heaterOn = false;
+    });
+    final result = await HeaterTrialService.runAndRecord(notifier);
+    if (!mounted) return;
+    String message;
+    if (result.passed) {
+      message = notifier.isOutOfService
+          ? t['oos_trial_pass']!
+          : t['oos_trial_pass_healthy']!;
+    } else if (result.skipped) {
+      message = switch (result.code) {
+        'too_hot' => '${t['oos_trial_too_hot']} (${result.details['temp_c']}°C)',
+        'cancelled' => t['oos_trial_cancelled']!,
+        'no_thermocouple' => t['oos_trial_no_thermo']!,
+        _ => t['oos_trial_busy']!,
+      };
+    } else {
+      final sub = result.details['subtype'];
+      message =
+          '${t['oos_trial_fail']}: ${result.code}${sub != null ? ' / $sub' : ''}';
+    }
+    setState(() {
+      _trialRunning = false;
+      _busy = false;
+      _trialMessage = message;
+      _trialMessageOk = result.passed;
+    });
+  }
+
+  // Снять блокировку — только отсюда, на месте, с подтверждением и только
+  // после свежего успешного пробного цикла (требования 12, 13, 16).
+  Future<void> _clearOutOfService() async {
+    final t = _t;
+    final notifier = context.read<AppNotifier>();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF141B29),
+        title: Text(
+          t['oos_clear_confirm_title']!,
+          style: const TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          t['oos_clear_confirm_body']!,
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(
+              t['scanner_write_confirm_cancel']!,
+              style: const TextStyle(color: Color(0xFF8899AA)),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(
+              t['oos_clear_btn']!,
+              style: const TextStyle(
+                color: Color(0xFFE53935),
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final ok = await OutOfServiceService.clearByTechnician(notifier);
+    if (!mounted) return;
+    _snack(ok ? t['oos_cleared']! : t['oos_clear_failed']!);
+  }
+
+  // Карточка состояния "выведен из обслуживания" + пробный цикл + снятие.
+  Widget _outOfServiceCard(AppNotifier notifier, Map<String, String> t) {
+    final oos = notifier.outOfService;
+    final blocked = oos != null;
+    final canClear = blocked && OutOfServiceService.trialPassedRecently;
+    final accent = blocked ? const Color(0xFFE53935) : const Color(0xFF00C6B2);
+
+    String reasonText(String code) => switch (code) {
+      OutOfServiceCode.heaterNoPower => t['oos_code_heater_no_power']!,
+      OutOfServiceCode.tempSensorFault => t['oos_code_temp_sensor_fault']!,
+      OutOfServiceCode.heatTimeout => t['oos_code_heat_timeout']!,
+      OutOfServiceCode.heaterOffUnconfirmed => t['oos_code_heater_off_unconfirmed']!,
+      OutOfServiceCode.stateUnreadable => t['oos_code_state_unreadable']!,
+      _ => code,
+    };
+
+    String? detailLine(OutOfServiceState s) {
+      final d = s.details;
+      final parts = <String>[
+        if (d['subtype'] != null) '${d['subtype']}',
+        if (d['power_w'] is num)
+          '${(d['power_w'] as num).toStringAsFixed(0)} ${t['unit_w']}',
+        if (d['voltage_v'] is num)
+          '${(d['voltage_v'] as num).toStringAsFixed(0)} ${t['unit_v']}',
+        if (d['temp_c'] is num)
+          '${(d['temp_c'] as num).toStringAsFixed(1)} °C'
+        else if (d['last_temp_c'] is num)
+          '${(d['last_temp_c'] as num).toStringAsFixed(1)} °C',
+      ];
+      return parts.isEmpty ? null : parts.join(' · ');
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF141B29),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: accent.withValues(alpha: 0.6)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            blocked ? t['oos_status_blocked']! : t['oos_status_ok']!,
+            style: TextStyle(
+              color: accent,
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+            ),
+          ),
+          if (oos != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              '${t['oos_reason']}: ${reasonText(oos.code)}',
+              style: const TextStyle(color: Colors.white, fontSize: 13),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${t['oos_since']}: ${oos.since.toLocal().toString().split('.').first}',
+              style: const TextStyle(color: Color(0xFF8899AA), fontSize: 12),
+            ),
+            if (detailLine(oos) != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                detailLine(oos)!,
+                style: const TextStyle(color: Color(0xFF8899AA), fontSize: 12),
+              ),
+            ],
+          ],
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: _trialRunning ? null : _runTrial,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF00C6B2),
+                side: const BorderSide(color: Color(0xFF00C6B2)),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              child: Text(
+                _trialRunning ? t['oos_trial_running']! : t['oos_trial_btn']!,
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            t['oos_trial_hint']!,
+            style: const TextStyle(color: Color(0xFF556677), fontSize: 12),
+          ),
+          if (_trialMessage != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              _trialMessage!,
+              style: TextStyle(
+                color: _trialMessageOk
+                    ? const Color(0xFF00C6B2)
+                    : const Color(0xFFFFAA00),
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
+            ),
+          ],
+          if (blocked) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: canClear && !_trialRunning ? _clearOutOfService : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFE53935),
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: const Color(0xFF2A3342),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                child: Text(t['oos_clear_btn']!),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              t['oos_clear_hint']!,
+              style: const TextStyle(color: Color(0xFF556677), fontSize: 12),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final notifier = context.watch<AppNotifier>();
@@ -1128,6 +2193,8 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
     final levels = notifier.levels;
     final flavors = notifier.config.flavorNames[lang] ?? [];
     final busHealthy = notifier.busHealthy;
+    final busBusyPort = notifier.busBusyPort;
+    final busBusyPid = notifier.busBusyPid;
 
     return ListView(
       padding: const EdgeInsets.all(24),
@@ -1142,32 +2209,56 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
             color: const Color(0xFF141B29),
             borderRadius: BorderRadius.circular(8),
           ),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 10,
-                height: 10,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: busHealthy
-                      ? const Color(0xFF00C6B2)
-                      : const Color(0xFFE53935),
-                ),
+              Row(
+                children: [
+                  Container(
+                    width: 10,
+                    height: 10,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: busHealthy
+                          ? const Color(0xFF00C6B2)
+                          : const Color(0xFFE53935),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    busHealthy ? t['bus_healthy']! : t['bus_unhealthy']!,
+                    style: TextStyle(
+                      color: busHealthy
+                          ? const Color(0xFF00C6B2)
+                          : const Color(0xFFE53935),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 10),
-              Text(
-                busHealthy ? t['bus_healthy']! : t['bus_unhealthy']!,
-                style: TextStyle(
-                  color: busHealthy
-                      ? const Color(0xFF00C6B2)
-                      : const Color(0xFFE53935),
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
+              // Деталь "почему" (задача "эксклюзивное открытие
+              // последовательного порта") — технику, не клиенту: клиентский
+              // экран ошибки остаётся на общем "аппарат временно не
+              // работает" без технических подробностей.
+              if (!busHealthy && busBusyPort != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  busBusyPid != null
+                      ? '${t['diag_port_busy']} $busBusyPort (PID $busBusyPid)'
+                      : '${t['diag_port_busy']} $busBusyPort',
+                  style: const TextStyle(
+                    color: Color(0xFFE53935),
+                    fontSize: 12,
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
         ),
+        const SizedBox(height: 16),
+
+        _outOfServiceCard(notifier, t),
         const SizedBox(height: 16),
 
         // Сторож выходов (задача "починить обмен по шине", 4) — по
@@ -1181,6 +2272,39 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
         Text(
           t['watchdog_hint']!,
           style: const TextStyle(color: Color(0xFF556677), fontSize: 12),
+        ),
+        const SizedBox(height: 20),
+        Container(height: 1, color: const Color(0xFF1A2233)),
+        const SizedBox(height: 20),
+
+        // "Установлено" — переключается техником сразу по факту физического
+        // монтажа/демонтажа устройства (задача "Chint DDSU666: найти
+        // счётчик"). Модуль ввода-вывода сюда не входит — он всегда
+        // реально на шине (BusDevice.dio, bus_map.dart), переключатель
+        // для него был бы декоративным.
+        Text(
+          t['diag_devices_section']!,
+          style: const TextStyle(
+            color: Color(0xFF556677),
+            fontWeight: FontWeight.bold,
+            fontSize: 13,
+          ),
+        ),
+        const SizedBox(height: 8),
+        _ToggleRow(
+          label: t['diag_device_thermo']!,
+          value: _thermoInstalled,
+          onChanged: _toggleThermoInstalled,
+        ),
+        _ToggleRow(
+          label: t['diag_device_energy']!,
+          value: _energyMeterInstalled,
+          onChanged: _toggleEnergyMeterInstalled,
+        ),
+        _ToggleRow(
+          label: t['diag_device_coin']!,
+          value: _coinAcceptorInstalled,
+          onChanged: _toggleCoinAcceptorInstalled,
         ),
         const SizedBox(height: 20),
         Container(height: 1, color: const Color(0xFF1A2233)),
@@ -1235,11 +2359,17 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
               ),
               const SizedBox(width: 8),
               Text(
-                _coinDetected ? t['coin_yes']! : t['coin_no']!,
+                !_coinAcceptorInstalled
+                    ? '${t['temp_unavailable']} · ${t['not_installed']}'
+                    : _coinDetected
+                        ? t['coin_yes']!
+                        : t['coin_no']!,
                 style: TextStyle(
-                  color: _coinDetected
-                      ? const Color(0xFF00C6B2)
-                      : const Color(0xFF556677),
+                  color: !_coinAcceptorInstalled
+                      ? const Color(0xFF556677)
+                      : _coinDetected
+                          ? const Color(0xFF00C6B2)
+                          : const Color(0xFF556677),
                   fontWeight: FontWeight.bold,
                   fontSize: 14,
                 ),
@@ -1248,6 +2378,33 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
           ),
         ),
         const SizedBox(height: 10),
+        _ToggleRow(
+          label: t['diag_simulate_coin_down']!,
+          value: _simulateCoinDown,
+          onChanged: _toggleSimulateCoinDown,
+        ),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Text(
+            t['diag_simulate_coin_down_hint']!,
+            style: const TextStyle(color: Color(0xFF556677), fontSize: 12),
+          ),
+        ),
+        _ToggleRow(
+          label: t['diag_freeze_temp']!,
+          value: _freezeTemperature,
+          onChanged: _toggleFreezeTemperature,
+        ),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Text(
+            _freezeTemperature && _frozenTemperatureValue != null
+                ? '${t['diag_freeze_temp_hint']} '
+                      '(${_frozenTemperatureValue!.toStringAsFixed(1)} °C)'
+                : t['diag_freeze_temp_hint']!,
+            style: const TextStyle(color: Color(0xFF556677), fontSize: 12),
+          ),
+        ),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
@@ -1262,13 +2419,17 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
               ),
               const SizedBox(width: 8),
               Text(
-                _temperature != null
-                    ? '${_temperature!.toStringAsFixed(1)} °C'
-                    : t['temp_unavailable']!,
+                !_thermoInstalled
+                    ? '${t['temp_unavailable']} · ${t['not_installed']}'
+                    : _temperature != null
+                        ? '${_temperature!.toStringAsFixed(1)} °C'
+                        : t['temp_unavailable']!,
                 style: TextStyle(
-                  color: _temperature != null
-                      ? const Color(0xFF00C6B2)
-                      : const Color(0xFFE53935),
+                  color: !_thermoInstalled
+                      ? const Color(0xFF556677)
+                      : _temperature != null
+                          ? const Color(0xFF00C6B2)
+                          : const Color(0xFFE53935),
                   fontWeight: FontWeight.bold,
                   fontSize: 14,
                 ),
@@ -1306,19 +2467,26 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
                   ? '${t['pump']} ${i + 1} '
                         '(${flavors.length > i ? flavors[i] : '${t['flavor_fallback']} ${i + 1}'})'
                   : '${t['pump']} ${i + 1}';
+              final secondsLeft = _pumpSecondsLeft[i];
               return _ToggleRow(
-                label: label,
+                label: secondsLeft != null
+                    ? '$label — $secondsLeft${t['diag_seconds_suffix']}'
+                    : label,
                 value: _pumpOn[i],
                 onChanged: _busy ? null : (v) => _setPump(i, v),
               );
             }),
             _ToggleRow(
-              label: t['compressor']!,
+              label: _compressorSecondsLeft != null
+                  ? '${t['compressor']} — $_compressorSecondsLeft${t['diag_seconds_suffix']}'
+                  : t['compressor']!,
               value: _compressorOn,
               onChanged: _busy ? null : _setCompressor,
             ),
             _ToggleRow(
-              label: t['heater']!,
+              label: _heaterSecondsLeft != null
+                  ? '${t['heater']} — $_heaterSecondsLeft${t['diag_seconds_suffix']}'
+                  : t['heater']!,
               value: _heaterOn,
               onChanged: _busy ? null : _setHeater,
             ),
@@ -1378,6 +2546,23 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
           ],
         ),
 
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton(
+            onPressed: _busy ? null : _checkColdStart,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFF00C6B2),
+              side: const BorderSide(color: Color(0xFF00C6B2)),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            child: Text(t['diag_cold_start_btn']!),
+          ),
+        ),
+
         const SizedBox(height: 24),
         const Divider(color: Color(0xFF1A2233)),
         const SizedBox(height: 12),
@@ -1403,68 +2588,100 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
           ],
         ),
         const SizedBox(height: 8),
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: const Color(0xFF141B29),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: _EnergyMetric(
-                  label: t['energy_voltage']!,
-                  value: _energy['voltage'] ?? 0.0,
-                  unit: t['unit_v']!,
+        if (!_energyMeterInstalled)
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFF141B29),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              '${t['temp_unavailable']} · ${t['not_installed']}',
+              style: const TextStyle(
+                color: Color(0xFF556677),
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+              ),
+            ),
+          )
+        else ...[
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFF141B29),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _EnergyMetric(
+                    label: t['energy_voltage']!,
+                    value: _energy['voltage'] ?? 0.0,
+                    unit: t['unit_v']!,
+                  ),
                 ),
-              ),
-              Expanded(
-                child: _EnergyMetric(
-                  label: t['energy_current']!,
-                  value: _energy['current'] ?? 0.0,
-                  unit: t['unit_a']!,
+                Expanded(
+                  child: _EnergyMetric(
+                    label: t['energy_current']!,
+                    value: _energy['current'] ?? 0.0,
+                    unit: t['unit_a']!,
+                  ),
                 ),
-              ),
-              Expanded(
-                child: _EnergyMetric(
-                  label: t['energy_power']!,
-                  value: _energy['power'] ?? 0.0,
-                  unit: t['unit_w']!,
+                Expanded(
+                  child: _EnergyMetric(
+                    label: t['energy_power']!,
+                    value: _energy['power'] ?? 0.0,
+                    unit: t['unit_w']!,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-        const SizedBox(height: 10),
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: const Color(0xFF141B29),
-            borderRadius: BorderRadius.circular(8),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFF141B29),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${t['energy_total']}: '
+                  '${(_energy['totalEnergy'] ?? 0.0).toStringAsFixed(2)} ${t['unit_kwh']}',
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '${t['energy_monthly']}: '
+                  '${_monthlyEnergy.toStringAsFixed(2)} ${t['unit_kwh']}',
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '${t['energy_previous_month']}: '
+                  '${_previousMonthEnergy.toStringAsFixed(2)} ${t['unit_kwh']}',
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                ),
+                if (_lastCycleVoltage != null) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    '${t['last_cycle_voltage']}: '
+                    '${_lastCycleVoltage!.toStringAsFixed(0)} ${t['unit_v']}'
+                    '${_lastCycleVoltageLow ? ' ⚠' : ''}',
+                    style: TextStyle(
+                      color: _lastCycleVoltageLow
+                          ? const Color(0xFFFFAA00)
+                          : Colors.white,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '${t['energy_total']}: '
-                '${(_energy['totalEnergy'] ?? 0.0).toStringAsFixed(2)} ${t['unit_kwh']}',
-                style: const TextStyle(color: Colors.white, fontSize: 14),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                '${t['energy_monthly']}: '
-                '${_monthlyEnergy.toStringAsFixed(2)} ${t['unit_kwh']}',
-                style: const TextStyle(color: Colors.white, fontSize: 14),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                '${t['energy_previous_month']}: '
-                '${_previousMonthEnergy.toStringAsFixed(2)} ${t['unit_kwh']}',
-                style: const TextStyle(color: Colors.white, fontSize: 14),
-              ),
-            ],
-          ),
-        ),
+        ],
       ],
     );
   }
@@ -1608,7 +2825,9 @@ class _SensorsTabState extends State<_SensorsTab> {
     if (_pollingTerminal) return;
     _pollingTerminal = true;
     try {
-      final channel = int.tryParse(_terminalChannelCtrl.text) ?? 10;
+      final channel =
+          int.tryParse(_terminalChannelCtrl.text) ??
+          IoModuleInputs.defaultPaymentTerminalDI;
       final guard = int.tryParse(_terminalGuardCtrl.text) ?? 3000;
       final poll = await ModbusService.pollTerminal(
         channel: channel,
@@ -1665,7 +2884,7 @@ class _SensorsTabState extends State<_SensorsTab> {
     final t = _i18n[notifier.lang]!;
     final channel = int.tryParse(_terminalChannelCtrl.text);
     final guard = int.tryParse(_terminalGuardCtrl.text);
-    if (channel == null || channel < 0 || channel > 15) {
+    if (channel == null || channel < 0 || channel >= kIoChannelCount) {
       _snack(t['err_terminal_channel']!);
       return;
     }
@@ -2265,24 +3484,94 @@ class _ScannerParams {
   static int scanFrom = 1;
   static int scanTo = 247;
   static int readSlave = 1;
-  static int readFunc = 0x03;
+  static int readFunc = ModbusFunction.readHoldingRegisters;
   static int readStartAddr = 0;
   static int readCount = 1;
+  // Не BusDevice.thermo.address: это просто "с какого адреса обычно
+  // начинают" дефолт общего инструмента записи, не привязан по смыслу ни
+  // к одному конкретному устройству (совпадение с адресом термопары
+  // случайное).
   static int writeSlave = 1;
   static String writeType = 'register'; // 'register' | 'coil'
   static int writeAddr = 0;
   static int writeValue = 0;
+  // Смена Slave ID — целевой адрес = BusDevice.dio.address (совпадает с
+  // существующим SLAVE_DIO, чтобы код приложения вообще не пришлось
+  // менять после замены модуля). idOldAddr сюда намеренно НЕ входит: поле
+  // "Текущий адрес" обязано быть пустым по умолчанию (задача "правки
+  // визарда смены Slave ID по итогам живого прогона", правка 3) — на
+  // общей шине есть термопара с тем же регистром 0, дефолт "1" однажды
+  // уже привёл к записи в чужое устройство при тестах.
+  static int idNewAddr = BusDevice.dio.address;
+  // Групповая запись катушек FC15 — по умолчанию все каналы модуля на
+  // адресе DIO. Только выключение: живая фаза + сухие насосы на стенде
+  // делают "включить всё одним кадром" невосстановимой ошибкой одного
+  // касания, а сценария, где это реально нужно, нет — ни один рабочий
+  // цикл не включает насосы группой. Значение ВКЛ убрано из интерфейса
+  // совсем, не просто как дефолт.
+  static int fc15Slave = BusDevice.dio.address;
+  static int fc15Addr = 0;
+  static int fc15Count = kIoChannelCount;
+  // Групповая запись регистра FC16 (один регистр, но не FC06) — для
+  // устройств без FC06 (задача "Chint DDSU666: найти счётчик"). Дефолт
+  // адреса — не BusDevice.energyMeter.address: пока счётчик физически
+  // сидит на адресе термопары/первом свободном, а не на своём целевом;
+  // техник вводит текущий адрес вручную, как и в остальных инструментах
+  // записи выше.
+  static int fc16Slave = 1;
+  static int fc16Addr = 0;
+  static int fc16Value = 0;
 }
 
-// Известные по конфигурации проекта адреса (ModbusChannel.kt: SLAVE_DIO,
-// SLAVE_THERMO, SLAVE_ENERGY) — подписываются в результатах поиска, если
-// совпали. Дублирование намеренное: у Dart нет доступа к константам
-// нативной стороны, значения нужно держать в синхроне вручную при их
-// изменении там.
-const Map<int, String> _knownSlaves = {
-  1: 'scanner_known_thermo',
-  3: 'scanner_known_energy',
-  5: 'scanner_known_dio',
+// Состояние визарда смены Slave ID между фазой 1 (запись+фиксация) и
+// фазой 2 (проверка) — в SharedPreferences, а не в static-полях, как у
+// _ScannerParams выше. Между фазами оператор физически идёт к стойке
+// снимать и подавать питание на модуль, и сколько это займёт — неизвестно;
+// планшет вполне может за это время свернуть/перезапустить приложение.
+// Static-поля пережили бы пересоздание State при переключении вкладок, но
+// не переживают перезапуск процесса — здесь нужно именно это (задача
+// "правки визарда смены Slave ID по итогам живого прогона", правка 2).
+class _SlaveIdWizardState {
+  static const _keyAwaiting = 'fc_wizard_awaiting_restart';
+  static const _keyOldAddr = 'fc_wizard_old_addr';
+  static const _keyNewAddr = 'fc_wizard_new_addr';
+
+  static Future<({bool awaiting, int oldAddr, int newAddr})> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    return (
+      awaiting: prefs.getBool(_keyAwaiting) ?? false,
+      oldAddr: prefs.getInt(_keyOldAddr) ?? 0,
+      newAddr: prefs.getInt(_keyNewAddr) ?? 0,
+    );
+  }
+
+  static Future<void> save(int oldAddr, int newAddr) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyAwaiting, true);
+    await prefs.setInt(_keyOldAddr, oldAddr);
+    await prefs.setInt(_keyNewAddr, newAddr);
+  }
+
+  static Future<void> clear() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_keyAwaiting);
+    await prefs.remove(_keyOldAddr);
+    await prefs.remove(_keyNewAddr);
+  }
+}
+
+// Известные адреса (BusDevice, bus_map.dart) — подписываются в
+// результатах поиска, если совпали. Сами адреса живут только в
+// BusDevice — здесь только их i18n-подписи для UI. Кросс-языковое
+// дублирование с ModbusChannel.kt (SLAVE_DIO/SLAVE_THERMO/SLAVE_ENERGY)
+// по-прежнему намеренное — см. заголовок bus_map.dart.
+const Map<BusDevice, String> _knownSlaveLabels = {
+  BusDevice.thermo: 'scanner_known_thermo',
+  BusDevice.energyMeter: 'scanner_known_energy',
+  BusDevice.dio: 'scanner_known_dio',
+};
+final Map<int, String> _knownSlaves = {
+  for (final d in BusDevice.values) d.address: _knownSlaveLabels[d]!,
 };
 
 // Стандартные коды исключений Modbus — протокольные термины, намеренно
@@ -2320,6 +3609,12 @@ class _ScannerTabState extends State<_ScannerTab> {
   bool _scanCancelRequested = false;
   int _scanProbed = 0;
   int _scanTotal = 0;
+  // Чётность для этого поиска (диагностика "чётность отличается от
+  // ожидаемой", задача "Chint DDSU666: найти счётчик") — 'none' по
+  // умолчанию, ничего не меняет для обычного поиска. Не persisted через
+  // _ScannerParams намеренно: нештатный режим не должен пережить уход со
+  // вкладки и остаться незамеченным при следующем визите.
+  String _scanParity = 'none';
   final List<int> _scanFound = [];
 
   // --- Перебор скорости (диагностика "молчащий, но подключённый адрес")
@@ -2327,6 +3622,24 @@ class _ScannerTabState extends State<_ScannerTab> {
   bool _sweeping = false;
   String? _sweepResultText;
   bool? _sweepOk;
+
+  // --- Смена Slave ID (задача "правки визарда смены Slave ID по итогам
+  // живого прогона") ---
+  late TextEditingController _idOldCtrl;
+  late TextEditingController _idNewCtrl;
+  // Не персистится через _ScannerParams сознательно (в отличие от
+  // остальных полей вкладки) — опасный обход опознания не должен молча
+  // переживать переключение вкладок и оставаться включённым для
+  // следующего технического не глядя.
+  bool _skipIdentification = false;
+  bool _idChanging = false;
+  bool _idAwaitingRestart = false; // фаза 1 прошла, ждём снятия/подачи питания
+  bool _idVerifying = false;
+  final List<String> _idLog = [];
+  bool? _idOk;
+  bool? _idNewAddrOk;
+  bool? _idOldAddrSilent;
+  List<int>? _idDump;
 
   // --- Чтение регистров ---
   late TextEditingController _readSlaveCtrl;
@@ -2346,12 +3659,36 @@ class _ScannerTabState extends State<_ScannerTab> {
   String? _writeResultText;
   bool? _writeOk;
 
+  // --- Групповая запись катушек FC15 (только выключение) ---
+  late TextEditingController _fc15SlaveCtrl;
+  late TextEditingController _fc15AddrCtrl;
+  late TextEditingController _fc15CountCtrl;
+  bool _fc15Writing = false;
+  String? _fc15ResultText;
+  bool? _fc15Ok;
+
+  // --- Групповая запись регистра FC16 (опасно) — для устройств без FC06,
+  // например Chint DDSU666 (задача "Chint DDSU666: найти счётчик"). Пишет
+  // ровно один регистр, но кадром FC16, а не FC06.
+  late TextEditingController _fc16SlaveCtrl;
+  late TextEditingController _fc16AddrCtrl;
+  late TextEditingController _fc16ValueCtrl;
+  bool _fc16Writing = false;
+  String? _fc16ResultText;
+  bool? _fc16Ok;
+
   @override
   void initState() {
     super.initState();
     _scanFromCtrl = TextEditingController(text: '${_ScannerParams.scanFrom}');
     _scanToCtrl = TextEditingController(text: '${_ScannerParams.scanTo}');
     _sweepSlaveCtrl = TextEditingController(text: '5');
+    _idOldCtrl = TextEditingController(); // пусто по умолчанию — правка 3
+    _idOldCtrl.addListener(() {
+      if (mounted) setState(() {}); // перерисовать состояние кнопки записи
+    });
+    _idNewCtrl = TextEditingController(text: '${_ScannerParams.idNewAddr}');
+    unawaited(_restoreWizardState());
     _readSlaveCtrl = TextEditingController(text: '${_ScannerParams.readSlave}');
     _readStartCtrl = TextEditingController(
       text: '${_ScannerParams.readStartAddr}',
@@ -2366,6 +3703,12 @@ class _ScannerTabState extends State<_ScannerTab> {
       text: '${_ScannerParams.writeValue}',
     );
     _writeType = _ScannerParams.writeType;
+    _fc15SlaveCtrl = TextEditingController(text: '${_ScannerParams.fc15Slave}');
+    _fc15AddrCtrl = TextEditingController(text: '${_ScannerParams.fc15Addr}');
+    _fc15CountCtrl = TextEditingController(text: '${_ScannerParams.fc15Count}');
+    _fc16SlaveCtrl = TextEditingController(text: '${_ScannerParams.fc16Slave}');
+    _fc16AddrCtrl = TextEditingController(text: '${_ScannerParams.fc16Addr}');
+    _fc16ValueCtrl = TextEditingController(text: '${_ScannerParams.fc16Value}');
   }
 
   @override
@@ -2378,12 +3721,20 @@ class _ScannerTabState extends State<_ScannerTab> {
     _scanFromCtrl.dispose();
     _scanToCtrl.dispose();
     _sweepSlaveCtrl.dispose();
+    _idOldCtrl.dispose();
+    _idNewCtrl.dispose();
     _readSlaveCtrl.dispose();
     _readStartCtrl.dispose();
     _readCountCtrl.dispose();
     _writeSlaveCtrl.dispose();
     _writeAddrCtrl.dispose();
     _writeValueCtrl.dispose();
+    _fc15SlaveCtrl.dispose();
+    _fc15AddrCtrl.dispose();
+    _fc15CountCtrl.dispose();
+    _fc16SlaveCtrl.dispose();
+    _fc16AddrCtrl.dispose();
+    _fc16ValueCtrl.dispose();
     super.dispose();
   }
 
@@ -2409,21 +3760,38 @@ class _ScannerTabState extends State<_ScannerTab> {
       _scanProbed = 0;
       _scanTotal = to - from + 1;
     });
-    // Без своего потока (правило проекта) — обычный последовательный
-    // цикл через уже существующую фоновую очередь, один короткий запрос
-    // за раз. Малый таймаут (100 мс) на пробу — иначе перебор всего
-    // диапазона растянулся бы на минуты (задача 2.2).
-    for (var addr = from; addr <= to; addr++) {
-      if (_scanCancelRequested || !mounted) break;
-      final found = await ModbusService.scanProbe(
-        slaveId: addr,
-        timeoutMs: 100,
-      );
-      if (!mounted) break;
-      setState(() {
-        _scanProbed++;
-        if (found) _scanFound.add(addr);
-      });
+
+    // Нештатная чётность (диагностика "Chint DDSU666") — порт временно
+    // переоткрывается на ней, сканер идёт через уже открытое соединение
+    // (scanProbe своего параметра чётности не имеет). Восстановление на
+    // обычные параметры — в finally, ЛЮБОЙ исход (нашли, не нашли,
+    // отменили, ушли с вкладки) не должен оставить приложение без связи
+    // с боевым модулем.
+    final customParity = _scanParity != 'none';
+    if (customParity) {
+      await ModbusService.openWithParity(parity: _scanParity);
+    }
+    try {
+      // Без своего потока (правило проекта) — обычный последовательный
+      // цикл через уже существующую фоновую очередь, один короткий запрос
+      // за раз. Малый таймаут (100 мс) на пробу — иначе перебор всего
+      // диапазона растянулся бы на минуты (задача 2.2).
+      for (var addr = from; addr <= to; addr++) {
+        if (_scanCancelRequested || !mounted) break;
+        final found = await ModbusService.scanProbe(
+          slaveId: addr,
+          timeoutMs: 100,
+        );
+        if (!mounted) break;
+        setState(() {
+          _scanProbed++;
+          if (found) _scanFound.add(addr);
+        });
+      }
+    } finally {
+      if (customParity) {
+        await ModbusService.openWithParity(parity: 'none');
+      }
     }
     if (mounted) setState(() => _scanning = false);
   }
@@ -2458,6 +3826,151 @@ class _ScannerTabState extends State<_ScannerTab> {
       _sweepResultText = found != null
           ? '${t['scanner_sweep_found']}: $found'
           : t['scanner_sweep_not_found'];
+    });
+  }
+
+  // ---------------- Смена Slave ID ----------------
+
+  int? _idSavedOldAddr;
+  int? _idSavedNewAddr;
+
+  // Восстановление состояния визарда после сворачивания/перезапуска
+  // приложения — правка 2: оператор уходит к стойке снимать/подавать
+  // питание, визард должен ждать его на том же шаге, а не терять контекст.
+  Future<void> _restoreWizardState() async {
+    final saved = await _SlaveIdWizardState.load();
+    if (!mounted || !saved.awaiting) return;
+    setState(() {
+      _idOldCtrl.text = '${saved.oldAddr}';
+      _idNewCtrl.text = '${saved.newAddr}';
+      _idSavedOldAddr = saved.oldAddr;
+      _idSavedNewAddr = saved.newAddr;
+      _idAwaitingRestart = true;
+      _idLog.add(
+        'Состояние восстановлено: ожидание перезапуска питания модуля '
+        '(адрес ${saved.oldAddr} → ${saved.newAddr}).',
+      );
+    });
+  }
+
+  Future<void> _confirmAndChangeSlaveId(Map<String, String> t) async {
+    final oldAddr = int.tryParse(_idOldCtrl.text);
+    final newAddr = int.tryParse(_idNewCtrl.text);
+    if (oldAddr == null || oldAddr < 1 || oldAddr > 255) {
+      _snack('${t['scanner_id_old']}: 1–255');
+      return;
+    }
+    if (newAddr == null || newAddr < 1 || newAddr > 255) {
+      _snack('${t['scanner_id_new']}: 1–255');
+      return;
+    }
+
+    // Правка 3.6 — адреса цифрами, без общей формулировки: "Записать
+    // адрес 5 в устройство на адресе 1".
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF141B29),
+        title: Text(
+          t['scanner_id_confirm_title']!,
+          style: const TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          '${t['scanner_id_confirm_write']} $newAddr '
+          '${t['scanner_id_confirm_into']} $oldAddr'
+          '${_skipIdentification ? '\n\n${t['scanner_id_skip']}!' : ''}',
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(
+              t['scanner_write_confirm_cancel']!,
+              style: const TextStyle(color: Color(0xFF8899AA)),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(
+              t['scanner_id_btn']!,
+              style: const TextStyle(
+                color: Color(0xFFE53935),
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    _ScannerParams.idNewAddr = newAddr;
+
+    setState(() {
+      _idChanging = true;
+      _idLog.clear();
+      _idAwaitingRestart = false;
+      _idOk = null;
+      _idNewAddrOk = null;
+      _idOldAddrSilent = null;
+      _idDump = null;
+    });
+
+    final result = await ModbusService.changeSlaveIdPhase1(
+      oldAddr: oldAddr,
+      newAddr: newAddr,
+      skipIdentification: _skipIdentification,
+    );
+
+    if (!mounted) return;
+
+    if (result.ok) {
+      await _SlaveIdWizardState.save(oldAddr, newAddr);
+      _idSavedOldAddr = oldAddr;
+      _idSavedNewAddr = newAddr;
+    }
+
+    setState(() {
+      _idChanging = false;
+      _idAwaitingRestart = result.ok;
+      // Пока идёт ожидание перезапуска — итог ещё не определён (граница
+      // журнала нейтральная); отказ фазы 1 (заблокировано опознанием или
+      // реальная ошибка записи) — сразу красный.
+      _idOk = result.ok ? null : false;
+      _idLog.addAll(result.log);
+    });
+  }
+
+  Future<void> _continuePhase2(Map<String, String> t) async {
+    final oldAddr = _idSavedOldAddr;
+    final newAddr = _idSavedNewAddr;
+    if (oldAddr == null || newAddr == null) return;
+
+    setState(() => _idVerifying = true);
+    final r = await ModbusService.changeSlaveIdPhase2(
+      oldAddr: oldAddr,
+      newAddr: newAddr,
+    );
+    if (!mounted) return;
+    await _SlaveIdWizardState.clear();
+    setState(() {
+      _idVerifying = false;
+      _idAwaitingRestart = false;
+      _idOk = r.ok;
+      _idNewAddrOk = r.newAddrOk;
+      _idOldAddrSilent = r.oldAddrSilent;
+      _idDump = r.dump;
+      _idLog.addAll(r.log);
+    });
+  }
+
+  Future<void> _cancelAwaitingRestart() async {
+    await _SlaveIdWizardState.clear();
+    if (!mounted) return;
+    setState(() {
+      _idAwaitingRestart = false;
+      _idSavedOldAddr = null;
+      _idSavedNewAddr = null;
     });
   }
 
@@ -2624,6 +4137,207 @@ class _ScannerTabState extends State<_ScannerTab> {
     });
   }
 
+  // ---------------- Групповая запись катушек FC15 (опасно) ----------------
+
+  Future<void> _confirmAndWriteMultipleCoils(Map<String, String> t) async {
+    final slave = int.tryParse(_fc15SlaveCtrl.text);
+    final addr = int.tryParse(_fc15AddrCtrl.text);
+    final count = int.tryParse(_fc15CountCtrl.text);
+    if (slave == null || slave < 1 || slave > 247) {
+      _snack('${t['scanner_slave']}: 1–247');
+      return;
+    }
+    if (addr == null || addr < 0 || addr > 65535) {
+      _snack('${t['scanner_write_addr']}: 0–65535');
+      return;
+    }
+    if (count == null || count < 1 || count > _scannerMaxCount) {
+      _snack('${t['scanner_count']}: 1–$_scannerMaxCount');
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF141B29),
+        title: Text(
+          t['scanner_write_confirm_title']!,
+          style: const TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          '${t['scanner_slave']}: $slave\n'
+          'FC15 #$addr..${addr + count - 1} ← ${t['scanner_fc15_off']!}',
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(
+              t['scanner_write_confirm_cancel']!,
+              style: const TextStyle(color: Color(0xFF8899AA)),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(
+              t['scanner_write_btn']!,
+              style: const TextStyle(
+                color: Color(0xFFE53935),
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    _ScannerParams.fc15Slave = slave;
+    _ScannerParams.fc15Addr = addr;
+    _ScannerParams.fc15Count = count;
+
+    setState(() {
+      _fc15Writing = true;
+      _fc15ResultText = null;
+      _fc15Ok = null;
+    });
+
+    // Только нули — переключателя на включение в интерфейсе нет и не
+    // будет (см. комментарий у _ScannerParams).
+    final values = List<bool>.filled(count, false);
+    final r = await ModbusService.scanWriteMultipleCoils(
+      slaveId: slave,
+      addr: addr,
+      values: values,
+    );
+
+    if (!mounted) return;
+    setState(() {
+      _fc15Writing = false;
+      _fc15Ok = r.status == 'ok';
+      _fc15ResultText = switch (r.status) {
+        'ok' => t['scanner_fc15_ok']!,
+        'exception' =>
+          '${t['scanner_err_exception']}: ${r.exceptionCode} '
+              '(${_exceptionNames[r.exceptionCode] ?? '?'})',
+        'bad_crc' => t['scanner_err_bad_crc']!,
+        _ => t['scanner_err_no_response']!,
+      };
+    });
+  }
+
+  // ---------------- Групповая запись регистра FC16 (опасно) ----------------
+  // Для устройств без FC06 (задача "Chint DDSU666: найти счётчик" — по
+  // мануалу у счётчика есть только 03 на чтение и 16 на запись, даже для
+  // одного регистра). Пишет ровно один регистр, но кадром FC16.
+
+  Future<void> _confirmAndWriteMultipleRegisters(Map<String, String> t) async {
+    final slave = int.tryParse(_fc16SlaveCtrl.text);
+    final addr = int.tryParse(_fc16AddrCtrl.text);
+    final value = int.tryParse(_fc16ValueCtrl.text);
+    if (slave == null || slave < 1 || slave > 247) {
+      _snack('${t['scanner_slave']}: 1–247');
+      return;
+    }
+    if (addr == null || addr < 0 || addr > 65535) {
+      _snack('${t['scanner_write_addr']}: 0–65535');
+      return;
+    }
+    if (value == null || value < 0 || value > 65535) {
+      _snack('${t['scanner_write_value']}: 0–65535');
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF141B29),
+        title: Text(
+          t['scanner_write_confirm_title']!,
+          style: const TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          '${t['scanner_slave']}: $slave\nFC16 #$addr ← $value',
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(
+              t['scanner_write_confirm_cancel']!,
+              style: const TextStyle(color: Color(0xFF8899AA)),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(
+              t['scanner_write_btn']!,
+              style: const TextStyle(
+                color: Color(0xFFE53935),
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    _ScannerParams.fc16Slave = slave;
+    _ScannerParams.fc16Addr = addr;
+    _ScannerParams.fc16Value = value;
+
+    setState(() {
+      _fc16Writing = true;
+      _fc16ResultText = null;
+      _fc16Ok = null;
+    });
+
+    // Одна попытка, без автоповторов (правило проекта: повторная слепая
+    // запись способна оставить устройство в состоянии, которое потом
+    // трудно разобрать) — та же дисциплина, что и у FC15 выше.
+    final r = await ModbusService.scanWriteMultipleRegisters(
+      slaveId: slave,
+      addr: addr,
+      values: [value],
+    );
+
+    if (!mounted) return;
+    if (r.status != 'ok') {
+      setState(() {
+        _fc16Writing = false;
+        _fc16Ok = false;
+        _fc16ResultText = switch (r.status) {
+          'exception' =>
+            '${t['scanner_err_exception']}: ${r.exceptionCode} '
+                '(${_exceptionNames[r.exceptionCode] ?? '?'})',
+          'bad_crc' => t['scanner_err_bad_crc']!,
+          _ => t['scanner_err_no_response']!,
+        };
+      });
+      return;
+    }
+
+    // Перечитать тот же регистр и показать результат — той же логикой,
+    // что и одиночная запись FC06 выше.
+    final readBack = await ModbusService.scanRead(
+      slaveId: slave,
+      funcCode: 0x03,
+      startAddr: addr,
+      count: 1,
+    );
+
+    if (!mounted) return;
+    setState(() {
+      _fc16Writing = false;
+      _fc16Ok = true;
+      final readBackValue = readBack.status != 'ok'
+          ? '—'
+          : readBack.intValues?.first.toString() ?? '—';
+      _fc16ResultText = '${t['scanner_write_result_readback']}: $readBackValue';
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = _i18n[context.watch<AppNotifier>().lang]!;
@@ -2658,6 +4372,39 @@ class _ScannerTabState extends State<_ScannerTab> {
                 controller: _scanToCtrl,
                 keyboardType: TextInputType.number,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Text(
+          t['scanner_scan_parity']!,
+          style: const TextStyle(color: Color(0xFF8899AA), fontSize: 13),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: _ModeButton(
+                label: t['scanner_parity_none']!,
+                selected: _scanParity == 'none',
+                onTap: () => setState(() => _scanParity = 'none'),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _ModeButton(
+                label: t['scanner_parity_odd']!,
+                selected: _scanParity == 'odd',
+                onTap: () => setState(() => _scanParity = 'odd'),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _ModeButton(
+                label: t['scanner_parity_even']!,
+                selected: _scanParity == 'even',
+                onTap: () => setState(() => _scanParity = 'even'),
               ),
             ),
           ],
@@ -2784,6 +4531,270 @@ class _ScannerTabState extends State<_ScannerTab> {
             ),
           ),
         ],
+
+        const SizedBox(height: 28),
+        Container(height: 1, color: const Color(0xFF1A2233)),
+        const SizedBox(height: 20),
+
+        // ---------------- Смена Slave ID (CWT-BK-1616T-S) ----------------
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFFE53935).withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: const Color(0xFFE53935).withValues(alpha: 0.4),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                t['scanner_id_section']!,
+                style: const TextStyle(
+                  color: Color(0xFFE53935),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                t['scanner_id_warning']!,
+                style: const TextStyle(
+                  color: Color(0xFFE53935),
+                  fontSize: 12,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      t['scanner_id_skip']!,
+                      style: const TextStyle(
+                        color: Color(0xFFE53935),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                  Switch(
+                    value: _skipIdentification,
+                    onChanged: (_idChanging || _idAwaitingRestart)
+                        ? null
+                        : (v) => setState(() => _skipIdentification = v),
+                    activeThumbColor: const Color(0xFFE53935),
+                  ),
+                ],
+              ),
+              Text(
+                t['scanner_id_skip_hint']!,
+                style: const TextStyle(
+                  color: Color(0xFF8899AA),
+                  fontSize: 11,
+                  height: 1.3,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: _Field(
+                      label: t['scanner_id_old']!,
+                      controller: _idOldCtrl,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _Field(
+                      label: t['scanner_id_new']!,
+                      controller: _idNewCtrl,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed:
+                      (_idChanging ||
+                          _idAwaitingRestart ||
+                          _idOldCtrl.text.trim().isEmpty)
+                      ? null
+                      : () => _confirmAndChangeSlaveId(t),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFE53935),
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: const Color(
+                      0xFFE53935,
+                    ).withValues(alpha: 0.3),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: Text(
+                    t['scanner_id_btn']!,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+              ),
+              if (_idLog.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Container(
+                  width: double.infinity,
+                  constraints: const BoxConstraints(maxHeight: 220),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF141B29),
+                    borderRadius: BorderRadius.circular(8),
+                    // Итог последней проверки (сразу после фазы 1 или
+                    // после фазы 2) — подсветка рамки журнала, без
+                    // дублирования текста: сам итог уже читается по
+                    // последней строке лога.
+                    border: _idOk == null
+                        ? null
+                        : Border.all(
+                            color: _idOk == true
+                                ? const Color(0xFF00C6B2)
+                                : const Color(0xFFE53935),
+                          ),
+                  ),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        for (final line in _idLog)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2),
+                            child: Text(
+                              line,
+                              style: const TextStyle(
+                                color: Color(0xFF8899AA),
+                                fontSize: 12,
+                                fontFamily: 'monospace',
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+              if (_idNewAddrOk == true) ...[
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF00C6B2).withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: const Color(0xFF00C6B2).withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: Text(
+                    t['scanner_id_new_addr_confirmed']!,
+                    style: const TextStyle(
+                      color: Color(0xFF00C6B2),
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+              // Правка 2 — отдельная явная ошибка, если старый адрес всё
+              // ещё отвечает после смены: не полагаемся на то, что технику
+              // не лень дочитать журнал до конца.
+              if (_idOldAddrSilent == false) ...[
+                const SizedBox(height: 12),
+                _ScanErrorBox(text: t['scanner_id_old_still_responds']!),
+              ],
+              // Фаза 1 прошла — ждём, пока оператор снимет/подаст питание
+              // на модуль. Единственный способ двинуться дальше — кнопка
+              // "Продолжить проверку", никаких таймеров (правка 2).
+              if (_idAwaitingRestart) ...[
+                const SizedBox(height: 16),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF00C6B2).withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: const Color(0xFF00C6B2).withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: Text(
+                    t['scanner_id_power_cycle_hint']!,
+                    style: const TextStyle(
+                      color: Color(0xFF00C6B2),
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: _idVerifying ? null : () => _continuePhase2(t),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF00C6B2),
+                      side: const BorderSide(color: Color(0xFF00C6B2)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    child: Text(
+                      t['scanner_id_verify_btn']!,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+                if (!_idVerifying) ...[
+                  const SizedBox(height: 8),
+                  Center(
+                    child: TextButton(
+                      onPressed: _cancelAwaitingRestart,
+                      child: Text(
+                        t['scanner_id_cancel_wait']!,
+                        style: const TextStyle(color: Color(0xFF8899AA)),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+              if (_idDump != null) ...[
+                const SizedBox(height: 16),
+                Text(
+                  t['scanner_id_dump_title']!,
+                  style: const TextStyle(
+                    color: Color(0xFF8899AA),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _ScanReadResultView(
+                  result: ScanReadResult(status: 'ok', intValues: _idDump),
+                  t: t,
+                  startAddr: 0,
+                ),
+              ],
+            ],
+          ),
+        ),
 
         const SizedBox(height: 28),
         Container(height: 1, color: const Color(0xFF1A2233)),
@@ -3026,6 +5037,231 @@ class _ScannerTabState extends State<_ScannerTab> {
         ),
 
         const SizedBox(height: 20),
+        // ---------------- FC16: групповая запись регистра (опасно) ----------------
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFFE53935).withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: const Color(0xFFE53935).withValues(alpha: 0.4),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                t['scanner_fc16_section']!,
+                style: const TextStyle(
+                  color: Color(0xFFE53935),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                t['scanner_fc16_warning']!,
+                style: const TextStyle(
+                  color: Color(0xFFE53935),
+                  fontSize: 12,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 16),
+              _Field(
+                label: t['scanner_slave']!,
+                controller: _fc16SlaveCtrl,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _Field(
+                      label: t['scanner_write_addr']!,
+                      controller: _fc16AddrCtrl,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _Field(
+                      label: t['scanner_write_value']!,
+                      controller: _fc16ValueCtrl,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFE53935),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  onPressed: _fc16Writing
+                      ? null
+                      : () => _confirmAndWriteMultipleRegisters(t),
+                  child: Text(
+                    t['scanner_fc16_btn']!,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+              ),
+              if (_fc16ResultText != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _fc16ResultText!,
+                  style: TextStyle(
+                    color: _fc16Ok == true
+                        ? const Color(0xFF00C6B2)
+                        : const Color(0xFFE53935),
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 20),
+        // ---------------- FC15: групповая запись катушек (опасно) ----------------
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFFE53935).withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: const Color(0xFFE53935).withValues(alpha: 0.4),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                t['scanner_fc15_section']!,
+                style: const TextStyle(
+                  color: Color(0xFFE53935),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                t['scanner_fc15_warning']!,
+                style: const TextStyle(
+                  color: Color(0xFFE53935),
+                  fontSize: 12,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 16),
+              _Field(
+                label: t['scanner_slave']!,
+                controller: _fc15SlaveCtrl,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _Field(
+                      label: t['scanner_write_addr']!,
+                      controller: _fc15AddrCtrl,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _Field(
+                      label: t['scanner_count']!,
+                      controller: _fc15CountCtrl,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              // Только выключение — переключателя на "все ВКЛ" здесь
+              // намеренно нет (см. комментарий у _ScannerParams.fc15Slave).
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  vertical: 12,
+                  horizontal: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF00C6B2).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: const Color(0xFF00C6B2),
+                    width: 1.5,
+                  ),
+                ),
+                child: Text(
+                  t['scanner_fc15_off']!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xFF00C6B2),
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _fc15Writing
+                      ? null
+                      : () => _confirmAndWriteMultipleCoils(t),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFE53935),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: Text(
+                    t['scanner_fc15_btn']!,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+              ),
+              if (_fc15ResultText != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _fc15ResultText!,
+                  style: TextStyle(
+                    color: _fc15Ok == true
+                        ? const Color(0xFF00C6B2)
+                        : const Color(0xFFE53935),
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 20),
         if (_scanFound.isNotEmpty ||
             _readResult != null ||
             _writeResultText != null)
@@ -3234,6 +5470,12 @@ class _JournalTabState extends State<_JournalTab> {
     'command_executed': 'Выполнена команда',
     'config_changed': 'Изменены настройки',
     'unexpected_payment': 'Оплата вне экрана оплаты',
+    'debug_mode_changed': 'Отладочный режим',
+    'out_of_service': 'ВЫВЕДЕН ИЗ ОБСЛУЖИВАНИЯ',
+    'out_of_service_restored': 'Вывод из обслуживания восстановлен при старте',
+    'out_of_service_cleared': 'Вывод из обслуживания снят',
+    'out_of_service_trial': 'Пробный цикл',
+    'payment_abandoned': 'Оплата не завершена (внесённая сумма)',
   };
 
   static const _alarmTypes = {
@@ -3243,6 +5485,8 @@ class _JournalTabState extends State<_JournalTab> {
     'hardware_error',
     'app_started_after_crash',
     'unexpected_payment',
+    'out_of_service',
+    'out_of_service_restored',
   };
 
   static const _warnTypes = {'low_liquid'};

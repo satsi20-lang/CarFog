@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_state.dart';
+import '../models/bus_map.dart';
 
 class ConfigService {
   static const _key = 'app_config';
@@ -52,6 +53,11 @@ class ConfigService {
     'paymentTerminalGuardMs': c.paymentTerminalGuardMs,
     'paymentTerminalEnabled': c.paymentTerminalEnabled,
     'outputWatchdogEnabled': c.outputWatchdogEnabled,
+    'dioInstalled': c.dioInstalled,
+    'thermoInstalled': c.thermoInstalled,
+    'energyMeterInstalled': c.energyMeterInstalled,
+    'coinAcceptorInstalled': c.coinAcceptorInstalled,
+    'idlePowerTariffPerKwh': c.idlePowerTariffPerKwh,
     'flavorNames': c.flavorNames,
   };
 
@@ -67,11 +73,19 @@ class ConfigService {
     cloudToken: (j['cloudToken'] as String?) ?? '',
     cloudEnabled: (j['cloudEnabled'] as bool?) ?? false,
     kioskModeEnabled: (j['kioskModeEnabled'] as bool?) ?? false,
-    paymentTerminalChannel: (j['paymentTerminalChannel'] as int?) ?? 10,
+    paymentTerminalChannel:
+        (j['paymentTerminalChannel'] as int?) ??
+        IoModuleInputs.defaultPaymentTerminalDI,
     paymentTerminalMode: (j['paymentTerminalMode'] as String?) ?? 'edge',
     paymentTerminalGuardMs: (j['paymentTerminalGuardMs'] as int?) ?? 3000,
     paymentTerminalEnabled: (j['paymentTerminalEnabled'] as bool?) ?? false,
     outputWatchdogEnabled: (j['outputWatchdogEnabled'] as bool?) ?? false,
+    dioInstalled: (j['dioInstalled'] as bool?) ?? true,
+    thermoInstalled: (j['thermoInstalled'] as bool?) ?? false,
+    energyMeterInstalled: (j['energyMeterInstalled'] as bool?) ?? false,
+    coinAcceptorInstalled: (j['coinAcceptorInstalled'] as bool?) ?? false,
+    idlePowerTariffPerKwh:
+        (j['idlePowerTariffPerKwh'] as num?)?.toDouble() ?? 0.20,
     flavorNames: (j['flavorNames'] as Map<String, dynamic>?)?.map(
       (k, v) => MapEntry(k, List<String>.from(v)),
     ),

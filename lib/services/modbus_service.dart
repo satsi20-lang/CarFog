@@ -1,26 +1,38 @@
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
+import '../models/bus_map.dart';
 
 class ModbusService {
   static const _channel = MethodChannel('com.carfog.dryfog/modbus');
   static bool _open = false;
 
   // Открыть порт. Вызывать один раз при старте.
-  // port: '/dev/ttyS5' — уточнить после запуска find_port.py
-  static Future<bool> open({
-    String port = '/dev/ttyS5',
-    int baud = 9600,
+  //
+  // code/pid (задача "эксклюзивное открытие последовательного порта") —
+  // раньше возвращался просто bool, и "порт занят другим процессом"
+  // выглядело неотличимо от "порт не найден"/"нет прав": час ушёл на
+  // диагностику по логу вместо одной внятной ошибки на экране. code ==
+  // 'PORT_BUSY' — сигнал звать именно эту ошибку, а не общую "не открылся".
+  static Future<({bool ok, String? code, int? pid})> open({
+    String port = BusParams.port,
+    int baud = BusParams.baud,
   }) async {
     try {
-      final ok = await _channel.invokeMethod<bool>('open', {
+      final result = await _channel.invokeMethod<Map>('open', {
         'port': port,
         'baud': baud,
       });
-      _open = ok == true;
-      return _open;
+      final ok = result?['ok'] as bool? ?? false;
+      _open = ok;
+      return (
+        ok: ok,
+        code: result?['code'] as String?,
+        pid: result?['pid'] as int?,
+      );
     } catch (e) {
       debugPrint('ModbusService.open error: $e');
-      return false;
+      _open = false;
+      return (ok: false, code: null, pid: null);
     }
   }
 
@@ -35,10 +47,10 @@ class ModbusService {
 
   static bool get isOpen => _open;
 
-  // Читает ВСЕ 16 дискретных входов одной транзакцией (каналы 0-7 —
-  // уровни канистр, 8 — монетоприёмник, остальные, включая платёжный
-  // терминал — по месту распайки). Один запрос на 16 входов стоит по
-  // времени столько же, сколько на 8 — служебная часть кадра одинакова.
+  // Читает ВСЕ 16 дискретных входов одной транзакцией (каналы датчиков
+  // уровня — см. PumpChannel.sensorDI в bus_map.dart, IoModuleInputs —
+  // монетоприёмник/терминал). Один запрос на 16 входов стоит по времени
+  // столько же, сколько на 8 — служебная часть кадра одинакова.
   // null = ошибка чтения.
   static Future<List<bool>?> readAllInputs() async {
     try {
@@ -50,31 +62,31 @@ class ModbusService {
     }
   }
 
-  // Уровни канистр (каналы 0-7) — тонкая обёртка над readAllInputs() для
-  // мест, которым не нужны остальные каналы. true = есть жидкость.
-  // null = ошибка чтения (не путать с настоящим "все канистры пусты").
+  // Уровни канистр (каналы датчиков PumpChannel.sensorDI) — тонкая
+  // обёртка над readAllInputs() для мест, которым не нужны остальные
+  // каналы. true = есть жидкость. null = ошибка чтения (не путать с
+  // настоящим "все канистры пусты").
   static Future<List<bool>?> readLevels() async {
     final all = await readAllInputs();
-    if (all == null || all.length < 8) return null;
-    return all.sublist(0, 8);
+    if (all == null || all.length < PumpChannel.values.length) return null;
+    return all.sublist(0, PumpChannel.values.length);
   }
 
-  // Читает сигнал монетоприёмника.
-  static Future<bool> readCoin() async {
+  // Читает сигнал монетоприёмника. null — ошибка чтения (шина занята/
+  // таймаут), отличается от честного false (сигнала нет) — нужно для
+  // бэкоффа информационных опросов в сервисном меню.
+  static Future<bool?> readCoin() async {
     try {
-      return await _channel.invokeMethod<bool>('readCoin') ?? false;
+      return await _channel.invokeMethod<bool>('readCoin');
     } catch (e) {
       debugPrint('ModbusService.readCoin error: $e');
-      return false;
+      return null;
     }
   }
 
-  // Управляет одним DO. channel 0-based:
-  //   0-7  → насосы 1-8
-  //   8    → компрессор
-  //   9    → ТЭН испарителя
-  //   10   → LED зелёная
-  //   11   → LED красная
+  // Управляет одним DO. channel 0-based — полная карта в bus_map.dart:
+  // PumpChannel.do_ (насосы), AuxOutput.compressorDO/heaterDO/ledGreenDO/
+  // ledRedDO.
   static Future<bool> setDO(int channel, bool value) async {
     try {
       return await _channel.invokeMethod<bool>('setDO', {
@@ -90,15 +102,16 @@ class ModbusService {
 
   // Удобные обёртки для конкретных устройств
   static Future<bool> setPump(int flavorIndex, bool on) =>
-      setDO(flavorIndex, on); // 0-7
+      setDO(flavorIndex, on); // PumpChannel.values[flavorIndex].do_
 
-  static Future<bool> setCompressor(bool on) => setDO(8, on);
+  static Future<bool> setCompressor(bool on) =>
+      setDO(AuxOutput.compressorDO, on);
 
-  static Future<bool> setHeater(bool on) => setDO(9, on);
+  static Future<bool> setHeater(bool on) => setDO(AuxOutput.heaterDO, on);
 
-  static Future<bool> setLedGreen(bool on) => setDO(10, on);
+  static Future<bool> setLedGreen(bool on) => setDO(AuxOutput.ledGreenDO, on);
 
-  static Future<bool> setLedRed(bool on) => setDO(11, on);
+  static Future<bool> setLedRed(bool on) => setDO(AuxOutput.ledRedDO, on);
 
   // Выключить ВСЕ выходы — вызывать при старте и при любой ошибке.
   static Future<bool> safeAllOff() async {
@@ -108,6 +121,43 @@ class ModbusService {
       debugPrint('ModbusService.safeAllOff error: $e');
       return false;
     }
+  }
+
+  // Выключить ТЭН и УБЕДИТЬСЯ, что он выключен (замечание ревью: результат
+  // команды выключения нигде не проверялся, а реле, "запомненное" как
+  // выключенное после неудачной записи, больше никто не пытался выключить).
+  // Подтверждение — чтение катушки ТЭНа обратно. Если чтение не удалось, но
+  // запись подтверждена устройством два раза подряд — тоже принимается
+  // (шина шумит, а не реле залипло). Сначала обычные команды на один
+  // выход, затем FC15 safeAllOff. false — выключение не подтверждено.
+  static Future<bool> forceHeaterOff({
+    int attempts = 5,
+    Duration pause = const Duration(milliseconds: 100),
+  }) async {
+    var acks = 0;
+    for (var i = 0; i < attempts; i++) {
+      final wrote = i < 3 ? await setHeater(false) : await safeAllOff();
+      final coils = await readCoils();
+      if (coils != null && coils.length > AuxOutput.heaterDO) {
+        if (!coils[AuxOutput.heaterDO]) return true;
+        acks = 0;
+      } else if (wrote) {
+        if (++acks >= 2) return true;
+      } else {
+        acks = 0;
+      }
+      await Future.delayed(pause);
+    }
+    return false;
+  }
+
+  // Погасить оба индикаторных светодиода. safeAllOff их намеренно не
+  // трогает (красный должен сигналить аварию), поэтому после отказа в
+  // обработке зелёный "идёт обработка" оставался гореть на выведенном
+  // аппарате — вызывать явно там, где цикл оборван.
+  static Future<void> ledsOff() async {
+    await setLedGreen(false);
+    await setLedRed(false);
   }
 
   // Фактическое состояние всех 12 используемых выходов одной транзакцией
@@ -225,6 +275,56 @@ class ModbusService {
     }
   }
 
+  // FC15 — запись нескольких катушек одним кадром. Возвращает статус, а не
+  // просто bool: важно различать "нет ответа" и "ответил отказом функции"
+  // (05 8F 01 — устройство не поддерживает FC15).
+  static Future<({String status, int? exceptionCode})> scanWriteMultipleCoils({
+    required int slaveId,
+    required int addr,
+    required List<bool> values,
+  }) async {
+    try {
+      final result = await _channel.invokeMethod<Map>(
+        'scanWriteMultipleCoils',
+        {'slaveId': slaveId, 'addr': addr, 'values': values},
+      );
+      if (result == null) return (status: 'no_response', exceptionCode: null);
+      return (
+        status: result['status'] as String? ?? 'no_response',
+        exceptionCode: result['exceptionCode'] as int?,
+      );
+    } catch (e) {
+      debugPrint('ModbusService.scanWriteMultipleCoils error: $e');
+      return (status: 'no_response', exceptionCode: null);
+    }
+  }
+
+  // FC16 — запись нескольких регистров одним кадром. Нужна для устройств
+  // без FC06 (Chint DDSU666 — по мануалу только 03/16, даже для одного
+  // регистра). Статус вместо bool — та же причина, что у
+  // scanWriteMultipleCoils: важно различить "нет ответа" от "отказ функции".
+  static Future<({String status, int? exceptionCode})>
+  scanWriteMultipleRegisters({
+    required int slaveId,
+    required int addr,
+    required List<int> values,
+  }) async {
+    try {
+      final result = await _channel.invokeMethod<Map>(
+        'scanWriteMultipleRegisters',
+        {'slaveId': slaveId, 'addr': addr, 'values': values},
+      );
+      if (result == null) return (status: 'no_response', exceptionCode: null);
+      return (
+        status: result['status'] as String? ?? 'no_response',
+        exceptionCode: result['exceptionCode'] as int?,
+      );
+    } catch (e) {
+      debugPrint('ModbusService.scanWriteMultipleRegisters error: $e');
+      return (status: 'no_response', exceptionCode: null);
+    }
+  }
+
   // Перебор скорости порта — на каждой пробует slaveId, возвращает нашедшую
   // скорость или null, если ни на одной ответа не было. Порт закрывается
   // и переоткрывается заново на каждой скорости (иначе это не сработало
@@ -234,8 +334,8 @@ class ModbusService {
   static Future<int?> baudSweep({
     required int slaveId,
     List<int> bauds = const [4800, 19200, 38400, 115200],
-    String port = '/dev/ttyS5',
-    int originalBaud = 9600,
+    String port = BusParams.port,
+    int originalBaud = BusParams.baud,
   }) async {
     try {
       return await _channel.invokeMethod<int>('baudSweep', {
@@ -250,6 +350,95 @@ class ModbusService {
     }
   }
 
+  // Диагностика "чётность отличается от ожидаемой" (задача "Chint
+  // DDSU666: найти счётчик"). Временно переоткрывает порт с указанной
+  // чётностью ('none'/'odd'/'even') — дальнейшие запросы (например,
+  // сканер адресов) идут уже через неё. В отличие от baudSweep НЕ
+  // восстанавливает ничего сама: вызывать повторно с parity: 'none'
+  // после диагностики, иначе приложение останется без связи с боевым
+  // модулем на обычных параметрах порта.
+  static Future<bool> openWithParity({
+    String port = BusParams.port,
+    int baud = BusParams.baud,
+    required String parity,
+  }) async {
+    try {
+      return await _channel.invokeMethod<bool>('openWithParity', {
+            'port': port,
+            'baud': baud,
+            'parity': parity,
+          }) ??
+          false;
+    } catch (e) {
+      debugPrint('ModbusService.openWithParity error: $e');
+      return false;
+    }
+  }
+
+  // Управляемая смена Slave ID (задача "смена Slave ID CWT-BK-1616T-S") —
+  // Фаза 1: опознание (если не пропущено) + запись нового адреса +
+  // фиксация. Заканчивается ПЕРЕД перезапуском питания модуля — дальше
+  // ход только через changeSlaveIdPhase2, после того как оператор снимет
+  // и подаст питание. "blocked" отличает "остановлено опознанием, запись
+  // даже не начиналась" от прочих отказов (это разные сообщения в UI).
+  static Future<ChangeSlaveIdResult> changeSlaveIdPhase1({
+    required int oldAddr,
+    required int newAddr,
+    bool skipIdentification = false,
+  }) async {
+    try {
+      final result = await _channel.invokeMethod<Map>('changeSlaveIdPhase1', {
+        'oldAddr': oldAddr,
+        'newAddr': newAddr,
+        'skipIdentification': skipIdentification,
+      });
+      if (result == null) {
+        return const ChangeSlaveIdResult(ok: false, log: []);
+      }
+      return ChangeSlaveIdResult(
+        ok: result['ok'] as bool? ?? false,
+        log: ((result['log'] as List?) ?? const [])
+            .map((e) => e as String)
+            .toList(),
+        blocked: result['blocked'] as bool? ?? false,
+      );
+    } catch (e) {
+      debugPrint('ModbusService.changeSlaveIdPhase1 error: $e');
+      return const ChangeSlaveIdResult(ok: false, log: []);
+    }
+  }
+
+  // Фаза 2: запускается оператором кнопкой "Продолжить проверку" после
+  // снятия/подачи питания на модуль — проверяет новый адрес, контрольным
+  // выстрелом убеждается, что старый адрес замолчал, и снимает дамп 16
+  // регистров нового адреса.
+  static Future<ChangeSlaveIdPhase2Result> changeSlaveIdPhase2({
+    required int oldAddr,
+    required int newAddr,
+  }) async {
+    try {
+      final result = await _channel.invokeMethod<Map>('changeSlaveIdPhase2', {
+        'oldAddr': oldAddr,
+        'newAddr': newAddr,
+      });
+      if (result == null) {
+        return const ChangeSlaveIdPhase2Result(ok: false, log: []);
+      }
+      return ChangeSlaveIdPhase2Result(
+        ok: result['ok'] as bool? ?? false,
+        log: ((result['log'] as List?) ?? const [])
+            .map((e) => e as String)
+            .toList(),
+        newAddrOk: result['newAddrOk'] as bool?,
+        oldAddrSilent: result['oldAddrSilent'] as bool?,
+        dump: (result['dump'] as List?)?.map((e) => e as int).toList(),
+      );
+    } catch (e) {
+      debugPrint('ModbusService.changeSlaveIdPhase2 error: $e');
+      return const ChangeSlaveIdPhase2Result(ok: false, log: []);
+    }
+  }
+
   // Читает температуру термопары, канал 0-3. Возвращает °C,
   // либо null при ошибке чтения (не путать с настоящим 0°C).
   static Future<double?> readTemperature({int channel = 0}) async {
@@ -261,6 +450,53 @@ class ModbusService {
       debugPrint('ModbusService.readTemperature error: $e');
       return null;
     }
+  }
+
+  // Отладочная "заморозка" показания термопары (задача "детектор отказа
+  // датчика температуры", часть 2, п.11). Подмена целиком на нативной
+  // стороне (readTemperature отдаёт последнее прочитанное значение, шину не
+  // трогает); живёт до ручного выключения, но не дольше 30 минут
+  // (ModbusChannel.TEMPERATURE_FROZEN_AUTO_OFF_MS). Возвращает значение,
+  // на котором заморожено, либо null (выключено / заморозить было нечем).
+  static Future<double?> setTemperatureFrozen(bool value) async {
+    try {
+      return await _channel.invokeMethod<double>('setTemperatureFrozen', {
+        'value': value,
+      });
+    } catch (e) {
+      debugPrint('ModbusService.setTemperatureFrozen error: $e');
+      return null;
+    }
+  }
+
+  // Реальное состояние заморозки — вкладка "Диагностика" пересоздаётся при
+  // переключении, а флаг живёт дольше неё.
+  static Future<({bool frozen, double? value})> getTemperatureFrozen() async {
+    try {
+      final r = await _channel.invokeMethod<Map>('getTemperatureFrozen');
+      return (
+        frozen: r?['frozen'] as bool? ?? false,
+        value: (r?['value'] as num?)?.toDouble(),
+      );
+    } catch (e) {
+      debugPrint('ModbusService.getTemperatureFrozen error: $e');
+      return (frozen: false, value: null);
+    }
+  }
+
+  // Коды активных отладочных режимов — идут в регулярную отправку
+  // состояния в облако (SyncService), чтобы оператор видел в веб-панели, что
+  // аппарат в отладочном режиме, даже если события о включении давно
+  // прошли. Аппарат, принимающий деньги, не должен уметь это спрятать.
+  static Future<List<String>> activeDebugModes() async {
+    final modes = <String>[];
+    if (await getCoinAcceptorSimulatedDown()) {
+      modes.add('simulate_coin_acceptor_down');
+    }
+    if ((await getTemperatureFrozen()).frozen) {
+      modes.add('freeze_temperature');
+    }
+    return modes;
   }
 
   // Читает данные счётчика энергии DDS6619: voltage (В), current (А),
@@ -313,8 +549,20 @@ class ModbusService {
     }
   }
 
+  // Приём оплаты заблокирован (задача "вывод аппарата из обслуживания",
+  // требование 8): выставляется AppNotifier при выводе из обслуживания.
+  // Проверяется ЗДЕСЬ, в самом платёжном сервисе, а не только на экране
+  // ожидания — ни таймеры, ни автовозврат по неактивности, ни отладочные
+  // переключатели не должны сделать опрос монетоприёмника достижимым.
+  static bool paymentBlocked = false;
+
   // Запускает фоновый счётчик импульсов монетоприёмника (экран оплаты).
   static Future<void> startPaymentCoinCounting() async {
+    if (paymentBlocked) {
+      debugPrint('ModbusService.startPaymentCoinCounting: заблокировано '
+          '(аппарат выведен из обслуживания)');
+      return;
+    }
     try {
       await _channel.invokeMethod('startPaymentCoinCounting');
     } catch (e) {
@@ -331,13 +579,59 @@ class ModbusService {
     }
   }
 
-  // Номинал последней принятой монеты в центах (0 = новой монеты нет).
-  static Future<int> getLastCoinCents() async {
+  // Разом: номинал последней принятой монеты (0 = новой монеты нет),
+  // счётчик неудачных чтений DI8 за текущее окно оплаты и флаг "приём
+  // монет отказал" (задача "контроль цикла по электросчётчику, готовность
+  // оплаты" — "отказ вместо недосчёта", п.2-3). down взводится один раз
+  // за окно и снимается только новым startPaymentCoinCounting().
+  static Future<({int cents, int failureCount, bool down})>
+  getCoinAcceptorStatus() async {
     try {
-      return await _channel.invokeMethod<int>('getLastCoinCents') ?? 0;
+      final result = await _channel.invokeMethod<Map>('getCoinAcceptorStatus');
+      return (
+        cents: result?['cents'] as int? ?? 0,
+        failureCount: result?['failureCount'] as int? ?? 0,
+        down: result?['down'] as bool? ?? false,
+      );
     } catch (e) {
-      debugPrint('ModbusService.getLastCoinCents error: $e');
-      return 0;
+      debugPrint('ModbusService.getCoinAcceptorStatus error: $e');
+      return (cents: 0, failureCount: 0, down: false);
+    }
+  }
+
+  // Сервисное меню, вкладка "Диагностика" — отладочный переключатель
+  // "имитировать отказ монетоприёмника": подделывает getCoinAcceptorStatus()
+  // на нативной стороне без единого обращения к шине, чтобы проверить
+  // ветку отказа (доплата картой / уход в error.dart) сколько угодно раз
+  // одинаково, не рискуя железом. Специально НЕ сбрасывается при уходе с
+  // вкладки — тест проверяется на реальном экране оплаты, за пределами
+  // сервисного меню; живёт до ручного выключения, но не дольше 30 минут
+  // (ModbusChannel.COIN_SIMULATED_DOWN_AUTO_OFF_MS — страховка от забытого
+  // тумблера); перезапуск приложения тоже сбрасывает.
+  static Future<void> setCoinAcceptorSimulatedDown(bool value) async {
+    try {
+      await _channel.invokeMethod('setCoinAcceptorSimulatedDown', {
+        'value': value,
+      });
+    } catch (e) {
+      debugPrint('ModbusService.setCoinAcceptorSimulatedDown error: $e');
+    }
+  }
+
+  // Реальное состояние флага выше — вкладка "Диагностика" пересоздаёт своё
+  // состояние при каждом переключении (см. комментарий у _simulateCoinDown
+  // в service_menu.dart), а флаг переживает это переключение, так что
+  // тумблер обязан спросить нативную сторону при инициализации, а не
+  // молча считать, что всё выключено.
+  static Future<bool> getCoinAcceptorSimulatedDown() async {
+    try {
+      return await _channel.invokeMethod<bool>(
+            'getCoinAcceptorSimulatedDown',
+          ) ??
+          false;
+    } catch (e) {
+      debugPrint('ModbusService.getCoinAcceptorSimulatedDown error: $e');
+      return false;
     }
   }
 
@@ -416,5 +710,39 @@ class ScanReadResult {
     this.exceptionCode,
     this.boolValues,
     this.intValues,
+  });
+}
+
+// Результат фазы 1 смены Slave ID — построчный лог и итог. "blocked":
+// true означает, что запись не начиналась вообще (сигнатура не совпала
+// или порт не открыт) — отличается от "ok: false" после уже начатой
+// записи, которая требует другого сообщения технику.
+class ChangeSlaveIdResult {
+  final bool ok;
+  final List<String> log;
+  final bool blocked;
+
+  const ChangeSlaveIdResult({
+    required this.ok,
+    required this.log,
+    this.blocked = false,
+  });
+}
+
+// Результат фазы 2 — после того как оператор снял/подал питание на
+// модуль и нажал "Продолжить проверку".
+class ChangeSlaveIdPhase2Result {
+  final bool ok;
+  final List<String> log;
+  final bool? newAddrOk;
+  final bool? oldAddrSilent;
+  final List<int>? dump;
+
+  const ChangeSlaveIdPhase2Result({
+    required this.ok,
+    required this.log,
+    this.newAddrOk,
+    this.oldAddrSilent,
+    this.dump,
   });
 }

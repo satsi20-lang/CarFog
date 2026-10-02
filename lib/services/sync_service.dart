@@ -125,7 +125,7 @@ class SyncService {
       // всё равно должен отработать как раньше.
       Map<String, dynamic>? configToSend;
       try {
-        configToSend = _configToSendOrNull();
+        configToSend = await _configToSendOrNull();
       } catch (e) {
         debugPrint('SyncService: не удалось собрать слепок настроек: $e');
       }
@@ -165,8 +165,21 @@ class SyncService {
   // null, если слепок отправлять не нужно: настройки не менялись с
   // последней успешной отправки и сутки ещё не прошли. Сравнение — по
   // содержимому (jsonEncode), а не по ссылке на Map (задача 3.2).
-  Map<String, dynamic>? _configToSendOrNull() {
+  Future<Map<String, dynamic>?> _configToSendOrNull() async {
     final snapshot = notifier.config.reportedSnapshot();
+
+    // Признак "выведен из обслуживания" и активные отладочные режимы идут в
+    // регулярную отправку состояния (задача "вывод аппарата из
+    // обслуживания", требование 10): в веб-панели видно и без нового
+    // события, а любое изменение (в том числе автосброс отладочного
+    // режима через 30 минут) меняет содержимое слепка и уходит само.
+    final oos = notifier.outOfService;
+    snapshot['out_of_service'] = oos != null;
+    if (oos != null) {
+      snapshot['out_of_service_code'] = oos.code;
+      snapshot['out_of_service_since'] = oos.since.toIso8601String();
+    }
+    snapshot['debug_modes'] = await ModbusService.activeDebugModes();
 
     final last = _lastSentConfigSnapshot;
     final sentAt = _lastConfigSentAt;
@@ -258,6 +271,22 @@ class SyncService {
           notifier.resetSession();
           ok = true;
           result = 'сессия сброшена';
+          break;
+
+        // Снятие вывода из обслуживания — ТОЛЬКО на месте, из сервисного
+        // меню после пробного цикла (задача "вывод аппарата из
+        // обслуживания", требование 13). Отказ физический (сгорел
+        // предохранитель, пробило реле) — дистанционно он не чинится, а
+        // удалённое снятие вернуло бы аппарат к сбору денег с тем же
+        // дефектом. Команда не выполняется, отказ уходит в ответе и в
+        // событии commandExecuted ниже.
+        case 'clear_out_of_service':
+        case 'reset_out_of_service':
+        case 'resume_service':
+          result = 'отклонено: вывод из обслуживания снимается только на '
+              'месте, из сервисного меню, после пробного цикла';
+          debugPrint('SyncService: удалённое снятие вывода из обслуживания '
+              'проигнорировано (${command.action})');
           break;
 
         default:

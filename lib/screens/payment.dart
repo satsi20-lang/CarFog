@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
+import '../services/cloud_service.dart';
 import '../services/modbus_service.dart';
 import '../services/session_service.dart';
 import '../widgets/fog_background.dart';
@@ -16,6 +17,7 @@ const Map<String, Map<String, String>> _i18n = {
     'remaining': 'Осталось',
     'instruction': 'Внесите монеты',
     'instruction_with_card': 'Внесите монеты или приложите карту',
+    'instruction_coin_down_with_card': 'Приём монет недоступен — оплатите картой',
     'cancel': 'Отмена',
   },
   'en': {
@@ -26,6 +28,7 @@ const Map<String, Map<String, String>> _i18n = {
     'remaining': 'Remaining',
     'instruction': 'Insert coins',
     'instruction_with_card': 'Insert coins or tap your card',
+    'instruction_coin_down_with_card': 'Coin payment unavailable — pay by card',
     'cancel': 'Cancel',
   },
   'et': {
@@ -36,6 +39,7 @@ const Map<String, Map<String, String>> _i18n = {
     'remaining': 'Jäänud',
     'instruction': 'Lisa münte',
     'instruction_with_card': 'Lisa münte või kasuta kaarti',
+    'instruction_coin_down_with_card': 'Mündimakse ei toimi — kasuta kaarti',
     'cancel': 'Tühista',
   },
 };
@@ -50,7 +54,11 @@ class PaymentScreen extends StatefulWidget {
 class _PaymentScreenState extends State<PaymentScreen> {
   int _priceCents = 200;
   int _balanceCents = 0;
-  int _secondsLeft = 120;
+  static const int _timeoutS = 120;
+  int _secondsLeft = _timeoutS;
+  // Переход к прогреву уже запущен: монета и карта одновременно не должны
+  // запустить его дважды (двойная сессия, двойной прогрев).
+  bool _proceeding = false;
 
   Timer? _coinTimer;
   Timer? _countdownTimer;
@@ -63,10 +71,31 @@ class _PaymentScreenState extends State<PaymentScreen> {
   bool _checkingCoin = false;
   bool _checkingTerminal = false;
 
+  // "Отказ вместо недосчёта" (задача "контроль цикла по электросчётчику,
+  // готовность оплаты", п.2-3). _coinFailureCount копится за всё окно
+  // оплаты и уходит в запись о транзакции при успехе — даже если больше
+  // ничего не делать, спор с клиентом решается по записи. _coinAcceptorDown
+  // — приём монет закрыт (несколько неудач подряд), обрабатывается один
+  // раз через _handleCoinAcceptorDown().
+  int _coinFailureCount = 0;
+  bool _coinAcceptorDown = false;
+
   @override
   void initState() {
     super.initState();
     final cfg = context.read<AppNotifier>().config;
+    // Третий рубеж защиты (первые два — AppNotifier.transition и роутер, см.
+    // "вывод аппарата из обслуживания"): сюда попасть нельзя, но если всё
+    // же — не заводить ни опрос монетоприёмника, ни терминал, ни
+    // таймеры, и сразу уйти на экран "не работает".
+    if (context.read<AppNotifier>().isOutOfService) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          context.read<AppNotifier>().transition(AppState.outOfService);
+        }
+      });
+      return;
+    }
     _priceCents = cfg.treatmentPriceCents;
     ModbusService.startPaymentCoinCounting();
     _coinTimer = Timer.periodic(
@@ -106,18 +135,62 @@ class _PaymentScreenState extends State<PaymentScreen> {
   }
 
   Future<void> _checkCoin() async {
-    if (_checkingCoin) return;
+    if (_checkingCoin || _coinAcceptorDown || ModbusService.paymentBlocked) {
+      return;
+    }
     _checkingCoin = true;
     try {
-      final cents = await ModbusService.getLastCoinCents();
-      if (cents > 0 && mounted) {
-        setState(() => _balanceCents += cents);
+      final status = await ModbusService.getCoinAcceptorStatus();
+      _coinFailureCount = status.failureCount;
+      if (status.cents > 0 && mounted) {
+        setState(() {
+          _balanceCents += status.cents;
+          // Клиент вносит деньги — окно оплаты продлевается; раньше 120 с
+          // шли от входа на экран, и внесённая часть суммы пропадала по
+          // таймауту, пока клиент искал монеты.
+          _secondsLeft = _timeoutS;
+        });
+      }
+      if (status.down) {
+        await _handleCoinAcceptorDown();
+        return;
       }
       if (_balanceCents >= _priceCents) {
         _proceedToTreatment(paymentMethod: 'coins');
       }
     } finally {
       _checkingCoin = false;
+    }
+  }
+
+  // "Отказ вместо недосчёта", п.3 (задача "контроль цикла по
+  // электросчётчику, готовность оплаты") — вызывается один раз, когда
+  // нативная сторона зафиксировала несколько неудачных чтений DI8 подряд
+  // и сама закрыла приём монет (недосчитанный ряд импульсов уже отброшен
+  // там же, баланс здесь не трогаем — уже подтверждённые монеты остаются
+  // засчитанными). Если рядом работает терминал — клиент может закончить
+  // оплату картой, монетоприёмник просто выключается из опроса. Если
+  // терминала нет — платить больше нечем, это ошибка для персонала.
+  Future<void> _handleCoinAcceptorDown() async {
+    if (_coinAcceptorDown) return;
+    _coinTimer?.cancel();
+    if (mounted) {
+      setState(() => _coinAcceptorDown = true);
+    } else {
+      _coinAcceptorDown = true;
+    }
+    unawaited(
+      CloudService.report(
+        CloudEventType.hardwareError,
+        data: {
+          'code': 'coin_acceptor_unavailable',
+          'balance_cents': _balanceCents,
+          'coin_failure_count': _coinFailureCount,
+        },
+      ),
+    );
+    if (!_terminalEnabled && mounted) {
+      context.read<AppNotifier>().goToError('coin_acceptor_unavailable');
     }
   }
 
@@ -128,7 +201,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   // оплаты 'mixed', чтобы сумма монет не потерялась в отчётности
   // (задача 4.3).
   Future<void> _checkTerminal(AppConfig cfg) async {
-    if (_checkingTerminal) return;
+    if (_checkingTerminal || ModbusService.paymentBlocked) return;
     _checkingTerminal = true;
     final TerminalPoll? poll;
     try {
@@ -151,11 +224,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
   void _tickCountdown() {
     setState(() => _secondsLeft--);
     if (_secondsLeft <= 0) {
-      _cancel();
+      _cancel(reason: 'timeout');
     }
   }
 
   void _proceedToTreatment({required String paymentMethod, int? coinsCents}) {
+    if (ModbusService.paymentBlocked || _proceeding) return;
+    _proceeding = true;
     _coinTimer?.cancel();
     _countdownTimer?.cancel();
     _terminalTimer?.cancel();
@@ -181,16 +256,35 @@ class _PaymentScreenState extends State<PaymentScreen> {
         paidCents: paidCents,
         paymentMethod: paymentMethod,
         coinsCents: coinsCents,
+        coinFailureCount: _coinFailureCount == 0 ? null : _coinFailureCount,
+        readStartEnergy: notifier.config.energyMeterInstalled,
       ),
     );
     notifier.transition(AppState.preparing);
   }
 
-  void _cancel() {
+  void _cancel({String reason = 'cancelled'}) {
+    if (_proceeding) return;
     _coinTimer?.cancel();
     _countdownTimer?.cancel();
     _terminalTimer?.cancel();
     ModbusService.stopPaymentCoinCounting();
+    SessionService.discard();
+    // Внесённая часть суммы при отмене/таймауте не возвращается монетоприёмником
+    // — раньше она пропадала без следа, теперь оператор видит её в журнале.
+    if (_balanceCents > 0) {
+      unawaited(
+        CloudService.report(
+          CloudEventType.paymentAbandoned,
+          data: {
+            'reason': reason,
+            'balance_cents': _balanceCents,
+            'price_cents': _priceCents,
+            if (_coinFailureCount > 0) 'coin_failure_count': _coinFailureCount,
+          },
+        ),
+      );
+    }
     if (mounted) {
       context.read<AppNotifier>().resetSession();
     }
@@ -305,9 +399,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        _terminalEnabled
-                            ? t['instruction_with_card']!
-                            : t['instruction']!,
+                        _coinAcceptorDown && _terminalEnabled
+                            ? t['instruction_coin_down_with_card']!
+                            : _terminalEnabled
+                                ? t['instruction_with_card']!
+                                : t['instruction']!,
                         textAlign: TextAlign.center,
                         style: const TextStyle(
                           color: Colors.white70,

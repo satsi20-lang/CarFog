@@ -22,6 +22,11 @@ class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.carfog.dryfog/modbus"
     private val STORAGE_CHANNEL = "com.carfog.dryfog/storage"
     private val SYSTEM_CHANNEL = "com.carfog.dryfog/system"
+
+    // Признак "выведен из обслуживания" — отдельный файл с fsync/атомарным
+    // rename и контрольной суммой (см. OutOfServiceStore). filesDir
+    // инициализируется только после attachBaseContext, поэтому lazy.
+    private val outOfServiceStore by lazy { OutOfServiceStore(filesDir) }
     private var modbusChannel: ModbusChannel? = null
 
     // true, если этот запуск активности вызван BootReceiver'ом
@@ -86,9 +91,10 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         // Modbus-обмен — блокирующий I/O (таймауты чтения, sleep для
         // межфреймовой паузы и подавления эха). Обычный MethodChannel
-        // выполняет onMethodCall на UI-потоке — при нескольких вызовах
-        // подряд (например safeAllOff на 12 каналов) это уводит за границу
-        // ANR. Фоновая TaskQueue переносит обработку на отдельный поток.
+        // выполняет onMethodCall на UI-потоке — при нескольких транзакциях
+        // подряд (например полный опрос сканера или перебор скорости) это
+        // уводит за границу ANR. Фоновая TaskQueue переносит обработку на
+        // отдельный поток.
         val taskQueue = flutterEngine.dartExecutor.binaryMessenger
             .makeBackgroundTaskQueue(BinaryMessenger.TaskQueueOptions())
         val channel = MethodChannel(
@@ -132,6 +138,22 @@ class MainActivity : FlutterActivity() {
                         result.success(null)
                     }
                     "consumeStartReason" -> result.success(consumeStartReason())
+                    // Вывод аппарата из обслуживания (OutOfServiceStore) —
+                    // синхронная запись с fsync, ответ приходит только
+                    // после подтверждения записи на диск.
+                    "writeOutOfService" -> {
+                        val json = call.argument<String>("json")
+                        result.success(
+                            if (json == null) false else outOfServiceStore.write(json)
+                        )
+                    }
+                    "readOutOfService" -> {
+                        val r = outOfServiceStore.read()
+                        result.success(
+                            mapOf("status" to r.status.name.lowercase(), "json" to r.json)
+                        )
+                    }
+                    "clearOutOfService" -> result.success(outOfServiceStore.clear())
                     "getLaunchDiagnostics" -> result.success(
                         mapOf(
                             "intent_action" to launchAction,
@@ -238,6 +260,9 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        // Освободить порт ДО обнуления: иначе новый экземпляр Activity в том
+        // же процессе не сможет открыть шину (см. ModbusChannel.release).
+        modbusChannel?.release()
         modbusChannel = null
         super.onDestroy()
     }

@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import '../services/config_service.dart';
+import '../services/modbus_service.dart';
+import 'bus_map.dart';
+import 'out_of_service.dart';
 
 // Активное количество ароматов на этом конкретном аппарате: столько
-// насосов (DO 0..kFlavorCount-1) и датчиков уровня (DI 0..kFlavorCount-1)
-// реально распаяно и показывается покупателю. Хранилище (flavorNames,
-// уровни канистр) и низкоуровневое железо всегда рассчитаны на полные
-// 8 каналов DIO-модуля — так что для перехода на 6 или 8 ароматов
-// достаточно поменять только это число, ничего больше трогать не нужно.
+// насосов (PumpChannel.do_ 0..kFlavorCount-1, bus_map.dart) и датчиков
+// уровня (PumpChannel.sensorDI 0..kFlavorCount-1) реально распаяно и
+// показывается покупателю. Хранилище (flavorNames, уровни канистр) и
+// низкоуровневое железо всегда рассчитаны на полный PumpChannel.values —
+// так что для перехода на 6 или 8 ароматов достаточно поменять только это
+// число, ничего больше трогать не нужно.
 const int kFlavorCount = 4;
 
 // ============================================================
@@ -29,7 +33,8 @@ class AppConfig {
   // свежая сборка на планшете разработчика не захватывала рабочий стол.
   bool kioskModeEnabled;
 
-  // Платёжный терминал (клемма DI11 модуля MBSL16DI16DO = канал 10).
+  // Платёжный терминал — см. IoModuleInputs.defaultPaymentTerminalDI
+  // (bus_map.dart) для дефолта и истории решения по номеру канала.
   // Форма сигнала не измерена заранее — отсюда настраиваемые режим и
   // защитная пауза вместо жёсткой логики, калибруются по журналу на
   // вкладке "Датчики" сервисного меню.
@@ -51,6 +56,28 @@ class AppConfig {
   // режим — включать явно, когда обмен по шине подтверждённо исправен.
   bool outputWatchdogEnabled;
 
+  // "Установлено" — по каждому устройству на шине отдельно (задача "убрать
+  // бесполезный опрос отсутствующих устройств"), карта адресов и признаков
+  // — bus_map.dart (BusDevice.isInstalled читает именно эти поля).
+  // Выключенный признак останавливает информационный опрос этого
+  // устройства целиком — не просто прячет ошибку в UI, а не даёт
+  // транзакции вообще уйти на шину. Сейчас реально на шине только модуль
+  // ввода-вывода; термопара временно снята, счётчик и монетоприёмник ещё
+  // не смонтированы — отсюда дефолты. paymentTerminalEnabled выше — тот
+  // же по смыслу признак для терминала, отдельное поле под него не
+  // заводим.
+  bool dioInstalled;
+  bool thermoInstalled;
+  bool energyMeterInstalled;
+  bool coinAcceptorInstalled;
+
+  // Тариф на электроэнергию, €/кВт·ч — редактируется в сервисном меню,
+  // используется только для справочной строки "стоимость простоя за
+  // сутки" (задача "контроль цикла по электросчётчику", фаза 2, часть 3).
+  // Не аналитика: PowerSignature.idleW (~15 Вт) даёт около 11 кВт·ч в
+  // месяц, это пара евро — цифра для оператора, не для ценообразования.
+  double idlePowerTariffPerKwh;
+
   Map<String, List<String>> flavorNames;
 
   AppConfig({
@@ -65,11 +92,16 @@ class AppConfig {
     this.cloudToken = '',
     this.cloudEnabled = false,
     this.kioskModeEnabled = false,
-    this.paymentTerminalChannel = 10,
+    this.paymentTerminalChannel = IoModuleInputs.defaultPaymentTerminalDI,
     this.paymentTerminalMode = 'edge',
     this.paymentTerminalGuardMs = 3000,
     this.paymentTerminalEnabled = false,
     this.outputWatchdogEnabled = false,
+    this.dioInstalled = true,
+    this.thermoInstalled = false,
+    this.energyMeterInstalled = false,
+    this.coinAcceptorInstalled = false,
+    this.idlePowerTariffPerKwh = 0.20,
     Map<String, List<String>>? flavorNames,
   }) : flavorNames =
            flavorNames ??
@@ -123,6 +155,11 @@ class AppConfig {
     int? paymentTerminalGuardMs,
     bool? paymentTerminalEnabled,
     bool? outputWatchdogEnabled,
+    bool? dioInstalled,
+    bool? thermoInstalled,
+    bool? energyMeterInstalled,
+    bool? coinAcceptorInstalled,
+    double? idlePowerTariffPerKwh,
     Map<String, List<String>>? flavorNames,
   }) {
     return AppConfig(
@@ -146,6 +183,13 @@ class AppConfig {
           paymentTerminalEnabled ?? this.paymentTerminalEnabled,
       outputWatchdogEnabled:
           outputWatchdogEnabled ?? this.outputWatchdogEnabled,
+      dioInstalled: dioInstalled ?? this.dioInstalled,
+      thermoInstalled: thermoInstalled ?? this.thermoInstalled,
+      energyMeterInstalled: energyMeterInstalled ?? this.energyMeterInstalled,
+      coinAcceptorInstalled:
+          coinAcceptorInstalled ?? this.coinAcceptorInstalled,
+      idlePowerTariffPerKwh:
+          idlePowerTariffPerKwh ?? this.idlePowerTariffPerKwh,
       flavorNames: flavorNames ?? this.flavorNames,
     );
   }
@@ -186,6 +230,9 @@ enum AppState {
   error,
   servicePinEntry,
   serviceMenu,
+  // Аппарат выведен из обслуживания (задача "вывод аппарата из
+  // обслуживания"): сюда уходит всё, пока признак не снят вручную.
+  outOfService,
 }
 
 // ============================================================
@@ -227,10 +274,88 @@ class AppNotifier extends ChangeNotifier {
   bool _busHealthy = false;
   bool get busHealthy => _busHealthy;
 
+  // --- Выведен из обслуживания (задача "вывод аппарата из обслуживания") ---
+  // null — аппарат работает. Выставляется ТОЛЬКО из OutOfServiceService
+  // (после подтверждённой записи на диск) и при старте приложения из
+  // main.dart, снимается только вручную на месте.
+  OutOfServiceState? _outOfService;
+  OutOfServiceState? get outOfService => _outOfService;
+  bool get isOutOfService => _outOfService != null;
+
+  // Пока признак стоит, достижимы только экраны, которые не принимают
+  // деньги: сам экран "не работает", PIN/сервисное меню (техник) и экран
+  // ошибки (клиенту, чья оплата уже прошла к моменту отказа, нужно
+  // объяснить про возврат; он сам возвращается на экран "не работает" по
+  // таймеру).
+  static bool _allowedWhileOutOfService(AppState s) {
+    switch (s) {
+      case AppState.outOfService:
+      case AppState.servicePinEntry:
+      case AppState.serviceMenu:
+      case AppState.error:
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  // Выставить признак. showScreen=false — вызывающий сам сразу покажет
+  // экран ошибки клиенту (preparing/treating после отказа), экран "не
+  // работает" появится после него по таймеру возврата.
+  void enterOutOfService(OutOfServiceState state, {bool showScreen = true}) {
+    _outOfService = state;
+    ModbusService.paymentBlocked = true;
+    _selectedFlavor = null;
+    if (showScreen && _state != AppState.servicePinEntry && _state != AppState.serviceMenu) {
+      _errorCode = null;
+      _state = AppState.outOfService;
+    }
+    notifyListeners();
+  }
+
+  // Обновить запись (повторный отказ, в том числе на пробном цикле) без
+  // смены экрана.
+  void updateOutOfService(OutOfServiceState state) {
+    _outOfService = state;
+    notifyListeners();
+  }
+
+  // Снятие признака. Вызывать только из OutOfServiceService.clearByTechnician
+  // (после подтверждённого удаления записи и успешного пробного цикла).
+  void leaveOutOfService() {
+    _outOfService = null;
+    ModbusService.paymentBlocked = false;
+    if (_state == AppState.outOfService) {
+      _state = AppState.standby;
+    }
+    notifyListeners();
+  }
+
+  // Порт занят другим процессом (задача "эксклюзивное открытие
+  // последовательного порта") — техническая деталь ПОЧЕМУ шина недоступна,
+  // отдельно от самого busHealthy. Не показывается клиенту (экран ошибки
+  // остаётся на общем 'bus_unavailable' без технических подробностей) —
+  // только технику, на вкладке Диагностика. null, если порт занят не был
+  // либо шина уже восстановилась.
+  String? _busBusyPort;
+  int? _busBusyPid;
+  String? get busBusyPort => _busBusyPort;
+  int? get busBusyPid => _busBusyPid;
+
+  void setBusBusyInfo(String port, int? pid) {
+    _busBusyPort = port;
+    _busBusyPid = pid;
+    notifyListeners();
+  }
+
   void setBusHealthy(bool healthy) {
     if (_busHealthy == healthy) return;
     final was = _busHealthy;
     _busHealthy = healthy;
+    if (healthy) {
+      _busBusyPort = null;
+      _busBusyPid = null;
+    }
     // Связь восстановилась, пока клиент стоял на экране "аппарат не
     // работает" — возвращаемся в обычный режим сами, без перезапуска
     // (задача 4.5). Не трогаем других причин ошибки (перегрев и т.д.) —
@@ -250,6 +375,13 @@ class AppNotifier extends ChangeNotifier {
   // ============================================================
 
   void transition(AppState newState) {
+    // Единая точка входа во все экраны: пока аппарат выведен из
+    // обслуживания, любая попытка уйти на оплату/прогрев/ожидание
+    // (таймеры, автовозврат по неактивности, выбор аромата, отладочные
+    // переключатели) заворачивается на экран "не работает".
+    if (_outOfService != null && !_allowedWhileOutOfService(newState)) {
+      newState = AppState.outOfService;
+    }
     debugPrint('STATE: $_state → $newState (lang=$_lang)');
     if (newState != AppState.error) _errorCode = null;
     _state = newState;
@@ -275,6 +407,10 @@ class AppNotifier extends ChangeNotifier {
   // ============================================================
 
   void selectFlavor(int index) {
+    if (_outOfService != null) {
+      transition(AppState.outOfService);
+      return;
+    }
     // Не пускаем дальше выбора аромата, если шина недоступна (задача "не
     // брать деньги, если шина недоступна") — приём оплаты при потерянном
     // управлении оборудованием означает, что клиент заплатит и не получит
@@ -303,7 +439,9 @@ class AppNotifier extends ChangeNotifier {
   void resetSession() {
     _selectedFlavor = null;
     _errorCode = null;
-    _state = AppState.standby;
+    // В режиме "выведен из обслуживания" возврат "в ожидание" ведёт на экран
+    // "не работает", а не на заставку, принимающую оплату.
+    _state = _outOfService != null ? AppState.outOfService : AppState.standby;
     notifyListeners();
   }
 

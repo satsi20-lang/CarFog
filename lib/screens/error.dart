@@ -45,6 +45,31 @@ class _ErrorScreenState extends State<ErrorScreen>
       'en': 'Temporarily out of service',
       'ru': 'Аппарат временно не работает',
     },
+    // Задача "контроль цикла по электросчётчику... готовность оплаты" —
+    // "отказ вместо недосчёта": та же дисциплина, что и у bus_unavailable,
+    // без технических подробностей клиенту.
+    'coin_acceptor_unavailable': {
+      'et': 'Mündimakse ajutiselt ei toimi',
+      'en': 'Coin payment temporarily unavailable',
+      'ru': 'Приём монет временно недоступен',
+    },
+    // Задача "контроль цикла по электросчётчику" — проверка нагрева по
+    // счётчику (фаза 2, часть 1): деньги приняты, ТЭН не дал мощности
+    // вообще. Без технических подробностей клиенту — только то, что
+    // обработки не будет и к оплате вернутся/обратятся.
+    'heater_failure': {
+      'et': 'Seade ei saanud käivituda',
+      'en': 'Device could not start',
+      'ru': 'Устройство не смогло запуститься',
+    },
+    // Задача "детектор отказа датчика температуры": тот же смысл для
+    // клиента, что и у heater_failure — обработки не будет, деньги
+    // возвращает персонал; про датчик и подтипы клиенту не говорим.
+    'heater_sensor_fault': {
+      'et': 'Seade ei saanud käivituda',
+      'en': 'Device could not start',
+      'ru': 'Устройство не смогло запуститься',
+    },
   };
 
   static const _errorDetails = {
@@ -73,6 +98,27 @@ class _ErrorScreenState extends State<ErrorScreen>
       'en':
           'Payments are not being accepted right now. Please try again later.',
       'ru': 'Оплата сейчас не принимается. Пожалуйста, попробуйте позже.',
+    },
+    'coin_acceptor_unavailable': {
+      'et': 'Palun kasutage kaardimakset või pöörduge teenindaja poole.',
+      'en': 'Please use card payment or contact the service staff.',
+      'ru': 'Пожалуйста, оплатите картой или обратитесь к персоналу.',
+    },
+    'heater_failure': {
+      'et': 'Teenust ei osutatud. Palun pöörduge teenindaja poole tagasimakse '
+          'saamiseks.',
+      'en': 'The service was not provided. Please contact the service staff '
+          'for a refund.',
+      'ru': 'Услуга не была оказана. Обратитесь к персоналу для возврата '
+          'средств.',
+    },
+    'heater_sensor_fault': {
+      'et': 'Teenust ei osutatud. Palun pöörduge teenindaja poole tagasimakse '
+          'saamiseks.',
+      'en': 'The service was not provided. Please contact the service staff '
+          'for a refund.',
+      'ru': 'Услуга не была оказана. Обратитесь к персоналу для возврата '
+          'средств.',
     },
   };
 
