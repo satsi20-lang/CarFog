@@ -38,6 +38,8 @@ dependencies:
   shared_preferences: ^2.5.5
   video_player: ^2.13.0
   http: ^1.2.0
+  # SHA-256/HMAC для хэша мастер-кода (PBKDF2) и проверки пакетов обновления.
+  crypto: ^3.0.7
 
 dev_dependencies:
   flutter_test:

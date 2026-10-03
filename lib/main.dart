@@ -24,6 +24,7 @@ import 'services/out_of_service_service.dart';
 import 'services/output_watchdog_service.dart';
 import 'services/startup_service.dart';
 import 'services/sync_service.dart';
+import 'services/update_service.dart';
 import 'services/system_service.dart';
 
 void main() async {
@@ -133,6 +134,11 @@ void main() async {
     }
   }());
 
+  // Удалённое обновление (R2): если шло обновление или откат, довести его
+  // до конца (сигнал здоровья, события, итог). Не блокирует запуск.
+  unawaited(UpdateService.onStartup(notifier));
+  unawaited(UpdateService.refreshAdbNetwork());
+
   // Безопасное выключение всего при старте — не блокирует показ UI, но
   // теперь ПОВТОРЯЕТСЯ, пока не подтвердится результат (задача
   // "гарантированное выключение при старте") — раньше это была одна
@@ -213,7 +219,7 @@ class AppRouter extends StatelessWidget {
     // Платные экраны при блоке по конфигурации (термопара/счётчик не
     // отмечены установленными) — тоже только "не работает"; заставка и
     // выбор языка остаются.
-    if (notifier.isConfigBlocked &&
+    if ((notifier.isConfigBlocked || notifier.isMaintenance) &&
         (state == AppState.selectFlavor || state == AppState.payment)) {
       return const OutOfServiceScreen();
     }

@@ -11,6 +11,8 @@ import '../../widgets/lang_switcher.dart';
 import '../../models/out_of_service.dart';
 import '../../models/remote_limits.dart';
 import '../../services/cloud_service.dart';
+import '../../services/master_code_service.dart';
+import '../../services/pin_policy.dart';
 import '../../services/heater_trial_service.dart';
 import '../../services/remote_command_guard.dart';
 import '../../services/diagnostics_service.dart';
@@ -18,6 +20,7 @@ import '../../services/modbus_service.dart';
 import '../../services/out_of_service_service.dart';
 import '../../services/sync_service.dart';
 import '../../services/system_service.dart';
+import '../../services/update_service.dart';
 
 const Map<String, Map<String, String>> _i18n = {
   'ru': {
@@ -35,11 +38,24 @@ const Map<String, Map<String, String>> _i18n = {
     'err_price': 'Цена: от 0.50 € до 20 €',
     'err_duration': 'Длительность: 10–120 сек',
     'err_pin': 'PIN — 4 цифры',
+    'err_pin_weak': 'PIN слишком простой: не 1234, не одинаковые цифры, не по порядку',
+    'mc_title': 'Мастер-код (аварийный вход)',
+    'mc_ack': 'Мастер-код записан',
+    'mc_not_ack': 'Мастер-код НЕ записан — ввод в эксплуатацию не завершён',
+    'mc_show': 'Показать мастер-код',
+    'mc_change': 'Сменить мастер-код',
+    'mc_change_warn': 'Прежний мастер-код перестанет действовать. Новый будет показан один раз. Продолжить?',
+    'mc_shown_title': 'Мастер-код этого аппарата',
+    'mc_shown_warn': 'Запишите код и храните отдельно от аппарата. Повторно показать его нельзя.',
+    'mc_written': 'Я записал',
+    'mc_close_unconfirmed': 'Закрыть без подтверждения',
+    'mc_hint': 'Код нужен, если забыт сервисный PIN. Он свой у каждого аппарата.',
+    'cancel_btn': 'Отмена',
     'compressor_purge_label':
         'Продувка компрессора до включения насосов и ТЭНа (сек)',
     'pump_after_heater_label': 'Работа насоса после выключения ТЭНа (сек)',
-    'err_compressor_purge': 'Продувка компрессора: 1–30 сек',
-    'err_pump_after_heater': 'Работа насоса после ТЭНа: 1–30 сек',
+    'err_compressor_purge': 'Продувка компрессора: 1–60 сек',
+    'err_pump_after_heater': 'Работа насоса после ТЭНа: 1–60 сек',
     'tariff_label': 'Тариф на электроэнергию (€/кВт·ч)',
     'err_tariff': 'Тариф: неотрицательное число',
     'idle_cost_label': 'Стоимость простоя за сутки (справочно)',
@@ -102,6 +118,22 @@ const Map<String, Map<String, String>> _i18n = {
     'tab_cloud': 'Облако',
     'cloud_enabled': 'Отправлять данные в облако',
     'rd_title': 'Удалённая диагностика',
+    'up_title': 'Обновление приложения',
+    'up_version': 'Версия',
+    'up_backup': 'Резервная версия',
+    'up_backup_none': 'нет (появится после первого обновления)',
+    'up_last': 'Последнее обновление',
+    'up_last_none': 'ещё не было',
+    'up_rollback': 'Откатить',
+    'up_rollback_title': 'Откатить на резервную версию?',
+    'up_rollback_body': 'Приложение будет заменено резервной версией и перезапущено. Данные аппарата не стираются. Во время отката оплата не принимается.',
+    'up_rollback_started': 'Откат запущен',
+    'up_rollback_failed': 'Откат не запущен',
+    'up_adb': 'ADB по сети: сохранять после перезагрузки',
+    'up_adb_warn': 'Любой, кто в одной сети с планшетом, сможет подключиться к нему по ADB. Включайте только на время обслуживания и в доверенной сети. Включить?',
+    'up_adb_state': 'Состояние ADB по сети',
+    'up_adb_unknown': 'не определено (нет root)',
+    'up_adb_failed': 'Не удалось изменить (нет root?)',
     'rd_send': 'Отправить диагностику',
     'rd_sending': 'Собираю и отправляю…',
     'rd_last': 'Последний пакет',
@@ -314,11 +346,24 @@ const Map<String, Map<String, String>> _i18n = {
     'err_price': 'Price: from 0.50 € to 20 €',
     'err_duration': 'Duration: 10–120 sec',
     'err_pin': 'PIN must be 4 digits',
+    'err_pin_weak': 'PIN is too simple: not 1234, repeated digits or a sequence',
+    'mc_title': 'Master code (emergency access)',
+    'mc_ack': 'Master code recorded',
+    'mc_not_ack': 'Master code NOT recorded — commissioning is not finished',
+    'mc_show': 'Show master code',
+    'mc_change': 'Change master code',
+    'mc_change_warn': 'The previous master code will stop working. The new one is shown once. Continue?',
+    'mc_shown_title': 'Master code of this machine',
+    'mc_shown_warn': 'Write the code down and keep it apart from the machine. It cannot be shown again.',
+    'mc_written': 'I have written it down',
+    'mc_close_unconfirmed': 'Close without confirming',
+    'mc_hint': 'The code is needed if the service PIN is forgotten. Every machine has its own.',
+    'cancel_btn': 'Cancel',
     'compressor_purge_label':
         'Compressor purge before pumps/heater turn on (sec)',
     'pump_after_heater_label': 'Pump run time after heater turns off (sec)',
-    'err_compressor_purge': 'Compressor purge: 1–30 sec',
-    'err_pump_after_heater': 'Pump after heater: 1–30 sec',
+    'err_compressor_purge': 'Compressor purge: 1–60 sec',
+    'err_pump_after_heater': 'Pump after heater: 1–60 sec',
     'tariff_label': 'Electricity tariff (€/kWh)',
     'err_tariff': 'Tariff: non-negative number',
     'idle_cost_label': 'Daily idle cost (reference only)',
@@ -381,6 +426,22 @@ const Map<String, Map<String, String>> _i18n = {
     'tab_cloud': 'Cloud',
     'cloud_enabled': 'Send data to the cloud',
     'rd_title': 'Remote diagnostics',
+    'up_title': 'App update',
+    'up_version': 'Version',
+    'up_backup': 'Backup version',
+    'up_backup_none': 'none (appears after the first update)',
+    'up_last': 'Last update',
+    'up_last_none': 'none yet',
+    'up_rollback': 'Roll back',
+    'up_rollback_title': 'Roll back to the backup version?',
+    'up_rollback_body': 'The app will be replaced by the backup version and restarted. Machine data is not erased. Payments are not accepted during the rollback.',
+    'up_rollback_started': 'Rollback started',
+    'up_rollback_failed': 'Rollback not started',
+    'up_adb': 'ADB over network: keep after reboot',
+    'up_adb_warn': 'Anyone on the same network as the tablet will be able to connect to it over ADB. Enable only during maintenance and on a trusted network. Enable?',
+    'up_adb_state': 'ADB over network state',
+    'up_adb_unknown': 'unknown (no root)',
+    'up_adb_failed': 'Could not change (no root?)',
     'rd_send': 'Send diagnostics',
     'rd_sending': 'Collecting and sending…',
     'rd_last': 'Last bundle',
@@ -594,12 +655,25 @@ const Map<String, Map<String, String>> _i18n = {
     'err_price': 'Hind: 0.50 € kuni 20 €',
     'err_duration': 'Kestus: 10–120 sek',
     'err_pin': 'PIN peab olema 4 numbrit',
+    'err_pin_weak': 'PIN on liiga lihtne: mitte 1234, samad numbrid ega järjestus',
+    'mc_title': 'Peakood (avariijuurdepääs)',
+    'mc_ack': 'Peakood on üles kirjutatud',
+    'mc_not_ack': 'Peakoodi POLE üles kirjutatud — kasutuselevõtt pole lõpetatud',
+    'mc_show': 'Näita peakoodi',
+    'mc_change': 'Muuda peakoodi',
+    'mc_change_warn': 'Eelmine peakood lakkab kehtimast. Uus näidatakse ainult üks kord. Jätka?',
+    'mc_shown_title': 'Selle seadme peakood',
+    'mc_shown_warn': 'Kirjuta kood üles ja hoia seadmest eraldi. Uuesti näidata ei saa.',
+    'mc_written': 'Kirjutasin üles',
+    'mc_close_unconfirmed': 'Sulge kinnitamata',
+    'mc_hint': 'Kood on vaja, kui teenindus-PIN ununeb. Igal seadmel on oma.',
+    'cancel_btn': 'Tühista',
     'compressor_purge_label':
         'Kompressori puhastus enne pumpade/küttekeha sisselülitamist (sek)',
     'pump_after_heater_label':
         'Pumba töö pärast küttekeha väljalülitamist (sek)',
-    'err_compressor_purge': 'Kompressori puhastus: 1–30 sek',
-    'err_pump_after_heater': 'Pump pärast küttekeha: 1–30 sek',
+    'err_compressor_purge': 'Kompressori puhastus: 1–60 sek',
+    'err_pump_after_heater': 'Pump pärast küttekeha: 1–60 sek',
     'tariff_label': 'Elektritariif (€/kWh)',
     'err_tariff': 'Tariif: mittenegatiivne arv',
     'idle_cost_label': 'Seisaku maksumus ööpäevas (info)',
@@ -662,6 +736,22 @@ const Map<String, Map<String, String>> _i18n = {
     'tab_cloud': 'Pilv',
     'cloud_enabled': 'Saada andmed pilve',
     'rd_title': 'Kaugdiagnostika',
+    'up_title': 'Rakenduse uuendus',
+    'up_version': 'Versioon',
+    'up_backup': 'Varuversioon',
+    'up_backup_none': 'puudub (ilmub pärast esimest uuendust)',
+    'up_last': 'Viimane uuendus',
+    'up_last_none': 'pole veel olnud',
+    'up_rollback': 'Taasta eelmine',
+    'up_rollback_title': 'Taasta varuversioon?',
+    'up_rollback_body': 'Rakendus asendatakse varuversiooniga ja käivitatakse uuesti. Seadme andmeid ei kustutata. Tagasivõtmise ajal makseid ei võeta vastu.',
+    'up_rollback_started': 'Tagasivõtmine alustatud',
+    'up_rollback_failed': 'Tagasivõtmist ei alustatud',
+    'up_adb': 'ADB üle võrgu: säilita pärast taaskäivitust',
+    'up_adb_warn': 'Igaüks, kes on tahvliga samas võrgus, saab sellega ADB kaudu ühenduda. Lülita sisse ainult hoolduse ajaks ja usaldusväärses võrgus. Lülita sisse?',
+    'up_adb_state': 'ADB üle võrgu olek',
+    'up_adb_unknown': 'teadmata (puudub root)',
+    'up_adb_failed': 'Muutmine ebaõnnestus (root puudub?)',
     'rd_send': 'Saada diagnostika',
     'rd_sending': 'Kogun ja saadan…',
     'rd_last': 'Viimane pakett',
@@ -1013,6 +1103,7 @@ class _SettingsTabState extends State<_SettingsTab> {
   @override
   void initState() {
     super.initState();
+    unawaited(_loadMasterState());
     final config = context.read<AppNotifier>().config;
     _priceCents = config.treatmentPriceCents;
     _durationCtrl = TextEditingController(
@@ -1083,6 +1174,13 @@ class _SettingsTabState extends State<_SettingsTab> {
       _snack(t['err_pin']!);
       return;
     }
+    // Слабый PIN (1234, одинаковые цифры, подряд…) — нельзя. Если PIN в
+    // поле не менялся и сейчас уже установлен прежний, он тоже должен
+    // проходить правила (иначе "1234" остался бы навсегда).
+    if (PinPolicy.isWeak(pin)) {
+      _snack(t['err_pin_weak']!);
+      return;
+    }
     if (compressorPurge == null ||
         compressorPurge < ConfigLimits.compressorPurgeMinS ||
         compressorPurge > ConfigLimits.compressorPurgeMaxS) {
@@ -1111,6 +1209,149 @@ class _SettingsTabState extends State<_SettingsTab> {
     );
     notifier.saveConfig(updated);
     _snack(t['saved']!);
+  }
+
+  // ---- Мастер-код (R2.0): свой на каждый аппарат, показ один раз ----
+  bool _masterAck = false;
+
+  Future<void> _loadMasterState() async {
+    final ack = await MasterCodeService.isAcknowledged();
+    if (mounted) setState(() => _masterAck = ack);
+  }
+
+  Future<void> _generateAndShowMasterCode({required bool confirmFirst}) async {
+    final t = _i18n[context.read<AppNotifier>().lang]!;
+    if (confirmFirst) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFF1A2233),
+          title: Text(t['mc_change']!, style: const TextStyle(color: Colors.white)),
+          content: Text(
+            t['mc_change_warn']!,
+            style: const TextStyle(color: Color(0xFF8899AA)),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text(t['cancel_btn']!),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(
+                t['mc_change']!,
+                style: const TextStyle(color: Color(0xFFE53935)),
+              ),
+            ),
+          ],
+        ),
+      );
+      if (ok != true) return;
+    }
+    final code = await MasterCodeService.generateNew();
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A2233),
+        title: Text(t['mc_shown_title']!, style: const TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              code,
+              style: const TextStyle(
+                color: Color(0xFF00C6B2),
+                fontSize: 40,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 6,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              t['mc_shown_warn']!,
+              style: const TextStyle(color: Color(0xFFFFAA00)),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(t['mc_close_unconfirmed']!),
+          ),
+          TextButton(
+            onPressed: () async {
+              await MasterCodeService.markAcknowledged();
+              if (ctx.mounted) Navigator.of(ctx).pop();
+            },
+            child: Text(
+              t['mc_written']!,
+              style: const TextStyle(
+                color: Color(0xFF00C6B2),
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    await _loadMasterState();
+  }
+
+  Widget _masterCodeSection(Map<String, String> t) {
+    return Container(
+      margin: const EdgeInsets.only(top: 28),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF141B29),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: _masterAck ? const Color(0xFF00C6B2) : const Color(0xFFFFAA00),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            t['mc_title']!,
+            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            _masterAck ? t['mc_ack']! : t['mc_not_ack']!,
+            style: TextStyle(
+              color: _masterAck ? const Color(0xFF00C6B2) : const Color(0xFFFFAA00),
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            t['mc_hint']!,
+            style: const TextStyle(color: Color(0xFF8899AA), fontSize: 12),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              if (!_masterAck)
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => _generateAndShowMasterCode(confirmFirst: false),
+                    child: Text(t['mc_show']!),
+                  ),
+                ),
+              if (!_masterAck) const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => _generateAndShowMasterCode(confirmFirst: true),
+                  child: Text(t['mc_change']!),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   void _snack(String msg) {
@@ -1197,6 +1438,7 @@ class _SettingsTabState extends State<_SettingsTab> {
               ),
             ),
           ),
+          _masterCodeSection(t),
         ],
       ),
     );
@@ -5876,6 +6118,74 @@ class _CloudTabState extends State<_CloudTab> {
   // Удалённая диагностика (R1): отправка пакета и история команд.
   bool _diagBusy = false;
   List<Map<String, dynamic>> _commands = const [];
+  // Обновление приложения (R2): версия, резерв, итог последнего обновления.
+  Map<String, dynamic> _upd = const {};
+  bool? _adb;
+
+  Future<void> _loadUpdate() async {
+    final st = await UpdateService.status();
+    if (mounted) {
+      setState(() {
+        _upd = st;
+        _adb = UpdateService.adbNetwork;
+      });
+    }
+  }
+
+  Future<void> _rollback() async {
+    final notifier = context.read<AppNotifier>();
+    final t = _i18n[notifier.lang]!;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A2233),
+        title: Text(t['up_rollback_title']!, style: const TextStyle(color: Colors.white)),
+        content: Text(t['up_rollback_body']!, style: const TextStyle(color: Color(0xFF8899AA))),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: Text(t['cancel_btn']!)),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(t['up_rollback']!, style: const TextStyle(color: Color(0xFFE53935))),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    // Ручной откат из сервисного меню: техник на месте (проверка покоя, как
+    // для команды из облака, здесь не нужна — меню само не принимает оплату).
+    final res = await UpdateService.startRollback(notifier);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(res.ok ? t['up_rollback_started']! : '${t['up_rollback_failed']}: ${res.result}')),
+    );
+    await res.afterAck?.call();
+    await _loadUpdate();
+  }
+
+  Future<void> _toggleAdb(bool want) async {
+    final t = _i18n[context.read<AppNotifier>().lang]!;
+    if (want) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFF1A2233),
+          title: Text(t['up_adb']!, style: const TextStyle(color: Colors.white)),
+          content: Text(t['up_adb_warn']!, style: const TextStyle(color: Color(0xFFFFAA00))),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: Text(t['cancel_btn']!)),
+            TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: Text(t['up_adb']!.split(':').first)),
+          ],
+        ),
+      );
+      if (ok != true) return;
+    }
+    final done = await UpdateService.setAdbNetwork(want);
+    if (!mounted) return;
+    if (!done) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t['up_adb_failed']!)));
+    }
+    await _loadUpdate();
+  }
 
   Future<void> _loadCommands() async {
     final list = await CommandGuard.history();
@@ -5896,6 +6206,7 @@ class _CloudTabState extends State<_CloudTab> {
   void initState() {
     super.initState();
     unawaited(_loadCommands());
+    unawaited(_loadUpdate());
     final config = context.read<AppNotifier>().config;
     _deviceIdCtrl = TextEditingController(text: config.deviceId);
     _urlCtrl = TextEditingController(text: config.cloudUrl);
@@ -6167,6 +6478,81 @@ class _CloudTabState extends State<_CloudTab> {
                   ),
                 ),
               ),
+          const SizedBox(height: 28),
+          Container(height: 1, color: const Color(0xFF1A2233)),
+          const SizedBox(height: 20),
+          Text(
+            t['up_title']!,
+            style: const TextStyle(
+              color: Color(0xFF00C6B2),
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            '${t['up_version']}: ${_upd['version_name'] ?? '—'} (${_upd['version_code'] ?? '—'})',
+            style: const TextStyle(color: Colors.white, fontSize: 13),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${t['up_backup']}: ${_upd['rollback_available'] == true ? '${_upd['backup_name']} (${_upd['backup_code']})' : t['up_backup_none']}',
+            style: const TextStyle(color: Color(0xFF8899AA), fontSize: 13),
+          ),
+          const SizedBox(height: 4),
+          Builder(
+            builder: (context) {
+              final last = _upd['last'] as Map?;
+              final line = last == null
+                  ? t['up_last_none']!
+                  : '${(last['at'] as String).substring(0, 19).replaceAll('T', ' ')} · ${last['result']}'
+                        '${last['from'] != null ? ' · ${last['from']} → ${last['to']}' : ''}';
+              return Text(
+                '${t['up_last']}: $line',
+                style: TextStyle(
+                  color: last != null && last['ok'] == false
+                      ? const Color(0xFFFFAA00)
+                      : const Color(0xFF8899AA),
+                  fontSize: 13,
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: (_upd['rollback_available'] == true && !UpdateService.inProgress)
+                  ? _rollback
+                  : null,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFFE53935),
+                side: const BorderSide(color: Color(0xFFE53935)),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              child: Text(t['up_rollback']!),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  t['up_adb']!,
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                ),
+              ),
+              Switch(
+                value: _adb == true,
+                onChanged: _adb == null ? null : _toggleAdb,
+              ),
+            ],
+          ),
+          Text(
+            '${t['up_adb_state']}: ${_adb == null ? t['up_adb_unknown'] : (_adb! ? 'ON (5555)' : 'OFF')}',
+            style: const TextStyle(color: Color(0xFF8899AA), fontSize: 12),
+          ),
         ],
       ),
     );

@@ -29,3 +29,9 @@ macos/.symlinks/
 # OS
 .DS_Store
 Thumbs.db
+
+# Ключи подписи — никогда в репозиторий (docs/signing.md)
+android/key.properties
+key.properties
+*.jks
+*.keystore

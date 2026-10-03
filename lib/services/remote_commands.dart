@@ -2,12 +2,15 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../models/app_state.dart';
 import '../models/remote_limits.dart';
+import '../models/update_limits.dart';
 import 'app_log_service.dart';
 import 'cloud_service.dart';
 import 'config_service.dart';
 import 'diagnostics_service.dart';
+import 'pin_policy.dart';
 import 'remote_command_guard.dart';
 import 'security_service.dart';
+import 'update_service.dart';
 import 'system_service.dart';
 
 // Итог обработки удалённой команды. afterAck — действие, которое можно
@@ -45,6 +48,8 @@ class RemoteCommands {
     'reset_session',
     'collect_diagnostics',
     'restart_app',
+    'update_app',
+    'rollback_app',
   };
 
   // Явный отказ для команд, которые удалённо выполнять нельзя.
@@ -59,6 +64,11 @@ class RemoteCommands {
       s == AppState.standby ||
       s == AppState.outOfService ||
       s == AppState.selectLanguage;
+
+  // Состояния, в которых допустимы update_app / rollback_app: строже, чем
+  // для restart_app (selectLanguage сюда не входит).
+  static bool isIdleForUpdate(AppState s) =>
+      s == AppState.standby || s == AppState.outOfService;
 
   // Подмена в тестах: что делать после ack для restart_app.
   @visibleForTesting
@@ -158,6 +168,10 @@ class RemoteCommands {
       case 'set_pin':
         final pin = (command.params['pin'] ?? '').toString().trim();
         if (pin.length == 4 && int.tryParse(pin) != null) {
+          // Слабый PIN (1234, одинаковые цифры, подряд…) нельзя и удалённо.
+          if (PinPolicy.isWeak(pin)) {
+            return const CommandOutcome(false, 'weak_pin');
+          }
           await notifier.saveConfig(notifier.config.copyWith(servicePin: pin));
           await SecurityService.resetAttempts();
           return const CommandOutcome(true, 'PIN изменён');
@@ -206,6 +220,36 @@ class RemoteCommands {
           }),
         );
 
+      case 'update_app':
+      case 'rollback_app':
+        // Только в покое (standby / outOfService), иначе 'busy:<состояние>'.
+        if (!isIdleForUpdate(notifier.state)) {
+          return CommandOutcome(false, 'busy:${notifier.state.name}');
+        }
+        String? releaseId;
+        if (action == 'update_app') {
+          final r = command.params['release_id'];
+          if (r is! String ||
+              !RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$').hasMatch(r)) {
+            return const CommandOutcome(false, 'invalid:release_id');
+          }
+          releaseId = r;
+        }
+        // Не чаще раза в 10 минут и 3 в сутки (на каждую команду свой счётчик).
+        if (!await CommandGuard.allowRate(
+          action,
+          now: now,
+          minInterval: UpdateLimits.commandMinInterval,
+          window: const Duration(days: 1),
+          maxPerWindow: UpdateLimits.commandsPerDay,
+        )) {
+          return const CommandOutcome(false, 'rate_limited');
+        }
+        final res = action == 'update_app'
+            ? await UpdateService.startUpdate(notifier, releaseId!)
+            : await UpdateService.startRollback(notifier);
+        return CommandOutcome(res.ok, res.result, afterAck: res.afterAck);
+
       case 'restart_app':
         // Только в покое; во время оплаты/подготовки/обработки/завершения
         // (и в сервисном меню) — отказ 'busy', не откладывается.
@@ -250,6 +294,7 @@ class RemoteCommands {
     if (pin != null) {
       final s = pin.toString().trim();
       if (s.length != 4 || int.tryParse(s) == null) return 'invalid:servicePin';
+      if (PinPolicy.isWeak(s)) return 'weak_pin:servicePin';
     }
     return null;
   }

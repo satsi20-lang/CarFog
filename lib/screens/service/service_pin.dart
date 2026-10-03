@@ -3,11 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/app_state.dart';
 import '../../services/cloud_service.dart';
-import '../../services/config_service.dart';
+import '../../services/pin_policy.dart';
 import '../../services/security_service.dart';
 import '../../widgets/lang_switcher.dart';
 
-enum _Mode { pin, master }
+enum _Mode { pin, master, newPin }
 
 class ServicePinScreen extends StatefulWidget {
   const ServicePinScreen({super.key});
@@ -20,6 +20,12 @@ class _ServicePinScreenState extends State<ServicePinScreen>
     with SingleTickerProviderStateMixin {
   _Mode _mode = _Mode.pin;
   String _entered = '';
+  // Установка нового PIN: шаг 0 — ввод, шаг 1 — повтор. Включается
+  // принудительно: после входа с начальным/слабым PIN и после успешного
+  // ввода мастер-кода.
+  int _newPinStep = 0;
+  String _firstPin = '';
+  bool _viaMaster = false;
   int _attemptsLeft = SecurityService.maxAttempts;
   Duration _lockLeft = Duration.zero;
   Timer? _ticker;
@@ -27,7 +33,7 @@ class _ServicePinScreenState extends State<ServicePinScreen>
   late AnimationController _shakeController;
   late Animation<double> _shakeAnimation;
 
-  int get _maxLen => _mode == _Mode.pin ? 4 : 8;
+  int get _maxLen => _mode == _Mode.master ? 8 : 4;
   bool get _isLocked => _lockLeft > Duration.zero;
 
   static const _labels = {
@@ -68,25 +74,35 @@ class _ServicePinScreenState extends State<ServicePinScreen>
     },
     'back': {'et': 'Tagasi', 'en': 'Back', 'ru': 'Назад'},
     'cancel': {'et': 'Tühista', 'en': 'Cancel', 'ru': 'Отмена'},
-    'reset_title': {
-      'et': 'Tehaseseadete taastamine?',
-      'en': 'Restore factory settings?',
-      'ru': 'Сброс к заводским настройкам?',
+    'title_new_pin': {
+      'et': 'Uus PIN',
+      'en': 'New PIN',
+      'ru': 'Новый PIN',
     },
-    'reset_body': {
-      'et': 'PIN muutub 1234-ks. Hinnad, kestused ja lõhnade nimed '
-          'taastatakse tehaseseadetele. Sündmus saadetakse pilve.',
-      'en': 'The PIN will become 1234. Prices, durations and fragrance '
-          'names will be restored to factory defaults. The event will be '
-          'sent to the cloud.',
-      'ru': 'PIN станет 1234. Цены, длительности и названия ароматов '
-          'вернутся к заводским. Событие будет отправлено в облако.',
+    'title_confirm_pin': {
+      'et': 'Korda PIN-i',
+      'en': 'Repeat the PIN',
+      'ru': 'Повторите PIN',
     },
-    'reset_ok': {'et': 'Taasta', 'en': 'Reset', 'ru': 'Сбросить'},
-    'reset_done': {
-      'et': 'Taastatud. Uus PIN: 1234',
-      'en': 'Reset complete. New PIN: 1234',
-      'ru': 'Сброшено. Новый PIN: 1234',
+    'new_pin_hint': {
+      'et': 'Määra uus 4-kohaline PIN (mitte 1234 ega lihtne muster)',
+      'en': 'Set a new 4-digit PIN (not 1234 or a simple pattern)',
+      'ru': 'Задайте новый PIN из 4 цифр (не 1234 и не простой)',
+    },
+    'pin_weak': {
+      'et': 'PIN on liiga lihtne (samad numbrid, järjestus, 1234 jms)',
+      'en': 'PIN is too simple (same digits, sequence, 1234, etc.)',
+      'ru': 'PIN слишком простой (одинаковые цифры, подряд, 1234 и т.п.)',
+    },
+    'pin_mismatch': {
+      'et': 'PIN-id ei kattu, proovi uuesti',
+      'en': 'PINs do not match, try again',
+      'ru': 'PIN не совпали, попробуйте снова',
+    },
+    'pin_saved': {
+      'et': 'Uus PIN salvestatud',
+      'en': 'New PIN saved',
+      'ru': 'Новый PIN сохранён',
     },
     'wrong_master': {
       'et': 'Vale avariikood',
@@ -135,7 +151,7 @@ class _ServicePinScreenState extends State<ServicePinScreen>
   }
 
   void _onDigit(String d) {
-    if (_mode == _Mode.pin && _isLocked) return;
+    if (_mode != _Mode.newPin && _isLocked) return;
     if (_entered.length >= _maxLen) return;
     setState(() => _entered += d);
     if (_entered.length == _maxLen) _check();
@@ -155,14 +171,30 @@ class _ServicePinScreenState extends State<ServicePinScreen>
   Future<void> _check() async {
     final notifier = context.read<AppNotifier>();
 
+    if (_mode == _Mode.newPin) {
+      await _checkNewPin(notifier);
+      return;
+    }
+
     if (_mode == _Mode.master) {
-      if (SecurityService.isMasterCode(_entered)) {
-        await CloudService.report(CloudEventType.masterCodeUsed);
-        if (!mounted) return;
-        _confirmFactoryReset();
-      } else {
-        _fail();
-        _snack(_t('wrong_master', notifier.lang));
+      // Та же блокировка, что и у PIN (3 попытки, 20 минут).
+      final r = await SecurityService.tryMaster(_entered);
+      if (!mounted) return;
+      switch (r) {
+        case PinResult.ok:
+          // Мастер-код открывает ТОЛЬКО принудительную смену PIN, а не
+          // сброс к заводским, как раньше.
+          _beginNewPin(viaMaster: true);
+          break;
+        case PinResult.wrong:
+          _fail();
+          _snack(_t('wrong_master', notifier.lang));
+          await _refresh();
+          break;
+        case PinResult.locked:
+          _fail();
+          await _refresh();
+          break;
       }
       return;
     }
@@ -175,7 +207,12 @@ class _ServicePinScreenState extends State<ServicePinScreen>
 
     switch (result) {
       case PinResult.ok:
-        notifier.transition(AppState.serviceMenu);
+        // Начальный (1234) или слабый PIN: в меню — только после смены.
+        if (PinPolicy.isWeak(notifier.config.servicePin)) {
+          _beginNewPin(viaMaster: false);
+        } else {
+          notifier.transition(AppState.serviceMenu);
+        }
         break;
       case PinResult.wrong:
         _fail();
@@ -188,81 +225,50 @@ class _ServicePinScreenState extends State<ServicePinScreen>
     }
   }
 
-  void _confirmFactoryReset() {
-    final lang = context.read<AppNotifier>().lang;
-
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: const Color(0xFF1A2233),
-        title: Text(
-          _t('reset_title', lang),
-          style: const TextStyle(color: Colors.white, fontSize: 18),
-        ),
-        content: Text(
-          _t('reset_body', lang),
-          style: const TextStyle(color: Color(0xFF8899AA), fontSize: 14),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(dialogContext).pop();
-              if (mounted) setState(() => _entered = '');
-            },
-            child: Text(
-              _t('cancel', lang),
-              style: const TextStyle(color: Color(0xFF556677)),
-            ),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(dialogContext).pop();
-              _doFactoryReset();
-            },
-            child: Text(
-              _t('reset_ok', lang),
-              style: const TextStyle(
-                color: Color(0xFFE53935),
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
+  void _beginNewPin({required bool viaMaster}) {
+    setState(() {
+      _mode = _Mode.newPin;
+      _newPinStep = 0;
+      _firstPin = '';
+      _entered = '';
+      _viaMaster = viaMaster;
+    });
   }
 
-  Future<void> _doFactoryReset() async {
-    final notifier = context.read<AppNotifier>();
+  Future<void> _checkNewPin(AppNotifier notifier) async {
     final lang = notifier.lang;
-
-    // Сохраняем подключение к облаку — иначе аппарат
-    // после сброса станет недоступен удалённо.
-    final keep = notifier.config;
-
-    await ConfigService.reset();
+    if (_newPinStep == 0) {
+      if (PinPolicy.isWeak(_entered)) {
+        _fail();
+        _snack(_t('pin_weak', lang));
+        return;
+      }
+      setState(() {
+        _firstPin = _entered;
+        _entered = '';
+        _newPinStep = 1;
+      });
+      return;
+    }
+    if (_entered != _firstPin) {
+      _fail();
+      _snack(_t('pin_mismatch', lang));
+      setState(() {
+        _newPinStep = 0;
+        _firstPin = '';
+      });
+      return;
+    }
+    await notifier.saveConfig(notifier.config.copyWith(servicePin: _entered));
     await SecurityService.resetAttempts();
-
-    final fresh = AppConfig(
-      deviceId: keep.deviceId,
-      cloudUrl: keep.cloudUrl,
-      cloudAnonKey: keep.cloudAnonKey,
-      cloudToken: keep.cloudToken,
-      cloudEnabled: keep.cloudEnabled,
-    );
-
-    await notifier.saveConfig(fresh);
-
+    // В событие идёт только факт смены и способ входа, не сам PIN.
     await CloudService.report(
-      CloudEventType.factoryReset,
-      data: {'source': 'master_code'},
+      CloudEventType.configChanged,
+      data: {'what': 'service_pin', 'via_master_code': _viaMaster},
     );
-
     if (!mounted) return;
-
-    _snack(_t('reset_done', lang));
-    notifier.transition(AppState.standby);
+    _snack(_t('pin_saved', lang));
+    notifier.transition(AppState.serviceMenu);
   }
 
   void _snack(String msg) {
@@ -279,7 +285,7 @@ class _ServicePinScreenState extends State<ServicePinScreen>
   Widget build(BuildContext context) {
     final notifier = context.watch<AppNotifier>();
     final lang = notifier.lang;
-    final blocked = _mode == _Mode.pin && _isLocked;
+    final blocked = _mode != _Mode.newPin && _isLocked;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E1A),
@@ -300,7 +306,11 @@ class _ServicePinScreenState extends State<ServicePinScreen>
                           ? _t('locked_title', lang)
                           : _mode == _Mode.pin
                               ? _t('title_pin', lang)
-                              : _t('title_master', lang),
+                              : _mode == _Mode.master
+                              ? _t('title_master', lang)
+                              : (_newPinStep == 0
+                                    ? _t('title_new_pin', lang)
+                                    : _t('title_confirm_pin', lang)),
                       style: TextStyle(
                         color: blocked ? const Color(0xFFE53935) : Colors.white,
                         fontSize: 24,
@@ -330,6 +340,14 @@ class _ServicePinScreenState extends State<ServicePinScreen>
                             ),
                           ),
                         ],
+                      )
+                    else if (_mode == _Mode.newPin)
+                      Text(
+                        _t('new_pin_hint', lang),
+                        style: const TextStyle(
+                          color: Color(0xFFFFAA00),
+                          fontSize: 13,
+                        ),
                       )
                     else if (_mode == _Mode.master)
                       Text(
@@ -361,7 +379,7 @@ class _ServicePinScreenState extends State<ServicePinScreen>
                           ),
                         ),
                       )
-                    else
+                    else if (_mode == _Mode.master)
                       TextButton(
                         onPressed: () => setState(() {
                           _mode = _Mode.pin;

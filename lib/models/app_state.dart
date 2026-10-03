@@ -296,7 +296,21 @@ class AppNotifier extends ChangeNotifier {
     if (!config.energyMeterInstalled) 'energy_meter',
   ];
   bool get isConfigBlocked => missingRequiredDevices.isNotEmpty;
-  bool get isPaymentBlocked => isOutOfService || isConfigBlocked;
+
+  // Идёт обновление/откат приложения (R2): оплата заблокирована на время
+  // установки и до подтверждения здоровья новой версии. Как и блок по
+  // конфигурации, НЕ пишется в постоянный признак вывода из обслуживания и
+  // снимается сам (UpdateService); при неудаче установки снимается сразу.
+  bool _maintenance = false;
+  bool get isMaintenance => _maintenance;
+  void setMaintenance(bool value) {
+    if (_maintenance == value) return;
+    _maintenance = value;
+    refreshPaymentBlock();
+    notifyListeners();
+  }
+
+  bool get isPaymentBlocked => isOutOfService || isConfigBlocked || _maintenance;
 
   // Платёжный сервис блокируется и по признаку отказа, и по конфигурации;
   // вызывается при любом изменении того и другого.
@@ -440,7 +454,7 @@ class AppNotifier extends ChangeNotifier {
     }
     // Обязательные устройства не отмечены установленными — до оплаты
     // показывается "временно не работает" (см. missingRequiredDevices).
-    if (isConfigBlocked) {
+    if (isConfigBlocked || _maintenance) {
       refreshPaymentBlock();
       transition(AppState.outOfService);
       return;

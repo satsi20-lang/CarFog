@@ -1,7 +1,6 @@
 package com.example.dry_fog_app
 
 import android.content.BroadcastReceiver
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -28,7 +27,7 @@ class PackageUpdateReceiver : BroadcastReceiver() {
         if (intent.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
 
         val enabled = readKioskModeEnabled(context) ?: return
-        val alias = ComponentName(context, "${context.packageName}.KioskHomeAlias")
+        val alias = ComponentNames.kioskHomeAlias(context)
         val state = if (enabled) {
             PackageManager.COMPONENT_ENABLED_STATE_ENABLED
         } else {

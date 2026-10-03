@@ -61,6 +61,11 @@ class CloudEventType {
   // защёлки перехода к прогреву) — оператор должен знать, чтобы вернуть
   // лишнее.
   static const duplicatePayment = 'duplicate_payment';
+  // Удалённое обновление приложения (R2).
+  static const updateStarted = 'update_started';
+  static const updateInstalled = 'update_installed';
+  static const updateFailed = 'update_failed';
+  static const updateRolledBack = 'update_rolled_back';
 }
 
 // ============================================================
@@ -136,11 +141,15 @@ class CloudPollResult {
   // действия команд считается как server_time − created_at, а не по часам
   // планшета: у планшета время может уйти. null — сервер поле не отдал.
   final DateTime? serverTime;
+  // Сервер ответил штатно (HTTP 200 и ok:true). Нужно сигналу здоровья
+  // обновления: «один опрос облака прошёл».
+  final bool ok;
 
   CloudPollResult({
     required this.commands,
     this.configReported = false,
     this.serverTime,
+    this.ok = false,
   });
 }
 
@@ -343,6 +352,7 @@ class SupabaseTransport implements CloudTransport {
         commands: commands,
         configReported: config != null,
         serverTime: DateTime.tryParse(body['server_time'] as String? ?? ''),
+        ok: true,
       );
     } catch (e) {
       debugPrint('SupabaseTransport.fetchCommands error: $e');
@@ -515,6 +525,16 @@ class CloudService {
 
   static bool _flushing = false;
   static bool _flushAgain = false;
+
+  // Только для тестов: цепочка блокировки очереди, созданная в «фейковом»
+  // времени одного виджет-теста, не завершается в следующем (оно ждало бы
+  // вечно). Сброс между тестами.
+  @visibleForTesting
+  static void resetQueueForTest() {
+    _queueLock = Future.value();
+    _flushing = false;
+    _flushAgain = false;
+  }
 
   // Время последней УСПЕШНОЙ отправки событий (для пакета диагностики и
   // сервисного меню). null — с запуска ещё не было.

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'cloud_service.dart';
+import 'master_code_service.dart';
 
 enum PinResult { ok, wrong, locked }
 
@@ -9,10 +10,9 @@ class SecurityService {
   static const int maxAttempts = 3;
   static const int lockoutMinutes = 20;
 
-  // ⚠️ МАСТЕР-КОД АВАРИЙНОГО ДОСТУПА
-  // Сменить перед серийным выпуском. Хранить отдельно от аппарата.
-  // Использование фиксируется событием в облаке.
-  static const String masterCode = '48217390';
+  // Мастер-код аварийного доступа теперь свой на каждый аппарат, в коде его
+  // нет — только хэш с солью в хранилище (MasterCodeService). Использование
+  // фиксируется событием в облаке.
 
   static const _kFails = 'pin_fail_count';
   static const _kLockUntil = 'pin_lock_until_ms';
@@ -78,6 +78,16 @@ class SecurityService {
       return PinResult.ok;
     }
 
+    return _registerFail(prefs, method: 'pin');
+  }
+
+  // Неудачная попытка (PIN или мастер-код — счётчик и блокировка ОБЩИЕ:
+  // раньше неверный мастер-код не считался вовсе, и 8 цифр можно было
+  // перебирать без ограничений).
+  static Future<PinResult> _registerFail(
+    SharedPreferences prefs, {
+    required String method,
+  }) async {
     final fails = (prefs.getInt(_kFails) ?? 0) + 1;
     await prefs.setInt(_kFails, fails);
 
@@ -91,6 +101,7 @@ class SecurityService {
           'attempts': fails,
           'locked_until': until.toIso8601String(),
           'lockout_minutes': lockoutMinutes,
+          'method': method,
         },
       );
       return PinResult.locked;
@@ -103,7 +114,20 @@ class SecurityService {
   // МАСТЕР-КОД
   // ============================================================
 
-  static bool isMasterCode(String code) => code == masterCode;
+  // Ввод мастер-кода: при блокировке — locked; неверный код — та же
+  // неудачная попытка, что и у PIN (3 попытки, 20 минут); верный — сброс
+  // счётчика и событие master_code_used. После успеха вызывающий код
+  // ОБЯЗАН потребовать смену PIN.
+  static Future<PinResult> tryMaster(String entered) async {
+    if (await isLocked()) return PinResult.locked;
+    final prefs = await SharedPreferences.getInstance();
+    if (await MasterCodeService.verify(entered)) {
+      await resetAttempts();
+      await CloudService.report(CloudEventType.masterCodeUsed);
+      return PinResult.ok;
+    }
+    return _registerFail(prefs, method: 'master_code');
+  }
 
   // ============================================================
   // СБРОС СЧЁТЧИКОВ

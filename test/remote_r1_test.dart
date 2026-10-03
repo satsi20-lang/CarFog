@@ -592,14 +592,14 @@ void main() {
       final o = await upd(n, {
         'treatmentDurationS': 120,
         'treatmentPriceCents': 50,
-        'compressorPurgeS': 1,
-        'pumpAfterHeaterS': 30,
+        'compressorPurgeS': 60,
+        'pumpAfterHeaterS': 60,
       });
       expect(o.ok, isTrue);
       expect(n.config.treatmentDurationS, 120);
       expect(n.config.treatmentPriceCents, 50);
-      expect(n.config.compressorPurgeS, 1);
-      expect(n.config.pumpAfterHeaterS, 30);
+      expect(n.config.compressorPurgeS, 60);
+      expect(n.config.pumpAfterHeaterS, 60);
       final o2 = await upd(n, {'treatmentDurationS': 10, 'treatmentPriceCents': 2000});
       expect(o2.ok, isTrue);
       expect(n.config.treatmentPriceCents, 2000);
@@ -611,9 +611,9 @@ void main() {
       ('treatmentPriceCents', 49),
       ('treatmentPriceCents', 2001),
       ('compressorPurgeS', 0),
-      ('compressorPurgeS', 31),
+      ('compressorPurgeS', 61),
       ('pumpAfterHeaterS', 0),
-      ('pumpAfterHeaterS', 31),
+      ('pumpAfterHeaterS', 61),
     ];
     for (final (field, value) in cases) {
       test('$field = $value вне предела: отказ out_of_range:$field, настройки не изменены', () async {
@@ -646,7 +646,8 @@ void main() {
       expect(ConfigLimits.range('treatmentDurationS'), (min: 10, max: 120));
       expect(ConfigLimits.range('treatmentPriceCents'), (min: 50, max: 2000));
       expect(ConfigLimits.range('compressorPurgeS')!.min, 1);
-      expect(ConfigLimits.range('pumpAfterHeaterS')!.max, 30);
+      expect(ConfigLimits.range('compressorPurgeS')!.max, 60);
+      expect(ConfigLimits.range('pumpAfterHeaterS')!.max, 60);
     });
   });
 }

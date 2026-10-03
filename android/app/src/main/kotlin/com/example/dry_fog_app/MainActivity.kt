@@ -1,6 +1,5 @@
 package com.example.dry_fog_app
 
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.app.ActivityManager
@@ -159,6 +158,36 @@ class MainActivity : FlutterActivity() {
                     // пакета диагностики (R1). Каждая группа в своём try:
                     // сбой одной не лишает остальных.
                     "getDeviceInfo" -> result.success(collectDeviceInfo())
+                    // ---- R2: удалённое обновление ----
+                    "getAppInfo" -> result.success(getAppInfo())
+                    "verifyApk" -> {
+                        val path = call.argument<String>("path")
+                        result.success(if (path == null) null else verifyApk(path))
+                    }
+                    "rootAvailable" -> {
+                        val timeout = (call.argument<Number>("timeoutMs") ?: 5000).toLong()
+                        // su может ждать; не на UI-потоке
+                        Thread { result.success(RootShell.isAvailable(timeout)) }.start()
+                    }
+                    "rootExec" -> {
+                        val cmd = call.argument<String>("command")
+                        val timeout = (call.argument<Number>("timeoutMs") ?: 10000).toLong()
+                        Thread {
+                            val r = if (cmd == null) null else RootShell.exec(cmd, timeout)
+                            result.success(
+                                if (r == null) null else mapOf("exit" to r.exitCode, "out" to r.output)
+                            )
+                        }.start()
+                    }
+                    "runRootScript" -> {
+                        val script = call.argument<String>("script")
+                        val args = call.argument<List<String>>("args") ?: emptyList()
+                        Thread {
+                            result.success(
+                                if (script == null) false else RootShell.runDetached(script, args, 10000)
+                            )
+                        }.start()
+                    }
                     // Удалённая команда restart_app: проверка "только в
                     // покое" делается в Dart ДО вызова; здесь — планирование
                     // подъёма через AlarmManager и завершение процесса.
@@ -200,7 +229,7 @@ class MainActivity : FlutterActivity() {
     // перезапускает процесс сразу после смены флага, что убило бы
     // приложение прямо в момент переключения тумблера в сервисном меню.
     private fun setKioskHomeEnabled(enabled: Boolean) {
-        val alias = ComponentName(this, "$packageName.KioskHomeAlias")
+        val alias = ComponentNames.kioskHomeAlias(this)
         val state = if (enabled) {
             PackageManager.COMPONENT_ENABLED_STATE_ENABLED
         } else {
@@ -285,6 +314,63 @@ class MainActivity : FlutterActivity() {
             // Возвращаем то, что успели собрать (может быть пусто).
         }
         return removable + primary
+    }
+
+    // Версия установленного приложения (для обновления, отката и отчёта).
+    private fun getAppInfo(): Map<String, Any?> {
+        val info = mutableMapOf<String, Any?>()
+        try {
+            val pi = packageManager.getPackageInfo(packageName, 0)
+            info["package"] = packageName
+            info["version_name"] = pi.versionName
+            info["version_code"] =
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) pi.longVersionCode
+                else @Suppress("DEPRECATION") pi.versionCode.toLong()
+        } catch (e: Throwable) {
+            info["error"] = e.toString()
+        }
+        return info
+    }
+
+    // Проверка скачанного APK ДО установки: имя пакета, versionCode и
+    // совпадение подписи с установленным приложением (Android проверит и
+    // сам при установке, но отказать надо заранее). Подпись считается
+    // совпавшей, если набор сертификатов подписи совпал, либо установленный
+    // сертификат входит в историю ротации нового APK (APK Signature Scheme v3).
+    private fun verifyApk(path: String): Map<String, Any?> {
+        val out = mutableMapOf<String, Any?>()
+        try {
+            val flags = PackageManager.GET_SIGNING_CERTIFICATES
+            val apk = packageManager.getPackageArchiveInfo(path, flags)
+            if (apk == null) {
+                out["error"] = "unreadable"
+                return out
+            }
+            out["package"] = apk.packageName
+            out["version_name"] = apk.versionName
+            out["version_code"] =
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) apk.longVersionCode
+                else @Suppress("DEPRECATION") apk.versionCode.toLong()
+            val installed = packageManager.getPackageInfo(packageName, flags)
+            fun hashes(info: android.content.pm.SigningInfo?, history: Boolean): Set<String> {
+                if (info == null) return emptySet()
+                val sigs = if (history) info.signingCertificateHistory else info.apkContentsSigners
+                return (sigs ?: emptyArray()).map {
+                    java.security.MessageDigest.getInstance("SHA-256")
+                        .digest(it.toByteArray())
+                        .joinToString("") { b -> "%02x".format(b) }
+                }.toSet()
+            }
+            val newCurrent = hashes(apk.signingInfo, false)
+            val newHistory = hashes(apk.signingInfo, true)
+            val oldCurrent = hashes(installed.signingInfo, false)
+            out["signature_matches"] = newCurrent.isNotEmpty() &&
+                (newCurrent == oldCurrent || newHistory.any { it in oldCurrent })
+            out["new_signer_sha256"] = newCurrent.firstOrNull()
+        } catch (e: Throwable) {
+            out["error"] = e.toString()
+        }
+        return out
     }
 
     private fun collectDeviceInfo(): Map<String, Any?> {

@@ -1,7 +1,19 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+// Релизный ключ подписи. Файл key.properties лежит рядом (android/), ВНЕ
+// репозитория (в .gitignore), пароли и путь к хранилищу — только в нём.
+// Инструкция по созданию ключа и резервному копированию — docs/signing.md.
+val keystorePropertiesFile = rootProject.file("key.properties")
+val keystoreProperties = Properties().apply {
+    if (keystorePropertiesFile.exists()) {
+        keystorePropertiesFile.inputStream().use { load(it) }
+    }
 }
 
 android {
@@ -25,12 +37,41 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        create("release") {
+            if (keystorePropertiesFile.exists()) {
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+                storeFile = keystoreProperties.getProperty("storeFile")?.let { file(it) }
+                storePassword = keystoreProperties.getProperty("storePassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // Релиз подписывается ТОЛЬКО релизным ключом. Отладочным ключом
+            // (общеизвестный пароль) релиз больше не подписывается никогда.
+            signingConfig = signingConfigs.getByName("release")
         }
+    }
+}
+
+// Если key.properties нет, release-сборка ПАДАЕТ с понятным сообщением, а не
+// подписывается отладочным ключом молча. Отладочные сборки не затронуты.
+gradle.taskGraph.whenReady {
+    val releaseRequested = allTasks.any { task ->
+        task.project == project && (
+            (task.name.startsWith("assemble") || task.name.startsWith("bundle") ||
+                task.name.startsWith("package")) && task.name.endsWith("Release")
+            )
+    }
+    if (releaseRequested && !keystorePropertiesFile.exists()) {
+        throw GradleException(
+            "Релизная сборка требует android/key.properties с данными релизного " +
+                "ключа подписи (его нет). Как создать ключ — docs/signing.md. " +
+                "Подписывать релиз отладочным ключом запрещено."
+        )
     }
 }
 

@@ -80,6 +80,8 @@ class RemoteCommandLimits {
     'update_config',
     'restart_app',
     'factory_reset',
+    'update_app',
+    'rollback_app',
   };
 
   // Сколько идентификаторов выполненных команд помнить (идемпотентность
@@ -106,16 +108,18 @@ class ConfigLimits {
   static const int priceMinCents = 50;
   static const int priceMaxCents = 2000;
 
-  // Продувка компрессора перед включением насосов/ТЭНа, с. Умолчание 10 с;
-  // 1–30 с — те же границы, что уже стояли в локальном вводе сервисного
-  // меню (запас ×3 вверх). ОЦЕНКА, подлежит подтверждению владельцем.
+  // Продувка компрессора перед включением насосов/ТЭНа, с. Умолчание 10 с.
+  // Верхний предел 60 с — ЗАДАНО владельцем 03.10.2026 (было 30 с по
+  // оценке); нижний 1 с — как стоял в локальном вводе, подлежит
+  // подтверждению.
   static const int compressorPurgeMinS = 1;
-  static const int compressorPurgeMaxS = 30;
+  static const int compressorPurgeMaxS = 60;
 
-  // Работа насоса после ТЭНа (продувка в конце), с. Умолчание 5 с; 1–30 с —
-  // как в локальном вводе (запас ×6 вверх). ОЦЕНКА, подлежит подтверждению.
+  // Работа насоса после ТЭНа (продувка в конце), с. Умолчание 5 с. Верхний
+  // предел 60 с — ЗАДАНО владельцем 03.10.2026 (было 30 с по оценке);
+  // нижний 1 с — как стоял в локальном вводе, подлежит подтверждению.
   static const int pumpAfterHeaterMinS = 1;
-  static const int pumpAfterHeaterMaxS = 30;
+  static const int pumpAfterHeaterMaxS = 60;
 
   // Диапазон поля или null, если для поля пределов нет.
   static ({int min, int max})? range(String field) {

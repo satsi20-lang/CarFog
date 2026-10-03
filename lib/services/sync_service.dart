@@ -4,9 +4,12 @@ import 'package:flutter/foundation.dart';
 import '../models/app_state.dart';
 import 'cloud_service.dart';
 import 'diagnostics_service.dart';
+import 'master_code_service.dart';
+import 'pin_policy.dart';
 import 'modbus_service.dart';
 import 'remote_command_guard.dart';
 import 'remote_commands.dart';
+import 'update_service.dart';
 
 // Периодический обмен с облаком: отправка накопленных событий,
 // получение и выполнение команд, отчёт о результате.
@@ -19,6 +22,10 @@ class SyncService {
   bool _paused = false;
 
   SyncService._(this.notifier);
+
+  // Время последнего УСПЕШНОГО опроса облака (HTTP 200, ok:true) — для сигнала
+  // здоровья после обновления. null — с запуска ещё не было.
+  static DateTime? lastPollOkAt;
 
   // Интервал опроса в спокойном состоянии
   static const Duration idleInterval = Duration(seconds: 30);
@@ -156,6 +163,7 @@ class SyncService {
         }
       }
 
+      if (result.ok) lastPollOkAt = DateTime.now();
       for (final command in result.commands) {
         await _execute(command, serverTime: result.serverTime);
       }
@@ -187,6 +195,19 @@ class SyncService {
     // установленными) — не отказ, в постоянный признак не пишется.
     snapshot['payment_blocked_by_config'] = notifier.missingRequiredDevices;
     snapshot['debug_modes'] = await ModbusService.activeDebugModes();
+    // Ввод в эксплуатацию (R2.0): мастер-код записан? PIN всё ещё слабый
+    // (начальный)? Видно в панели — аппарат без записанного кода и со
+    // слабым PIN считается незавершённым.
+    // Обновление приложения (R2): версия, наличие резерва, итог последнего
+    // обновления, «ADB по сети».
+    final upd = await UpdateService.status();
+    snapshot['app_version'] = upd['version_name'];
+    snapshot['app_version_code'] = upd['version_code'];
+    snapshot['rollback_available'] = upd['rollback_available'];
+    snapshot['last_update_result'] = (upd['last'] as Map?)?['result'];
+    snapshot['adb_network'] = UpdateService.adbNetwork;
+    snapshot['master_code_acknowledged'] = await MasterCodeService.isAcknowledged();
+    snapshot['service_pin_weak'] = PinPolicy.isWeak(notifier.config.servicePin);
 
     final last = _lastSentConfigSnapshot;
     final sentAt = _lastConfigSentAt;

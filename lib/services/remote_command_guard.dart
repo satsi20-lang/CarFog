@@ -62,19 +62,28 @@ class CommandGuard {
 
   // Лимит частоты для action: не чаще minInterval и не более maxPerHour за
   // час. true — можно (попытка записывается), false — rate_limited.
-  static Future<bool> allowRate(String action, {DateTime? now}) async {
+  // Параметры по умолчанию — лимиты R1 (раз в минуту, 3 в час); для команд
+  // обновления вызывающий код задаёт свои (10 минут, 3 в сутки).
+  static Future<bool> allowRate(
+    String action, {
+    DateTime? now,
+    Duration? minInterval,
+    Duration window = const Duration(hours: 1),
+    int? maxPerWindow,
+  }) async {
     final t = now ?? DateTime.now();
+    final interval = minInterval ?? RemoteCommandLimits.minInterval;
+    final maxCount = maxPerWindow ?? RemoteCommandLimits.maxPerHour;
     final prefs = await SharedPreferences.getInstance();
     final stamps = (prefs.getStringList(_rateKey(action)) ?? <String>[])
         .map(DateTime.tryParse)
         .whereType<DateTime>()
-        .where((d) => t.difference(d) < const Duration(hours: 1))
+        .where((d) => t.difference(d) < window)
         .toList();
-    if (stamps.isNotEmpty &&
-        t.difference(stamps.last) < RemoteCommandLimits.minInterval) {
+    if (stamps.isNotEmpty && t.difference(stamps.last) < interval) {
       return false;
     }
-    if (stamps.length >= RemoteCommandLimits.maxPerHour) return false;
+    if (stamps.length >= maxCount) return false;
     stamps.add(t);
     await prefs.setStringList(
       _rateKey(action),

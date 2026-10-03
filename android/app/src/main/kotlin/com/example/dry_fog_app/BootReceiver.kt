@@ -1,7 +1,6 @@
 package com.example.dry_fog_app
 
 import android.content.BroadcastReceiver
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -43,7 +42,7 @@ class BootReceiver : BroadcastReceiver() {
 
     private fun isKioskHomeEnabled(context: Context): Boolean {
         return try {
-            val alias = ComponentName(context, "${context.packageName}.KioskHomeAlias")
+            val alias = ComponentNames.kioskHomeAlias(context)
             val state = context.packageManager.getComponentEnabledSetting(alias)
             state == PackageManager.COMPONENT_ENABLED_STATE_ENABLED
         } catch (e: Exception) {
