@@ -30,6 +30,7 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // Причина запуска читается ОДИН раз (нативная сторона сбрасывает признак
   // аварии) и используется и в отметке журнала, и в событии app_started.
+  SystemService.init();
   final startReason = await SystemService.consumeStartReason();
   // Постоянный журнал — самым первым: всё дальнейшее (включая ошибки
   // старта) уже попадает в файл. Не блокирует запуск при сбое каталога.

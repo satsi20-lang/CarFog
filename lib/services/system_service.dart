@@ -64,6 +64,22 @@ class SystemService {
     }
   }
 
+  // Ответ на вопрос нативной стороны перед завершением процесса
+  // (restart_app): "аппарат всё ещё в покое?". Подключается из main().
+  static Future<bool> Function()? idleForRestartCheck;
+
+  // Принимать вызовы нативной стороны в Dart. Вызывается один раз из main().
+  static void init() {
+    _channel.setMethodCallHandler((call) async {
+      if (call.method == 'isIdleForRestart') {
+        final check = idleForRestartCheck;
+        // Нет проверки — отказ (fail-safe): лучше не перезапускать.
+        return check == null ? false : await check();
+      }
+      return null;
+    });
+  }
+
   // Каталог файлов приложения (постоянный журнал стартует до runApp).
   static Future<String?> getFilesDir() async {
     try {

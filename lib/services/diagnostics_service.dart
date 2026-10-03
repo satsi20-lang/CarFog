@@ -54,6 +54,16 @@ class DiagnosticsService {
   static const pendingFileName = 'diag_pending.json';
 
   static DiagnosticsStatus? last;
+
+  // До этого момента отложенный пакет не отправляется повторно (отказ
+  // сервера по квоте/токену).
+  static DateTime? _refusedUntil;
+
+  static bool _isPermanent(String? error) =>
+      error == 'quota' || error == 'auth' || error == 'bad_request';
+
+  @visibleForTesting
+  static void resetRefusalForTest() => _refusedUntil = null;
   static Directory? _dirOverride;
 
   @visibleForTesting
@@ -223,7 +233,11 @@ class DiagnosticsService {
     final text = encode(bundle);
     final id = 'diag-${DateTime.now().millisecondsSinceEpoch}';
     final status = await _upload(id, text);
-    if (!status.sent) await _savePending(id, text);
+    // Квота/токен: пакет не сохраняется для повторов (они бессмысленны и
+    // забили бы диск и сервер), причина — в статусе и в ack команды.
+    if (!status.sent && !_isPermanent(status.error)) {
+      await _savePending(id, text);
+    }
     last = status;
     AppLog.log('Diagnostics',
         'bundle $id ${status.sizeBytes} B parts=${status.parts} sent=${status.sent} ${status.error ?? ''}');
@@ -236,16 +250,22 @@ class DiagnosticsService {
     String? error;
     var sent = true;
     for (var i = 0; i < parts.length; i++) {
-      final ok = await CloudService.transport.uploadDiagnostics(
+      final r = await CloudService.transport.uploadDiagnostics(
         CloudService.deviceId,
         id,
         i + 1,
         parts.length,
         parts[i],
       );
-      if (!ok) {
+      if (!r.ok) {
         sent = false;
-        error = 'часть ${i + 1}/${parts.length} не принята';
+        // Причина — короткий код сервера (quota/auth/…), не текст ответа.
+        error = r.error ?? 'rejected';
+        if (r.permanent) {
+          _refusedUntil = DateTime.now().add(
+            DiagnosticsLimits.serverRefusalRetryPause,
+          );
+        }
         break;
       }
     }
@@ -262,6 +282,9 @@ class DiagnosticsService {
   // Повторная отправка отложенного пакета (вызывается из тика синхронизации
   // при включённом облаке).
   static Future<void> retryPending() async {
+    // После отказа по квоте/токену — пауза, не повтор раз в тик (30 с).
+    final until = _refusedUntil;
+    if (until != null && DateTime.now().isBefore(until)) return;
     final f = await _pendingFile();
     if (f == null || !await f.exists()) return;
     try {

@@ -9,6 +9,7 @@ import '../../models/app_state.dart';
 import '../../models/bus_map.dart';
 import '../../widgets/lang_switcher.dart';
 import '../../models/out_of_service.dart';
+import '../../models/remote_limits.dart';
 import '../../services/cloud_service.dart';
 import '../../services/heater_trial_service.dart';
 import '../../services/remote_command_guard.dart';
@@ -31,7 +32,7 @@ const Map<String, Map<String, String>> _i18n = {
     'pin_label': 'PIN сервисного меню (4 цифры)',
     'save': 'Сохранить',
     'saved': 'Сохранено',
-    'err_price': 'Цена: минимум 0.50 €',
+    'err_price': 'Цена: от 0.50 € до 20 €',
     'err_duration': 'Длительность: 10–120 сек',
     'err_pin': 'PIN — 4 цифры',
     'compressor_purge_label':
@@ -310,7 +311,7 @@ const Map<String, Map<String, String>> _i18n = {
     'pin_label': 'Service menu PIN (4 digits)',
     'save': 'Save',
     'saved': 'Saved',
-    'err_price': 'Price: minimum 0.50 €',
+    'err_price': 'Price: from 0.50 € to 20 €',
     'err_duration': 'Duration: 10–120 sec',
     'err_pin': 'PIN must be 4 digits',
     'compressor_purge_label':
@@ -590,7 +591,7 @@ const Map<String, Map<String, String>> _i18n = {
     'pin_label': 'Teenindusmenüü PIN (4 numbrit)',
     'save': 'Salvesta',
     'saved': 'Salvestatud',
-    'err_price': 'Hind: minimaalselt 0.50 €',
+    'err_price': 'Hind: 0.50 € kuni 20 €',
     'err_duration': 'Kestus: 10–120 sek',
     'err_pin': 'PIN peab olema 4 numbrit',
     'compressor_purge_label':
@@ -1052,7 +1053,10 @@ class _SettingsTabState extends State<_SettingsTab> {
 
   void _changePrice(int deltaCents) {
     setState(() {
-      _priceCents = (_priceCents + deltaCents).clamp(50, 999999);
+      _priceCents = (_priceCents + deltaCents).clamp(
+        ConfigLimits.priceMinCents,
+        ConfigLimits.priceMaxCents,
+      );
     });
   }
 
@@ -1064,11 +1068,14 @@ class _SettingsTabState extends State<_SettingsTab> {
     final compressorPurge = int.tryParse(_compressorPurgeCtrl.text);
     final pumpAfterHeater = int.tryParse(_pumpAfterHeaterCtrl.text);
 
-    if (_priceCents < 50) {
+    if (_priceCents < ConfigLimits.priceMinCents ||
+        _priceCents > ConfigLimits.priceMaxCents) {
       _snack(t['err_price']!);
       return;
     }
-    if (duration == null || duration < 10 || duration > 120) {
+    if (duration == null ||
+        duration < ConfigLimits.treatmentDurationMinS ||
+        duration > ConfigLimits.treatmentDurationMaxS) {
       _snack(t['err_duration']!);
       return;
     }
@@ -1077,14 +1084,14 @@ class _SettingsTabState extends State<_SettingsTab> {
       return;
     }
     if (compressorPurge == null ||
-        compressorPurge < 1 ||
-        compressorPurge > 30) {
+        compressorPurge < ConfigLimits.compressorPurgeMinS ||
+        compressorPurge > ConfigLimits.compressorPurgeMaxS) {
       _snack(t['err_compressor_purge']!);
       return;
     }
     if (pumpAfterHeater == null ||
-        pumpAfterHeater < 1 ||
-        pumpAfterHeater > 30) {
+        pumpAfterHeater < ConfigLimits.pumpAfterHeaterMinS ||
+        pumpAfterHeater > ConfigLimits.pumpAfterHeaterMaxS) {
       _snack(t['err_pump_after_heater']!);
       return;
     }

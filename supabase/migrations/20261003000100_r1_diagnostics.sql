@@ -71,6 +71,18 @@ begin
     perform public.device_diag_purge();
   end if;
 
+  -- Квота на устройство: не более 600 строк (частей) в таблице. Порядок
+  -- важен: сначала форма и очистка устаревшего, потом квота — иначе
+  -- устройство, упёршееся в квоту из-за старья, не освободилось бы само.
+  -- Приложение трактует 'quota' как «пакет не отправлен, причина quota»
+  -- и повторов в цикле не делает (пауза DiagnosticsLimits.
+  -- serverRefusalRetryPause). Предел 600 — решение владельца (≈75 МБ при
+  -- частях по 128 КБ); НЕ ИЗМЕРЕНО в эксплуатации.
+  if (select count(*) from public.device_diagnostics
+       where device_id = p_device) >= 600 then
+    return jsonb_build_object('ok', false, 'error', 'quota');
+  end if;
+
   insert into public.device_diagnostics
     (device_id, bundle_id, part, parts, data)
   values

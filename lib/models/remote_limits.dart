@@ -41,6 +41,11 @@ class DiagnosticsLimits {
   // 128 КБ заведомо ниже типичных ограничений. НЕ ИЗМЕРЕНО.
   static const int chunkChars = 128 * 1024;
 
+  // Пауза перед повторной отправкой отложенного пакета после отказа
+  // сервера по квоте или токену (ответы 'quota' / 'auth'): это не сбой
+  // связи, повтор раз в 30 с только долбил бы сервер. НЕ ИЗМЕРЕНО.
+  static const Duration serverRefusalRetryPause = Duration(hours: 1);
+
   // Срок хранения пакетов на сервере (в миграции supabase/migrations).
   // НЕ ИЗМЕРЕНО, решает владелец.
   static const Duration serverRetention = Duration(days: 14);
@@ -83,4 +88,54 @@ class RemoteCommandLimits {
 
   // Сколько последних команд показывать в сервисном меню. ЗАДАНО.
   static const int historyShown = 10;
+}
+
+// ------------------------------------------------------------
+// ПРЕДЕЛЫ НАСТРОЕК (update_config из облака И локальный ввод в сервисном
+// меню — один источник). Значение вне предела отклоняется ЦЕЛИКОМ.
+// ------------------------------------------------------------
+class ConfigLimits {
+  ConfigLimits._();
+
+  // Длительность обработки, с. ЗАДАНО владельцем, подлежит подтверждению.
+  static const int treatmentDurationMinS = 10;
+  static const int treatmentDurationMaxS = 120;
+
+  // Цена, центов: от 50 центов до 20 €. ЗАДАНО владельцем, подлежит
+  // подтверждению.
+  static const int priceMinCents = 50;
+  static const int priceMaxCents = 2000;
+
+  // Продувка компрессора перед включением насосов/ТЭНа, с. Умолчание 10 с;
+  // 1–30 с — те же границы, что уже стояли в локальном вводе сервисного
+  // меню (запас ×3 вверх). ОЦЕНКА, подлежит подтверждению владельцем.
+  static const int compressorPurgeMinS = 1;
+  static const int compressorPurgeMaxS = 30;
+
+  // Работа насоса после ТЭНа (продувка в конце), с. Умолчание 5 с; 1–30 с —
+  // как в локальном вводе (запас ×6 вверх). ОЦЕНКА, подлежит подтверждению.
+  static const int pumpAfterHeaterMinS = 1;
+  static const int pumpAfterHeaterMaxS = 30;
+
+  // Диапазон поля или null, если для поля пределов нет.
+  static ({int min, int max})? range(String field) {
+    switch (field) {
+      case 'treatmentDurationS':
+        return (min: treatmentDurationMinS, max: treatmentDurationMaxS);
+      case 'treatmentPriceCents':
+        return (min: priceMinCents, max: priceMaxCents);
+      case 'compressorPurgeS':
+        return (min: compressorPurgeMinS, max: compressorPurgeMaxS);
+      case 'pumpAfterHeaterS':
+        return (min: pumpAfterHeaterMinS, max: pumpAfterHeaterMaxS);
+    }
+    return null;
+  }
+
+  static const List<String> numericFields = [
+    'treatmentDurationS',
+    'treatmentPriceCents',
+    'compressorPurgeS',
+    'pumpAfterHeaterS',
+  ];
 }

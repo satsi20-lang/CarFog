@@ -143,7 +143,7 @@ class _SlowTransport implements CloudTransport {
       true;
 
   @override
-  Future<bool> uploadDiagnostics(String deviceId, String bundleId, int part,
-          int parts, String data) async =>
-      true;
+  Future<DiagUploadResult> uploadDiagnostics(String deviceId, String bundleId,
+          int part, int parts, String data) async =>
+      const DiagUploadResult.ok();
 }

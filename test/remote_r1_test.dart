@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:dry_fog_app/models/app_state.dart';
 import 'package:dry_fog_app/models/out_of_service.dart';
@@ -12,6 +14,7 @@ import 'package:dry_fog_app/services/cloud_service.dart';
 import 'package:dry_fog_app/services/diagnostics_service.dart';
 import 'package:dry_fog_app/services/remote_command_guard.dart';
 import 'package:dry_fog_app/services/remote_commands.dart';
+import 'package:dry_fog_app/services/system_service.dart';
 
 // Удалённая диагностика, этап R1: постоянный журнал, защита команд,
 // белый список, пакет диагностики без секретов.
@@ -57,6 +60,7 @@ void main() {
     AppLog.resetForTest();
     DiagnosticsService.setDirForTest(tmp);
     DiagnosticsService.last = null;
+    DiagnosticsService.resetRefusalForTest();
     CloudService.transport = LocalLogTransport();
     messenger.setMockMethodCallHandler(system, (c) async {
       if (c.method == 'getDeviceInfo') {
@@ -455,6 +459,218 @@ void main() {
       expect(parts.join(), text);
     });
   });
+
+  // -------------------------------------------- квота и отказы сервера
+  group('квота и отказы сервера', () {
+    test('quota: пакет не отправлен, причина quota, без повторов и без файла', () async {
+      final t = _FailTransport('quota');
+      CloudService.transport = t;
+      await AppLog.init(dir: tmp, reason: 'normal', version: '1');
+      final n = notifier()..transition(AppState.standby);
+      final o = await RemoteCommands.handle(cmd('collect_diagnostics'), n);
+      expect(o.ok, isFalse);
+      expect((jsonDecode(o.result) as Map)['error'], 'quota');
+      expect(DiagnosticsService.last?.sent, isFalse);
+      expect(DiagnosticsService.last?.error, 'quota');
+      expect(await DiagnosticsService.hasPending(), isFalse); // повторов не будет
+      final calls = t.calls;
+      // следующие тики не долбят сервер
+      await DiagnosticsService.retryPending();
+      await DiagnosticsService.retryPending();
+      expect(t.calls, calls);
+    });
+
+    test('quota при уже отложенном пакете: повторная отправка ставится на паузу', () async {
+      await AppLog.init(dir: tmp, reason: 'normal', version: '1');
+      final n = notifier()..transition(AppState.standby);
+      // 1) связи нет — пакет откладывается
+      CloudService.transport = _FailTransport('network');
+      await DiagnosticsService.collectAndSend(n);
+      expect(await DiagnosticsService.hasPending(), isTrue);
+      // 2) повтор упирается в квоту — один запрос и пауза
+      final t = _FailTransport('quota');
+      CloudService.transport = t;
+      await DiagnosticsService.retryPending();
+      await DiagnosticsService.retryPending();
+      await DiagnosticsService.retryPending();
+      expect(t.calls, 1);
+    });
+
+    test('ответы quota/auth/ошибка не оставляют токен и ключ в журнале и истории', () async {
+      await AppLog.init(dir: tmp, reason: 'normal', version: '1');
+      AppLog.install();
+      final n = notifier()..transition(AppState.standby);
+      AppLog.setSecrets([n.config.servicePin, n.config.cloudToken, n.config.cloudAnonKey]);
+      final responses = <http.Response>[
+        http.Response('{"ok":false,"error":"quota"}', 200),
+        http.Response('{"ok":false,"error":"auth"}', 200),
+        // сервер "эхом" возвращает секреты в поле error
+        http.Response('{"ok":false,"error":"bad tok-SECRET-123 anon-SECRET-456"}', 200),
+        http.Response('Bearer anon-SECRET-456 token tok-SECRET-123 denied', 401),
+      ];
+      var i = 0;
+      await http.runWithClient(() async {
+        CloudService.transport = SupabaseTransport(
+          baseUrl: 'https://example.invalid',
+          anonKey: n.config.cloudAnonKey,
+          deviceToken: n.config.cloudToken,
+        );
+        for (var k = 0; k < responses.length; k++) {
+          DiagnosticsService.resetRefusalForTest(); // как после часа паузы
+          // каждая команда "через 2 часа": и срок, и лимит частоты проходят
+          final at = DateTime.now().add(Duration(hours: 2 * (k + 1)));
+          final o = await RemoteCommands.handle(
+            cmd('collect_diagnostics', id: 'q$k', createdAt: at),
+            n,
+            now: at,
+          );
+          await CommandGuard.record(action: 'collect_diagnostics', ok: o.ok, result: o.result);
+        }
+      }, () => MockClient((request) async => responses[i++ % responses.length]));
+      final log = (await AppLog.tail(500)).join('\n');
+      final history = jsonEncode(await CommandGuard.history());
+      final status = DiagnosticsService.last?.error ?? '';
+      for (final text in [log, history, status]) {
+        expect(text, isNot(contains('tok-SECRET-123')));
+        expect(text, isNot(contains('anon-SECRET-456')));
+      }
+      // причина отказа сервера записана только коротким кодом
+      expect(history, contains('quota'));
+      expect(history, contains('auth'));
+      expect(history, contains('rejected'));
+    });
+  });
+
+  // ------------------------- restart_app: повторная проверка покоя
+  group('restart_app: проверка покоя перед перезапуском', () {
+    test('состояние стало неспокойным после приёма — перезапуск отменён, причина в истории', () async {
+      var restarts = 0;
+      RemoteCommands.restartHook = () async => restarts++;
+      final n = notifier()..transition(AppState.standby);
+      final o = await RemoteCommands.handle(cmd('restart_app'), n);
+      expect(o.ok, isTrue);
+      n.transition(AppState.selectFlavor); // клиент начал выбор аромата
+      await o.afterAck!();
+      expect(restarts, 0);
+      final h = await CommandGuard.history();
+      expect(h.first['action'], 'restart_app');
+      expect(h.first['ok'], isFalse);
+      expect(h.first['result'], contains('restart_cancelled:state_became_busy:selectFlavor'));
+    });
+
+    for (final s in [AppState.payment, AppState.preparing, AppState.treating]) {
+      test('(${s.name}) после приёма — отмена, перезапуска нет', () async {
+        var restarts = 0;
+        RemoteCommands.restartHook = () async => restarts++;
+        final n = notifier()..transition(AppState.standby);
+        final o = await RemoteCommands.handle(cmd('restart_app', id: 'rs-${s.name}'), n);
+        n.transition(s);
+        await o.afterAck!();
+        expect(restarts, 0);
+      });
+    }
+
+    test('вопрос нативного таймера isIdleForRestart: true в покое, false после начала цикла', () async {
+      SystemService.init();
+      final n = notifier()..transition(AppState.standby);
+      await RemoteCommands.handle(cmd('restart_app'), n);
+      expect(await SystemService.idleForRestartCheck!(), isTrue);
+      n.transition(AppState.payment);
+      expect(await SystemService.idleForRestartCheck!(), isFalse);
+      final h = await CommandGuard.history();
+      expect(h.first['result'], contains('restart_cancelled'));
+    });
+  });
+
+  // ------------------------------------------- update_config: пределы
+  group('update_config: пределы значений', () {
+    Future<CommandOutcome> upd(AppNotifier n, Map<String, dynamic> p, [String? id]) =>
+        RemoteCommands.handle(cmd('update_config', id: id, params: p), n);
+
+    test('значения внутри пределов (включая границы) применяются', () async {
+      final n = notifier();
+      final o = await upd(n, {
+        'treatmentDurationS': 120,
+        'treatmentPriceCents': 50,
+        'compressorPurgeS': 1,
+        'pumpAfterHeaterS': 30,
+      });
+      expect(o.ok, isTrue);
+      expect(n.config.treatmentDurationS, 120);
+      expect(n.config.treatmentPriceCents, 50);
+      expect(n.config.compressorPurgeS, 1);
+      expect(n.config.pumpAfterHeaterS, 30);
+      final o2 = await upd(n, {'treatmentDurationS': 10, 'treatmentPriceCents': 2000});
+      expect(o2.ok, isTrue);
+      expect(n.config.treatmentPriceCents, 2000);
+    });
+
+    const cases = <(String, int)>[
+      ('treatmentDurationS', 9),
+      ('treatmentDurationS', 121),
+      ('treatmentPriceCents', 49),
+      ('treatmentPriceCents', 2001),
+      ('compressorPurgeS', 0),
+      ('compressorPurgeS', 31),
+      ('pumpAfterHeaterS', 0),
+      ('pumpAfterHeaterS', 31),
+    ];
+    for (final (field, value) in cases) {
+      test('$field = $value вне предела: отказ out_of_range:$field, настройки не изменены', () async {
+        final n = notifier();
+        final before = n.config.treatmentDurationS;
+        final o = await upd(n, {field: value}, 'b-$field-$value');
+        expect(o.ok, isFalse);
+        expect(o.result, 'out_of_range:$field');
+        expect(n.config.treatmentDurationS, before);
+        expect(n.config.treatmentPriceCents, 200);
+      });
+    }
+
+    test('отклоняется ЦЕЛИКОМ: годное поле рядом с негодным не применяется', () async {
+      final n = notifier();
+      final o = await upd(n, {'treatmentPriceCents': 300, 'treatmentDurationS': 500});
+      expect(o.result, 'out_of_range:treatmentDurationS');
+      expect(n.config.treatmentPriceCents, 200);
+    });
+
+    test('не число и плохой PIN', () async {
+      final n = notifier();
+      expect((await upd(n, {'treatmentDurationS': '40'}, 'bt1')).result, 'bad_type:treatmentDurationS');
+      expect((await upd(n, {'treatmentDurationS': 40.5}, 'bt2')).result, 'bad_type:treatmentDurationS');
+      expect((await upd(n, {'servicePin': '12'}, 'bt3')).result, 'invalid:servicePin');
+      expect(n.config.servicePin, '7351');
+    });
+
+    test('пределы — один источник с локальным вводом в сервисном меню', () {
+      expect(ConfigLimits.range('treatmentDurationS'), (min: 10, max: 120));
+      expect(ConfigLimits.range('treatmentPriceCents'), (min: 50, max: 2000));
+      expect(ConfigLimits.range('compressorPurgeS')!.min, 1);
+      expect(ConfigLimits.range('pumpAfterHeaterS')!.max, 30);
+    });
+  });
+}
+
+class _FailTransport implements CloudTransport {
+  final String error;
+  int calls = 0;
+  _FailTransport(this.error);
+
+  @override
+  Future<DiagUploadResult> uploadDiagnostics(String deviceId, String bundleId, int part, int partsTotal, String data) async {
+    calls++;
+    return DiagUploadResult.fail(error);
+  }
+
+  @override
+  Future<bool> send(String deviceId, List<CloudEvent> events) async => true;
+
+  @override
+  Future<CloudPollResult> fetchCommands(String deviceId, {Map<String, dynamic>? config}) async =>
+      CloudPollResult(commands: const []);
+
+  @override
+  Future<bool> ackCommand(String deviceId, String commandId, bool ok, String? result) async => true;
 }
 
 class _CaptureTransport implements CloudTransport {
@@ -463,10 +679,10 @@ class _CaptureTransport implements CloudTransport {
   _CaptureTransport(this.parts);
 
   @override
-  Future<bool> uploadDiagnostics(String deviceId, String bundleId, int part, int partsTotal, String data) async {
+  Future<DiagUploadResult> uploadDiagnostics(String deviceId, String bundleId, int part, int partsTotal, String data) async {
     bundleIds.add(bundleId);
     parts.add(data);
-    return true;
+    return const DiagUploadResult.ok();
   }
 
   @override

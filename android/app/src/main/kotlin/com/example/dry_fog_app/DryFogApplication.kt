@@ -152,6 +152,28 @@ class DryFogApplication : Application() {
         }
     }
 
+    // Отмена запланированного рестарта (удалённая команда restart_app:
+    // состояние за время ожидания перестало быть спокойным). Тот же
+    // PendingIntent (одинаковые Intent и requestCode), FLAG_NO_CREATE —
+    // если будильника нет, ничего не создаём.
+    internal fun cancelScheduledRestart() {
+        try {
+            val pending = PendingIntent.getBroadcast(
+                this,
+                0,
+                Intent(this, RestartReceiver::class.java),
+                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+            )
+            if (pending != null) {
+                val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+                alarmManager.cancel(pending)
+                pending.cancel()
+            }
+        } catch (e: Throwable) {
+            Log.e(TAG, "Не удалось отменить рестарт: $e")
+        }
+    }
+
     companion object {
         private const val TAG = "DryFogApplication"
         private const val EMERGENCY_TIMEOUT_MS = 2000L

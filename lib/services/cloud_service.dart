@@ -148,6 +148,20 @@ class CloudPollResult {
 // ТРАНСПОРТ — интерфейс. Реализация меняется без правки кода приложения.
 // ============================================================
 
+// Итог загрузки части пакета диагностики. error — причина отказа сервера
+// ('quota', 'auth', 'bad_request', 'http_NNN', 'network'); null при успехе.
+class DiagUploadResult {
+  final bool ok;
+  final String? error;
+  const DiagUploadResult.ok() : ok = true, error = null;
+  const DiagUploadResult.fail(this.error) : ok = false;
+
+  // Отказ сервера, который сам не пройдёт при повторе (квота, токен,
+  // неверная форма): повторять в цикле бессмысленно.
+  bool get permanent =>
+      error == 'quota' || error == 'auth' || error == 'bad_request';
+}
+
 abstract class CloudTransport {
   Future<bool> send(String deviceId, List<CloudEvent> events);
 
@@ -168,7 +182,7 @@ abstract class CloudTransport {
 
   // Загрузка пакета диагностики по частям (R1): part 1..parts, data — кусок
   // JSON-текста. true — сервер принял именно эту часть.
-  Future<bool> uploadDiagnostics(
+  Future<DiagUploadResult> uploadDiagnostics(
     String deviceId,
     String bundleId,
     int part,
@@ -218,7 +232,7 @@ class LocalLogTransport implements CloudTransport {
   // он честно значился как НЕОТПРАВЛЕННЫЙ (и не терялся: DiagnosticsService
   // оставляет его на диске для повторной отправки).
   @override
-  Future<bool> uploadDiagnostics(
+  Future<DiagUploadResult> uploadDiagnostics(
     String deviceId,
     String bundleId,
     int part,
@@ -226,7 +240,7 @@ class LocalLogTransport implements CloudTransport {
     String data,
   ) async {
     debugPrint('CLOUD[$deviceId] diagnostics $bundleId $part/$parts (облако выключено)');
-    return false;
+    return const DiagUploadResult.fail('cloud_disabled');
   }
 }
 
@@ -337,7 +351,7 @@ class SupabaseTransport implements CloudTransport {
   }
 
   @override
-  Future<bool> uploadDiagnostics(
+  Future<DiagUploadResult> uploadDiagnostics(
     String deviceId,
     String bundleId,
     int part,
@@ -360,14 +374,25 @@ class SupabaseTransport implements CloudTransport {
           )
           .timeout(_timeout);
       if (resp.statusCode != 200) {
+        // Тело ответа в журнал НЕ пишем: сервер мог бы вернуть в нём
+        // эхо запроса (токен, ключ).
         debugPrint('SupabaseTransport.uploadDiagnostics HTTP ${resp.statusCode}');
-        return false;
+        return DiagUploadResult.fail('http_${resp.statusCode}');
       }
       final body = jsonDecode(resp.body);
-      return body is Map && body['ok'] == true;
+      if (body is Map && body['ok'] == true) return const DiagUploadResult.ok();
+      // Причина отказа сервера ('quota', 'auth', 'bad_request') — короткий
+      // код, берём только его (строку из ответа, ограниченную по длине и
+      // алфавиту): произвольный текст ответа в журнал/историю не идёт.
+      final raw = body is Map ? body['error'] : null;
+      final code = raw is String && RegExp(r'^[a-z_]{1,32}$').hasMatch(raw)
+          ? raw
+          : 'rejected';
+      debugPrint('SupabaseTransport.uploadDiagnostics отказ сервера: $code');
+      return DiagUploadResult.fail(code);
     } catch (e) {
-      debugPrint('SupabaseTransport.uploadDiagnostics error: $e');
-      return false;
+      debugPrint('SupabaseTransport.uploadDiagnostics error: ${e.runtimeType}');
+      return const DiagUploadResult.fail('network');
     }
   }
 

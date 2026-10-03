@@ -83,6 +83,17 @@
             </intent-filter>
         </activity-alias>
 
+        <!-- Перезапуск по команде restart_app (R1): отдельный процесс, чтобы
+             пережить гибель основного, и запустить MainActivity с переднего
+             плана (запуск из фона система запрещает). См. RestartActivity. -->
+        <activity
+            android:name=".RestartActivity"
+            android:process=":restart"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <!-- Автозапуск после перезагрузки/подачи питания (Шаг 32, задача 1).
              exported=true обязателен, иначе система не сможет его вызвать —
              сами системные широковещательные сообщения BOOT_COMPLETED

@@ -26,6 +26,7 @@ import io.flutter.plugin.common.StandardMethodCodec
 
 class MainActivity : FlutterActivity() {
 
+    private val RESTART_CHECK_TIMEOUT_MS = 1000L
     private val CHANNEL = "com.carfog.dryfog/modbus"
     private val STORAGE_CHANNEL = "com.carfog.dryfog/storage"
     private val SYSTEM_CHANNEL = "com.carfog.dryfog/system"
@@ -35,6 +36,12 @@ class MainActivity : FlutterActivity() {
     // инициализируется только после attachBaseContext, поэтому lazy.
     private val outOfServiceStore by lazy { OutOfServiceStore(filesDir) }
     private var modbusChannel: ModbusChannel? = null
+    // Канал системных вызовов — нужен, чтобы перед завершением процесса
+    // (restart_app) спросить Dart: аппарат всё ещё в покое?
+    private var systemChannel: MethodChannel? = null
+    // MainActivity на переднем плане — только тогда restart_app может
+    // поднять экран через RestartActivity (запуск из фона запрещён).
+    private var isForeground = false
 
     // true, если этот запуск активности вызван BootReceiver'ом
     // (Шаг 32, задача 1) — читается один раз в onCreate из intent-экстры,
@@ -132,8 +139,8 @@ class MainActivity : FlutterActivity() {
         // короткие вызовы к PackageManager/SharedPreferences/Settings,
         // поэтому обычный MethodChannel на платформенном потоке, без
         // фоновой очереди.
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SYSTEM_CHANNEL)
-            .setMethodCallHandler { call, result ->
+        systemChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SYSTEM_CHANNEL)
+        systemChannel!!.setMethodCallHandler { call, result ->
                 when (call.method) {
                     "setKioskHomeEnabled" -> {
                         val enabled = call.argument<Boolean>("enabled") ?: false
@@ -345,11 +352,77 @@ class MainActivity : FlutterActivity() {
     // механизмом, что и после аварии (DryFogApplication.scheduleRestart),
     // но БЕЗ отметки об аварии: причина запуска будет 'normal'. Задержка
     // даёт ответу в Dart уйти и журналу сброситься на диск.
+    //
+    // Перед завершением процесса (через 1,5 с) нативная сторона ЕЩЁ РАЗ
+    // спрашивает Dart, что аппарат в покое: за это время мог начаться выбор
+    // аромата/оплата/прогрев. Ответ false (или ошибка) — запланированный
+    // подъём отменяется, процесс не трогается. Dart не ответил за
+    // RESTART_CHECK_TIMEOUT_MS (завис) — рестарт выполняется: зависшему
+    // приложению он и нужен. Сумма задержек (1,5 + 1 с) меньше задержки
+    // будильника (3 с, DryFogApplication.RESTART_DELAY_MS) — будильник не
+    // сработает раньше завершения процесса.
     private fun restartApp() {
-        (application as? DryFogApplication)?.scheduleRestart()
-        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-            Process.killProcess(Process.myPid())
+        val app = application as? DryFogApplication
+        // Запасной путь (будильник → RestartReceiver): сработает, если
+        // RestartActivity запустить не удалось; из фона система может
+        // запретить подъём экрана — тогда его поднимет киоск (роль домашнего
+        // приложения).
+        app?.scheduleRestart()
+        val handler = android.os.Handler(android.os.Looper.getMainLooper())
+        handler.postDelayed({
+            val ch = systemChannel
+            if (ch == null) {
+                doRestart()
+                return@postDelayed
+            }
+            var answered = false
+            ch.invokeMethod("isIdleForRestart", null, object : MethodChannel.Result {
+                override fun success(result: Any?) {
+                    answered = true
+                    if (result == true) doRestart() else app?.cancelScheduledRestart()
+                }
+                override fun error(code: String, msg: String?, details: Any?) {
+                    answered = true
+                    app?.cancelScheduledRestart()
+                }
+                override fun notImplemented() {
+                    answered = true
+                    app?.cancelScheduledRestart()
+                }
+            })
+            handler.postDelayed({
+                if (!answered) doRestart()
+            }, RESTART_CHECK_TIMEOUT_MS)
         }, 1500)
+    }
+
+    // Само завершение: с переднего плана — через RestartActivity (она
+    // убьёт этот процесс и сама поднимет экран); из фона — просто убить
+    // процесс, подъём остаётся за будильником/киоском.
+    private fun doRestart() {
+        if (isForeground) {
+            try {
+                startActivity(
+                    Intent(this, RestartActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+                        .putExtra(RestartActivity.EXTRA_MAIN_PID, Process.myPid())
+                )
+                return
+            } catch (e: Throwable) {
+                android.util.Log.e("MainActivity", "RestartActivity не запущена: $e")
+            }
+        }
+        Process.killProcess(Process.myPid())
+    }
+
+    override fun onResume() {
+        super.onResume()
+        isForeground = true
+    }
+
+    override fun onPause() {
+        isForeground = false
+        super.onPause()
     }
 
     override fun onDestroy() {
@@ -357,6 +430,7 @@ class MainActivity : FlutterActivity() {
         // же процессе не сможет открыть шину (см. ModbusChannel.release).
         modbusChannel?.release()
         modbusChannel = null
+        systemChannel = null
         super.onDestroy()
     }
 }

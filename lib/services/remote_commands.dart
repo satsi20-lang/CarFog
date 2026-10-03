@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../models/app_state.dart';
+import '../models/remote_limits.dart';
 import 'app_log_service.dart';
 import 'cloud_service.dart';
 import 'config_service.dart';
@@ -62,6 +63,30 @@ class RemoteCommands {
   // Подмена в тестах: что делать после ack для restart_app.
   @visibleForTesting
   static Future<void> Function() restartHook = SystemService.restartApp;
+
+  // Аппарат, для которого принята команда restart_app (нужен для повторной
+  // проверки покоя прямо перед перезапуском).
+  static AppNotifier? _restartNotifier;
+
+  // Повторная проверка покоя ПЕРЕД перезапуском: между приёмом команды и
+  // завершением процесса (ack, событие, сброс журнала, 1,5 с нативного
+  // таймера) мог начаться выбор аромата, оплата или прогрев. Не покой —
+  // перезапуск отменяется, причина пишется в журнал, историю команд и
+  // событие. Вызывается и из afterAck, и нативной стороной (SystemService).
+  static Future<bool> idleForRestart() async {
+    final n = _restartNotifier;
+    if (n != null && isIdle(n.state)) return true;
+    final reason = n == null
+        ? 'restart_cancelled:no_pending_restart'
+        : 'restart_cancelled:state_became_busy:${n.state.name}';
+    AppLog.log('RemoteCommands', reason);
+    await CommandGuard.record(action: 'restart_app', ok: false, result: reason);
+    await CloudService.report(
+      CloudEventType.commandExecuted,
+      data: {'action': 'restart_app', 'ok': false, 'result': reason},
+    );
+    return false;
+  }
 
   static Future<CommandOutcome> handle(
     CloudCommand command,
@@ -140,6 +165,13 @@ class RemoteCommands {
         return const CommandOutcome(false, 'PIN должен состоять из 4 цифр');
 
       case 'update_config':
+        // Пределы значений: вне предела — отклоняется ЦЕЛИКОМ, настройки не
+        // меняются (ack 'out_of_range:поле').
+        final bad = validateConfigParams(command.params);
+        if (bad != null) {
+          AppLog.log('RemoteCommands', 'update_config отклонён: $bad');
+          return CommandOutcome(false, bad);
+        }
         final updated = _applyConfig(notifier.config, command.params);
         await notifier.saveConfig(updated);
         return const CommandOutcome(true, 'настройки применены');
@@ -183,10 +215,15 @@ class RemoteCommands {
         if (!await CommandGuard.allowRate(action, now: now)) {
           return const CommandOutcome(false, 'rate_limited');
         }
+        _restartNotifier = notifier;
+        SystemService.idleForRestartCheck = idleForRestart;
         return CommandOutcome(
           true,
           'перезапуск через ~1.5 с после ответа',
           afterAck: () async {
+            // Первая проверка покоя после ack (вторая — нативная, через
+            // 1,5 с перед завершением процесса).
+            if (!await idleForRestart()) return;
             // Журнал сбрасывается на диск до завершения процесса.
             await AppLog.flush();
             await restartHook();
@@ -195,6 +232,26 @@ class RemoteCommands {
     }
     // Недостижимо (whitelist выше), но не оставляем без ответа.
     return CommandOutcome(false, 'неизвестная команда: $action');
+  }
+
+  // Проверка значений update_config. null — всё в пределах. Иначе строка
+  // 'out_of_range:поле' (число вне предела, ConfigLimits) или
+  // 'bad_type:поле' (не число) / 'invalid:servicePin' (не 4 цифры).
+  // Поля, которых в команде нет, не проверяются.
+  static String? validateConfigParams(Map<String, dynamic> params) {
+    for (final field in ConfigLimits.numericFields) {
+      if (!params.containsKey(field) || params[field] == null) continue;
+      final v = params[field];
+      if (v is! num || v != v.toInt()) return 'bad_type:$field';
+      final r = ConfigLimits.range(field)!;
+      if (v < r.min || v > r.max) return 'out_of_range:$field';
+    }
+    final pin = params['servicePin'];
+    if (pin != null) {
+      final s = pin.toString().trim();
+      if (s.length != 4 || int.tryParse(s) == null) return 'invalid:servicePin';
+    }
+    return null;
   }
 
   // ---- применение настроек (перенесено из SyncService без изменений) ----
