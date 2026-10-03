@@ -26,3 +26,25 @@ class RootShellTest {
         assertEquals("''", RootShell.shQuote(""))
     }
 }
+
+// Имена классов собираются из namespace, а не из applicationId: при пакете
+// ee.carfog.dryfog класс остаётся com.example.dry_fog_app.MainActivity.
+class ComponentNamesTest {
+    @Test
+    fun `class name uses namespace`() {
+        assertEquals(
+            "com.example.dry_fog_app.MainActivity",
+            ComponentNames.className("com.example.dry_fog_app", "MainActivity")
+        )
+        assertEquals(
+            "x.y.KioskHomeAlias",
+            ComponentNames.className("x.y", "KioskHomeAlias")
+        )
+    }
+
+    @Test
+    fun `namespace of compiled classes matches manifest relative names`() {
+        assertEquals("com.example.dry_fog_app.MainActivity", ComponentNames.mainActivityClass())
+        assertEquals("com.example.dry_fog_app.KioskHomeAlias", ComponentNames.kioskAliasClass())
+    }
+}

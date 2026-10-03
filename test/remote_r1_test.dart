@@ -610,9 +610,9 @@ void main() {
       ('treatmentDurationS', 121),
       ('treatmentPriceCents', 49),
       ('treatmentPriceCents', 2001),
-      ('compressorPurgeS', 0),
+      ('compressorPurgeS', -1),
       ('compressorPurgeS', 61),
-      ('pumpAfterHeaterS', 0),
+      ('pumpAfterHeaterS', -1),
       ('pumpAfterHeaterS', 61),
     ];
     for (final (field, value) in cases) {
@@ -626,6 +626,16 @@ void main() {
         expect(n.config.treatmentPriceCents, 200);
       });
     }
+
+    test('границы продувки и насоса: 0 и 60 принимаются', () async {
+      for (final v in [0, 60]) {
+        final n = notifier();
+        final o = await upd(n, {'compressorPurgeS': v, 'pumpAfterHeaterS': v}, 'edge-$v');
+        expect(o.ok, isTrue, reason: '$v');
+        expect(n.config.compressorPurgeS, v);
+        expect(n.config.pumpAfterHeaterS, v);
+      }
+    });
 
     test('отклоняется ЦЕЛИКОМ: годное поле рядом с негодным не применяется', () async {
       final n = notifier();
@@ -645,7 +655,8 @@ void main() {
     test('пределы — один источник с локальным вводом в сервисном меню', () {
       expect(ConfigLimits.range('treatmentDurationS'), (min: 10, max: 120));
       expect(ConfigLimits.range('treatmentPriceCents'), (min: 50, max: 2000));
-      expect(ConfigLimits.range('compressorPurgeS')!.min, 1);
+      expect(ConfigLimits.range('compressorPurgeS')!.min, 0);
+      expect(ConfigLimits.range('pumpAfterHeaterS')!.min, 0);
       expect(ConfigLimits.range('compressorPurgeS')!.max, 60);
       expect(ConfigLimits.range('pumpAfterHeaterS')!.max, 60);
     });

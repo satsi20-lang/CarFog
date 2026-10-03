@@ -15,8 +15,8 @@
 //   5 CODE        versionCode, который ожидается после установки
 //   6 HEALTH      файл здоровья (его пишет новая версия)
 //   7 LOG         протокол
-//   8 ALIAS       класс алиаса киоска (для возврата роли домашнего экрана)
-//   9 ACTIVITY    главная активность
+//   8 ALIAS       полное имя класса алиаса киоска (в namespace, НЕ в пакете) (для возврата роли домашнего экрана)
+//   9 ACTIVITY    полное имя класса главной активности (в namespace)
 //  10 KIOSK       1 — киоск был включён, вернуть роль после установки
 //  11 TIMEOUT_S   сколько ждать сигнала здоровья
 const String updateScriptText = r'''#!/system/bin/sh
@@ -26,12 +26,30 @@ ALIAS="$8"; ACT="$9"; KIOSK="${10}"; TIMEOUT="${11}"
 log() { echo "$(date +%s) $*" >> "$LOG"; }
 first_line() { echo "$1" | head -n 1; }
 
+# Каталог обновления создан приложением (его uid), а файлы в нём пишет root:
+# в конце (любой выход) вернуть владельца и контекст SELinux, иначе приложение
+# не прочитает протокол и не удалит резерв.
+DIR=$(dirname "$LOG")
+OWNER=$(stat -c %u:%g "$DIR" 2> /dev/null)
+fix_owner() {
+  [ -n "$OWNER" ] && chown -R "$OWNER" "$DIR" 2> /dev/null
+  restorecon -R "$DIR" > /dev/null 2>&1
+  log "owner_fixed owner=${OWNER:-unknown} $(ls -ldZ "$DIR" 2> /dev/null | tr -s ' ' | head -n 1)"
+}
+trap fix_owner EXIT
+
+# Диагностика: в каком cgroup и контексте работает скрипт и от кого он
+# запущен. pm install убивает процесс приложения вместе с его cgroup; если
+# скрипт окажется там же, он умрёт посреди установки (по протоколу видно).
+log "diag pid=$$ ppid=$PPID uid=$(id -u) ctx=$(id -Z 2> /dev/null) cgroup=$(tr '\n' ';' < /proc/$$/cgroup 2> /dev/null)"
+
 # Android сбрасывает роль домашнего экрана при замене пакета: вернуть её (если
 # киоск был включён) и запустить приложение (root может стартовать активность
 # из фона, в отличие от самого приложения).
 restore_and_start() {
   if [ "$KIOSK" = "1" ]; then
     pm enable "$PKG/$ALIAS" > /dev/null 2>&1
+    log "alias_enabled"
     cmd role add-role-holder --user 0 android.app.role.HOME "$PKG" > /dev/null 2>&1
     log "kiosk_role_restored"
   fi

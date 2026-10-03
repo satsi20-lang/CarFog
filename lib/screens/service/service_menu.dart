@@ -38,24 +38,28 @@ const Map<String, Map<String, String>> _i18n = {
     'err_price': 'Цена: от 0.50 € до 20 €',
     'err_duration': 'Длительность: 10–120 сек',
     'err_pin': 'PIN — 4 цифры',
-    'err_pin_weak': 'PIN слишком простой: не 1234, не одинаковые цифры, не по порядку',
+    'err_pin_weak':
+        'PIN слишком простой: не 1234, не одинаковые цифры, не по порядку',
     'mc_title': 'Мастер-код (аварийный вход)',
     'mc_ack': 'Мастер-код записан',
     'mc_not_ack': 'Мастер-код НЕ записан — ввод в эксплуатацию не завершён',
     'mc_show': 'Показать мастер-код',
     'mc_change': 'Сменить мастер-код',
-    'mc_change_warn': 'Прежний мастер-код перестанет действовать. Новый будет показан один раз. Продолжить?',
+    'mc_change_warn':
+        'Прежний мастер-код перестанет действовать. Новый будет показан один раз. Продолжить?',
     'mc_shown_title': 'Мастер-код этого аппарата',
-    'mc_shown_warn': 'Запишите код и храните отдельно от аппарата. Повторно показать его нельзя.',
+    'mc_shown_warn':
+        'Запишите код и храните отдельно от аппарата. Повторно показать его нельзя.',
     'mc_written': 'Я записал',
     'mc_close_unconfirmed': 'Закрыть без подтверждения',
-    'mc_hint': 'Код нужен, если забыт сервисный PIN. Он свой у каждого аппарата.',
+    'mc_hint':
+        'Код нужен, если забыт сервисный PIN. Он свой у каждого аппарата.',
     'cancel_btn': 'Отмена',
     'compressor_purge_label':
         'Продувка компрессора до включения насосов и ТЭНа (сек)',
     'pump_after_heater_label': 'Работа насоса после выключения ТЭНа (сек)',
-    'err_compressor_purge': 'Продувка компрессора: 1–60 сек',
-    'err_pump_after_heater': 'Работа насоса после ТЭНа: 1–60 сек',
+    'err_compressor_purge': 'Продувка компрессора: 0–60 сек',
+    'err_pump_after_heater': 'Работа насоса после ТЭНа: 0–60 сек',
     'tariff_label': 'Тариф на электроэнергию (€/кВт·ч)',
     'err_tariff': 'Тариф: неотрицательное число',
     'idle_cost_label': 'Стоимость простоя за сутки (справочно)',
@@ -126,11 +130,13 @@ const Map<String, Map<String, String>> _i18n = {
     'up_last_none': 'ещё не было',
     'up_rollback': 'Откатить',
     'up_rollback_title': 'Откатить на резервную версию?',
-    'up_rollback_body': 'Приложение будет заменено резервной версией и перезапущено. Данные аппарата не стираются. Во время отката оплата не принимается.',
+    'up_rollback_body':
+        'Приложение будет заменено резервной версией и перезапущено. Данные аппарата не стираются. Во время отката оплата не принимается.',
     'up_rollback_started': 'Откат запущен',
     'up_rollback_failed': 'Откат не запущен',
     'up_adb': 'ADB по сети: сохранять после перезагрузки',
-    'up_adb_warn': 'Любой, кто в одной сети с планшетом, сможет подключиться к нему по ADB. Включайте только на время обслуживания и в доверенной сети. Включить?',
+    'up_adb_warn':
+        'Любой, кто в одной сети с планшетом, сможет подключиться к нему по ADB. Включайте только на время обслуживания и в доверенной сети. Включить?',
     'up_adb_state': 'Состояние ADB по сети',
     'up_adb_unknown': 'не определено (нет root)',
     'up_adb_failed': 'Не удалось изменить (нет root?)',
@@ -251,31 +257,41 @@ const Map<String, Map<String, String>> _i18n = {
     'diag_freeze_temp': 'Заморозить показание температуры',
     'diag_freeze_temp_hint':
         'Отладка: термопара «залипает» на последнем значении, шину не читает — для проверки детекторов отказа датчика. Проверка идёт с ВКЛЮЧЁННЫМ ТЭНом: техник стоит рядом и готов отключить питание. Живёт до ручного выключения, автоснятие через 30 минут, видно в облаке.',
-    'diag_freeze_temp_failed': 'Заморозить нечем: нет ни одного чтения температуры',
+    'diag_freeze_temp_failed':
+        'Заморозить нечем: нет ни одного чтения температуры',
     'oos_status_ok': 'Аппарат принимает оплату',
-    'oos_status_cfg_blocked': 'ОПЛАТА ЗАБЛОКИРОВАНА конфигурацией (это не отказ)',
-    'oos_cfg_missing': 'Не отмечены установленными (включите: Диагностика → Устройства на шине)',
+    'oos_status_cfg_blocked':
+        'ОПЛАТА ЗАБЛОКИРОВАНА конфигурацией (это не отказ)',
+    'oos_cfg_missing':
+        'Не отмечены установленными (включите: Диагностика → Устройства на шине)',
     'oos_status_blocked': 'ВЫВЕДЕН ИЗ ОБСЛУЖИВАНИЯ — оплата заблокирована',
     'oos_reason': 'Причина',
     'oos_since': 'С',
     'oos_code_heater_no_power': 'отказ нагрева (ТЭН не дал мощности)',
-    'oos_code_temp_sensor_fault': 'отказ датчика температуры / убегающий нагрев',
+    'oos_code_temp_sensor_fault':
+        'отказ датчика температуры / убегающий нагрев',
     'oos_code_heat_timeout': 'прогрев не достиг цели за 180 с',
-    'oos_code_heater_off_unconfirmed': 'выключение ТЭНа не подтверждено (возможно, залипло реле)',
-    'oos_code_overheat': 'перегрев (ТЭН не выключается или не работает термостат)',
-    'oos_code_output_stuck_on': 'выход остаётся включённым после аварийного выключения',
-    'oos_code_state_unreadable': 'состояние не читается (fail-closed при старте)',
+    'oos_code_heater_off_unconfirmed':
+        'выключение ТЭНа не подтверждено (возможно, залипло реле)',
+    'oos_code_overheat':
+        'перегрев (ТЭН не выключается или не работает термостат)',
+    'oos_code_output_stuck_on':
+        'выход остаётся включённым после аварийного выключения',
+    'oos_code_state_unreadable':
+        'состояние не читается (fail-closed при старте)',
     'oos_trial_btn': 'Пробный цикл (без оплаты)',
     'oos_trial_running': 'Идёт пробный цикл…',
     'oos_trial_hint':
         'Греет ТЭН несколько секунд, проверяет мощность и рост температуры. Блокировку сам не снимает и оплату клиентам не открывает.',
-    'oos_trial_pass': 'Пробный цикл пройден — блокировку можно снять (15 минут)',
+    'oos_trial_pass':
+        'Пробный цикл пройден — блокировку можно снять (15 минут)',
     'oos_trial_pass_healthy': 'Пробный цикл пройден',
     'oos_trial_fail': 'Пробный цикл провален',
     'oos_trial_too_hot': 'Испаритель горячий — подождите остывания',
     'oos_trial_busy': 'Пробный цикл сейчас недоступен',
     'oos_trial_abort': 'Прервать пробный цикл',
-    'oos_trial_no_thermo': 'Термопара не отмечена как установленная — пробный цикл невозможен',
+    'oos_trial_no_thermo':
+        'Термопара не отмечена как установленная — пробный цикл невозможен',
     'oos_trial_cancelled': 'Пробный цикл прерван',
     'oos_clear_btn': 'Снять блокировку',
     'oos_clear_hint':
@@ -284,7 +300,8 @@ const Map<String, Map<String, String>> _i18n = {
     'oos_clear_confirm_body':
         'Аппарат снова начнёт принимать оплату. Убедитесь, что неисправность устранена, а пробный цикл прошёл.',
     'oos_cleared': 'Блокировка снята',
-    'oos_clear_failed': 'Не удалось снять блокировку — пройдите пробный цикл заново',
+    'oos_clear_failed':
+        'Не удалось снять блокировку — пройдите пробный цикл заново',
     'diag_seconds_suffix': ' с',
     'diag_confirm_title': 'Подтвердите включение',
     'diag_confirm_body':
@@ -346,24 +363,28 @@ const Map<String, Map<String, String>> _i18n = {
     'err_price': 'Price: from 0.50 € to 20 €',
     'err_duration': 'Duration: 10–120 sec',
     'err_pin': 'PIN must be 4 digits',
-    'err_pin_weak': 'PIN is too simple: not 1234, repeated digits or a sequence',
+    'err_pin_weak':
+        'PIN is too simple: not 1234, repeated digits or a sequence',
     'mc_title': 'Master code (emergency access)',
     'mc_ack': 'Master code recorded',
     'mc_not_ack': 'Master code NOT recorded — commissioning is not finished',
     'mc_show': 'Show master code',
     'mc_change': 'Change master code',
-    'mc_change_warn': 'The previous master code will stop working. The new one is shown once. Continue?',
+    'mc_change_warn':
+        'The previous master code will stop working. The new one is shown once. Continue?',
     'mc_shown_title': 'Master code of this machine',
-    'mc_shown_warn': 'Write the code down and keep it apart from the machine. It cannot be shown again.',
+    'mc_shown_warn':
+        'Write the code down and keep it apart from the machine. It cannot be shown again.',
     'mc_written': 'I have written it down',
     'mc_close_unconfirmed': 'Close without confirming',
-    'mc_hint': 'The code is needed if the service PIN is forgotten. Every machine has its own.',
+    'mc_hint':
+        'The code is needed if the service PIN is forgotten. Every machine has its own.',
     'cancel_btn': 'Cancel',
     'compressor_purge_label':
         'Compressor purge before pumps/heater turn on (sec)',
     'pump_after_heater_label': 'Pump run time after heater turns off (sec)',
-    'err_compressor_purge': 'Compressor purge: 1–60 sec',
-    'err_pump_after_heater': 'Pump after heater: 1–60 sec',
+    'err_compressor_purge': 'Compressor purge: 0–60 sec',
+    'err_pump_after_heater': 'Pump after heater: 0–60 sec',
     'tariff_label': 'Electricity tariff (€/kWh)',
     'err_tariff': 'Tariff: non-negative number',
     'idle_cost_label': 'Daily idle cost (reference only)',
@@ -434,11 +455,13 @@ const Map<String, Map<String, String>> _i18n = {
     'up_last_none': 'none yet',
     'up_rollback': 'Roll back',
     'up_rollback_title': 'Roll back to the backup version?',
-    'up_rollback_body': 'The app will be replaced by the backup version and restarted. Machine data is not erased. Payments are not accepted during the rollback.',
+    'up_rollback_body':
+        'The app will be replaced by the backup version and restarted. Machine data is not erased. Payments are not accepted during the rollback.',
     'up_rollback_started': 'Rollback started',
     'up_rollback_failed': 'Rollback not started',
     'up_adb': 'ADB over network: keep after reboot',
-    'up_adb_warn': 'Anyone on the same network as the tablet will be able to connect to it over ADB. Enable only during maintenance and on a trusted network. Enable?',
+    'up_adb_warn':
+        'Anyone on the same network as the tablet will be able to connect to it over ADB. Enable only during maintenance and on a trusted network. Enable?',
     'up_adb_state': 'ADB over network state',
     'up_adb_unknown': 'unknown (no root)',
     'up_adb_failed': 'Could not change (no root?)',
@@ -562,28 +585,33 @@ const Map<String, Map<String, String>> _i18n = {
     'diag_freeze_temp_failed': 'Nothing to freeze: no temperature reading yet',
     'oos_status_ok': 'Machine is accepting payments',
     'oos_status_cfg_blocked': 'PAYMENT BLOCKED by configuration (not a fault)',
-    'oos_cfg_missing': 'Not marked as installed (enable: Diagnostics → Devices on the bus)',
+    'oos_cfg_missing':
+        'Not marked as installed (enable: Diagnostics → Devices on the bus)',
     'oos_status_blocked': 'OUT OF SERVICE — payments blocked',
     'oos_reason': 'Reason',
     'oos_since': 'Since',
     'oos_code_heater_no_power': 'heater failure (no heater power)',
     'oos_code_temp_sensor_fault': 'temperature sensor fault / runaway heating',
     'oos_code_heat_timeout': 'preheat did not reach the target in 180 s',
-    'oos_code_heater_off_unconfirmed': 'heater switch-off not confirmed (relay may be stuck)',
-    'oos_code_overheat': 'overheating (heater does not switch off or thermostat failed)',
+    'oos_code_heater_off_unconfirmed':
+        'heater switch-off not confirmed (relay may be stuck)',
+    'oos_code_overheat':
+        'overheating (heater does not switch off or thermostat failed)',
     'oos_code_output_stuck_on': 'an output stays on after emergency switch-off',
     'oos_code_state_unreadable': 'state unreadable (fail-closed at startup)',
     'oos_trial_btn': 'Trial cycle (no payment)',
     'oos_trial_running': 'Trial cycle running…',
     'oos_trial_hint':
         'Heats for a few seconds and checks heater power and temperature rise. Does not lift the block by itself and does not open payments to customers.',
-    'oos_trial_pass': 'Trial cycle passed — the block can be lifted (15 minutes)',
+    'oos_trial_pass':
+        'Trial cycle passed — the block can be lifted (15 minutes)',
     'oos_trial_pass_healthy': 'Trial cycle passed',
     'oos_trial_fail': 'Trial cycle failed',
     'oos_trial_too_hot': 'Evaporator is hot — wait for it to cool',
     'oos_trial_busy': 'Trial cycle is not available right now',
     'oos_trial_abort': 'Abort trial cycle',
-    'oos_trial_no_thermo': 'Thermocouple is not marked as installed — trial cycle is not possible',
+    'oos_trial_no_thermo':
+        'Thermocouple is not marked as installed — trial cycle is not possible',
     'oos_trial_cancelled': 'Trial cycle interrupted',
     'oos_clear_btn': 'Lift the block',
     'oos_clear_hint':
@@ -655,15 +683,19 @@ const Map<String, Map<String, String>> _i18n = {
     'err_price': 'Hind: 0.50 € kuni 20 €',
     'err_duration': 'Kestus: 10–120 sek',
     'err_pin': 'PIN peab olema 4 numbrit',
-    'err_pin_weak': 'PIN on liiga lihtne: mitte 1234, samad numbrid ega järjestus',
+    'err_pin_weak':
+        'PIN on liiga lihtne: mitte 1234, samad numbrid ega järjestus',
     'mc_title': 'Peakood (avariijuurdepääs)',
     'mc_ack': 'Peakood on üles kirjutatud',
-    'mc_not_ack': 'Peakoodi POLE üles kirjutatud — kasutuselevõtt pole lõpetatud',
+    'mc_not_ack':
+        'Peakoodi POLE üles kirjutatud — kasutuselevõtt pole lõpetatud',
     'mc_show': 'Näita peakoodi',
     'mc_change': 'Muuda peakoodi',
-    'mc_change_warn': 'Eelmine peakood lakkab kehtimast. Uus näidatakse ainult üks kord. Jätka?',
+    'mc_change_warn':
+        'Eelmine peakood lakkab kehtimast. Uus näidatakse ainult üks kord. Jätka?',
     'mc_shown_title': 'Selle seadme peakood',
-    'mc_shown_warn': 'Kirjuta kood üles ja hoia seadmest eraldi. Uuesti näidata ei saa.',
+    'mc_shown_warn':
+        'Kirjuta kood üles ja hoia seadmest eraldi. Uuesti näidata ei saa.',
     'mc_written': 'Kirjutasin üles',
     'mc_close_unconfirmed': 'Sulge kinnitamata',
     'mc_hint': 'Kood on vaja, kui teenindus-PIN ununeb. Igal seadmel on oma.',
@@ -672,8 +704,8 @@ const Map<String, Map<String, String>> _i18n = {
         'Kompressori puhastus enne pumpade/küttekeha sisselülitamist (sek)',
     'pump_after_heater_label':
         'Pumba töö pärast küttekeha väljalülitamist (sek)',
-    'err_compressor_purge': 'Kompressori puhastus: 1–60 sek',
-    'err_pump_after_heater': 'Pump pärast küttekeha: 1–60 sek',
+    'err_compressor_purge': 'Kompressori puhastus: 0–60 sek',
+    'err_pump_after_heater': 'Pump pärast küttekeha: 0–60 sek',
     'tariff_label': 'Elektritariif (€/kWh)',
     'err_tariff': 'Tariif: mittenegatiivne arv',
     'idle_cost_label': 'Seisaku maksumus ööpäevas (info)',
@@ -744,11 +776,13 @@ const Map<String, Map<String, String>> _i18n = {
     'up_last_none': 'pole veel olnud',
     'up_rollback': 'Taasta eelmine',
     'up_rollback_title': 'Taasta varuversioon?',
-    'up_rollback_body': 'Rakendus asendatakse varuversiooniga ja käivitatakse uuesti. Seadme andmeid ei kustutata. Tagasivõtmise ajal makseid ei võeta vastu.',
+    'up_rollback_body':
+        'Rakendus asendatakse varuversiooniga ja käivitatakse uuesti. Seadme andmeid ei kustutata. Tagasivõtmise ajal makseid ei võeta vastu.',
     'up_rollback_started': 'Tagasivõtmine alustatud',
     'up_rollback_failed': 'Tagasivõtmist ei alustatud',
     'up_adb': 'ADB üle võrgu: säilita pärast taaskäivitust',
-    'up_adb_warn': 'Igaüks, kes on tahvliga samas võrgus, saab sellega ADB kaudu ühenduda. Lülita sisse ainult hoolduse ajaks ja usaldusväärses võrgus. Lülita sisse?',
+    'up_adb_warn':
+        'Igaüks, kes on tahvliga samas võrgus, saab sellega ADB kaudu ühenduda. Lülita sisse ainult hoolduse ajaks ja usaldusväärses võrgus. Lülita sisse?',
     'up_adb_state': 'ADB üle võrgu olek',
     'up_adb_unknown': 'teadmata (puudub root)',
     'up_adb_failed': 'Muutmine ebaõnnestus (root puudub?)',
@@ -869,31 +903,39 @@ const Map<String, Map<String, String>> _i18n = {
     'diag_freeze_temp': 'Külmuta temperatuurinäit',
     'diag_freeze_temp_hint':
         'Silumine: termopaar «kleepub» viimase väärtuse külge, siini ei loeta — anduririkke tuvastajate testimiseks. Test käib SISSELÜLITATUD küttekehaga: tehnik seisab kõrval ja on valmis toite katkestama. Püsib sees kuni käsitsi väljalülitamiseni, 30 minuti pärast lülitub ise välja, nähtav pilves.',
-    'diag_freeze_temp_failed': 'Pole mida külmutada: temperatuuri pole veel loetud',
+    'diag_freeze_temp_failed':
+        'Pole mida külmutada: temperatuuri pole veel loetud',
     'oos_status_ok': 'Seade võtab makseid vastu',
-    'oos_status_cfg_blocked': 'MAKSED BLOKEERITUD seadistusega (see ei ole rike)',
-    'oos_cfg_missing': 'Pole paigaldatuks märgitud (lülita sisse: Diagnostika → Siini seadmed)',
+    'oos_status_cfg_blocked':
+        'MAKSED BLOKEERITUD seadistusega (see ei ole rike)',
+    'oos_cfg_missing':
+        'Pole paigaldatuks märgitud (lülita sisse: Diagnostika → Siini seadmed)',
     'oos_status_blocked': 'HOOLDUSEST VÄLJAS — maksed blokeeritud',
     'oos_reason': 'Põhjus',
     'oos_since': 'Alates',
     'oos_code_heater_no_power': 'kütte rike (küttekeha ei andnud võimsust)',
-    'oos_code_temp_sensor_fault': 'temperatuuriandurite rike / kontrollimatu kuumutamine',
+    'oos_code_temp_sensor_fault':
+        'temperatuuriandurite rike / kontrollimatu kuumutamine',
     'oos_code_heat_timeout': 'eelsoojendus ei saavutanud sihti 180 s jooksul',
-    'oos_code_heater_off_unconfirmed': 'küttekeha väljalülitust ei kinnitatud (relee võib olla kinni)',
-    'oos_code_overheat': 'ülekuumenemine (küttekeha ei lülitu välja või termostaat ei tööta)',
+    'oos_code_heater_off_unconfirmed':
+        'küttekeha väljalülitust ei kinnitatud (relee võib olla kinni)',
+    'oos_code_overheat':
+        'ülekuumenemine (küttekeha ei lülitu välja või termostaat ei tööta)',
     'oos_code_output_stuck_on': 'väljund jääb pärast avariilülitust sisse',
     'oos_code_state_unreadable': 'olek ei ole loetav (fail-closed käivitusel)',
     'oos_trial_btn': 'Prooviring (ilma makseta)',
     'oos_trial_running': 'Prooviring käib…',
     'oos_trial_hint':
         'Kuumutab paar sekundit, kontrollib küttekeha võimsust ja temperatuuri tõusu. Blokeeringut ise ei eemalda ega ava kliendile makseid.',
-    'oos_trial_pass': 'Prooviring läbitud — blokeeringu võib eemaldada (15 minutit)',
+    'oos_trial_pass':
+        'Prooviring läbitud — blokeeringu võib eemaldada (15 minutit)',
     'oos_trial_pass_healthy': 'Prooviring läbitud',
     'oos_trial_fail': 'Prooviring ebaõnnestus',
     'oos_trial_too_hot': 'Aurusti on kuum — oota jahtumist',
     'oos_trial_busy': 'Prooviring ei ole praegu saadaval',
     'oos_trial_abort': 'Katkesta prooviring',
-    'oos_trial_no_thermo': 'Termopaari ei ole paigaldatuks märgitud — prooviring pole võimalik',
+    'oos_trial_no_thermo':
+        'Termopaari ei ole paigaldatuks märgitud — prooviring pole võimalik',
     'oos_trial_cancelled': 'Prooviring katkestati',
     'oos_clear_btn': 'Eemalda blokeering',
     'oos_clear_hint':
@@ -902,7 +944,8 @@ const Map<String, Map<String, String>> _i18n = {
     'oos_clear_confirm_body':
         'Seade hakkab taas makseid vastu võtma. Veendu, et rike on kõrvaldatud ja prooviring läbitud.',
     'oos_cleared': 'Blokeering eemaldatud',
-    'oos_clear_failed': 'Blokeeringut ei õnnestunud eemaldada — tee prooviring uuesti',
+    'oos_clear_failed':
+        'Blokeeringut ei õnnestunud eemaldada — tee prooviring uuesti',
     'diag_seconds_suffix': ' s',
     'diag_confirm_title': 'Kinnita sisselülitamine',
     'diag_confirm_body':
@@ -1217,16 +1260,31 @@ class _SettingsTabState extends State<_SettingsTab> {
   Future<void> _loadMasterState() async {
     final ack = await MasterCodeService.isAcknowledged();
     if (mounted) setState(() => _masterAck = ack);
+    // Ввод в эксплуатацию: код ни разу не показан и не подтверждён — показать
+    // сразу при входе в меню (PIN к этому моменту уже сменён: вход с
+    // начальным PIN ведёт на экран смены). Закрыть без «Я записал» нельзя.
+    if (!ack && mounted && !_masterFirstRunShown) {
+      _masterFirstRunShown = true;
+      await _generateAndShowMasterCode(confirmFirst: false, forced: true);
+    }
   }
 
-  Future<void> _generateAndShowMasterCode({required bool confirmFirst}) async {
+  bool _masterFirstRunShown = false;
+
+  Future<void> _generateAndShowMasterCode({
+    required bool confirmFirst,
+    bool forced = false,
+  }) async {
     final t = _i18n[context.read<AppNotifier>().lang]!;
     if (confirmFirst) {
       final ok = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
           backgroundColor: const Color(0xFF1A2233),
-          title: Text(t['mc_change']!, style: const TextStyle(color: Colors.white)),
+          title: Text(
+            t['mc_change']!,
+            style: const TextStyle(color: Colors.white),
+          ),
           content: Text(
             t['mc_change_warn']!,
             style: const TextStyle(color: Color(0xFF8899AA)),
@@ -1253,47 +1311,54 @@ class _SettingsTabState extends State<_SettingsTab> {
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1A2233),
-        title: Text(t['mc_shown_title']!, style: const TextStyle(color: Colors.white)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              code,
-              style: const TextStyle(
-                color: Color(0xFF00C6B2),
-                fontSize: 40,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 6,
+      builder: (ctx) => PopScope(
+        canPop: !forced,
+        child: AlertDialog(
+          backgroundColor: const Color(0xFF1A2233),
+          title: Text(
+            t['mc_shown_title']!,
+            style: const TextStyle(color: Colors.white),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                code,
+                style: const TextStyle(
+                  color: Color(0xFF00C6B2),
+                  fontSize: 40,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 6,
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              t['mc_shown_warn']!,
-              style: const TextStyle(color: Color(0xFFFFAA00)),
+              const SizedBox(height: 12),
+              Text(
+                t['mc_shown_warn']!,
+                style: const TextStyle(color: Color(0xFFFFAA00)),
+              ),
+            ],
+          ),
+          actions: [
+            if (!forced)
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: Text(t['mc_close_unconfirmed']!),
+              ),
+            TextButton(
+              onPressed: () async {
+                await MasterCodeService.markAcknowledged();
+                if (ctx.mounted) Navigator.of(ctx).pop();
+              },
+              child: Text(
+                t['mc_written']!,
+                style: const TextStyle(
+                  color: Color(0xFF00C6B2),
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(t['mc_close_unconfirmed']!),
-          ),
-          TextButton(
-            onPressed: () async {
-              await MasterCodeService.markAcknowledged();
-              if (ctx.mounted) Navigator.of(ctx).pop();
-            },
-            child: Text(
-              t['mc_written']!,
-              style: const TextStyle(
-                color: Color(0xFF00C6B2),
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-        ],
       ),
     );
     await _loadMasterState();
@@ -1315,13 +1380,18 @@ class _SettingsTabState extends State<_SettingsTab> {
         children: [
           Text(
             t['mc_title']!,
-            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
           ),
           const SizedBox(height: 6),
           Text(
             _masterAck ? t['mc_ack']! : t['mc_not_ack']!,
             style: TextStyle(
-              color: _masterAck ? const Color(0xFF00C6B2) : const Color(0xFFFFAA00),
+              color: _masterAck
+                  ? const Color(0xFF00C6B2)
+                  : const Color(0xFFFFAA00),
               fontSize: 13,
             ),
           ),
@@ -1336,14 +1406,16 @@ class _SettingsTabState extends State<_SettingsTab> {
               if (!_masterAck)
                 Expanded(
                   child: OutlinedButton(
-                    onPressed: () => _generateAndShowMasterCode(confirmFirst: false),
+                    onPressed: () =>
+                        _generateAndShowMasterCode(confirmFirst: false),
                     child: Text(t['mc_show']!),
                   ),
                 ),
               if (!_masterAck) const SizedBox(width: 10),
               Expanded(
                 child: OutlinedButton(
-                  onPressed: () => _generateAndShowMasterCode(confirmFirst: true),
+                  onPressed: () =>
+                      _generateAndShowMasterCode(confirmFirst: true),
                   child: Text(t['mc_change']!),
                 ),
               ),
@@ -1408,7 +1480,9 @@ class _SettingsTabState extends State<_SettingsTab> {
             label: t['tariff_label']!,
             controller: _tariffCtrl,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+            ],
           ),
           const SizedBox(height: 8),
           Text(
@@ -1670,8 +1744,7 @@ class _BackoffPoll {
       _consecutiveFailures++;
       if (_consecutiveFailures >= _failuresBeforeBackoff) {
         final backedOff = baseInterval * 10;
-        _currentInterval =
-            backedOff > _maxInterval ? _maxInterval : backedOff;
+        _currentInterval = backedOff > _maxInterval ? _maxInterval : backedOff;
       }
     }
     if (_currentInterval != previous) _schedule();
@@ -2169,9 +2242,7 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
       }
     });
     final notifier = context.read<AppNotifier>();
-    await notifier.saveConfig(
-      notifier.config.copyWith(thermoInstalled: value),
-    );
+    await notifier.saveConfig(notifier.config.copyWith(thermoInstalled: value));
   }
 
   Future<void> _toggleCoinAcceptorInstalled(bool value) async {
@@ -2287,7 +2358,8 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
           : t['oos_trial_pass_healthy']!;
     } else if (result.skipped) {
       message = switch (result.code) {
-        'too_hot' => '${t['oos_trial_too_hot']} (${result.details['temp_c']}°C)',
+        'too_hot' =>
+          '${t['oos_trial_too_hot']} (${result.details['temp_c']}°C)',
         'cancelled' => t['oos_trial_cancelled']!,
         'no_thermocouple' => t['oos_trial_no_thermo']!,
         _ => t['oos_trial_busy']!,
@@ -2370,7 +2442,8 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
       OutOfServiceCode.heaterNoPower => t['oos_code_heater_no_power']!,
       OutOfServiceCode.tempSensorFault => t['oos_code_temp_sensor_fault']!,
       OutOfServiceCode.heatTimeout => t['oos_code_heat_timeout']!,
-      OutOfServiceCode.heaterOffUnconfirmed => t['oos_code_heater_off_unconfirmed']!,
+      OutOfServiceCode.heaterOffUnconfirmed =>
+        t['oos_code_heater_off_unconfirmed']!,
       OutOfServiceCode.overheat => t['oos_code_overheat']!,
       OutOfServiceCode.outputStuckOn => t['oos_code_output_stuck_on']!,
       OutOfServiceCode.stateUnreadable => t['oos_code_state_unreadable']!,
@@ -2501,7 +2574,9 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: canClear && !_trialRunning ? _clearOutOfService : null,
+                onPressed: canClear && !_trialRunning
+                    ? _clearOutOfService
+                    : null,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFFE53935),
                   foregroundColor: Colors.white,
@@ -2702,14 +2777,14 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
                 !_coinAcceptorInstalled
                     ? '${t['temp_unavailable']} · ${t['not_installed']}'
                     : _coinDetected
-                        ? t['coin_yes']!
-                        : t['coin_no']!,
+                    ? t['coin_yes']!
+                    : t['coin_no']!,
                 style: TextStyle(
                   color: !_coinAcceptorInstalled
                       ? const Color(0xFF556677)
                       : _coinDetected
-                          ? const Color(0xFF00C6B2)
-                          : const Color(0xFF556677),
+                      ? const Color(0xFF00C6B2)
+                      : const Color(0xFF556677),
                   fontWeight: FontWeight.bold,
                   fontSize: 14,
                 ),
@@ -2762,14 +2837,14 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
                 !_thermoInstalled
                     ? '${t['temp_unavailable']} · ${t['not_installed']}'
                     : _temperature != null
-                        ? '${_temperature!.toStringAsFixed(1)} °C'
-                        : t['temp_unavailable']!,
+                    ? '${_temperature!.toStringAsFixed(1)} °C'
+                    : t['temp_unavailable']!,
                 style: TextStyle(
                   color: !_thermoInstalled
                       ? const Color(0xFF556677)
                       : _temperature != null
-                          ? const Color(0xFF00C6B2)
-                          : const Color(0xFFE53935),
+                      ? const Color(0xFF00C6B2)
+                      : const Color(0xFFE53935),
                   fontWeight: FontWeight.bold,
                   fontSize: 14,
                 ),
@@ -6139,13 +6214,25 @@ class _CloudTabState extends State<_CloudTab> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1A2233),
-        title: Text(t['up_rollback_title']!, style: const TextStyle(color: Colors.white)),
-        content: Text(t['up_rollback_body']!, style: const TextStyle(color: Color(0xFF8899AA))),
+        title: Text(
+          t['up_rollback_title']!,
+          style: const TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          t['up_rollback_body']!,
+          style: const TextStyle(color: Color(0xFF8899AA)),
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: Text(t['cancel_btn']!)),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(t['cancel_btn']!),
+          ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(t['up_rollback']!, style: const TextStyle(color: Color(0xFFE53935))),
+            child: Text(
+              t['up_rollback']!,
+              style: const TextStyle(color: Color(0xFFE53935)),
+            ),
           ),
         ],
       ),
@@ -6156,7 +6243,13 @@ class _CloudTabState extends State<_CloudTab> {
     final res = await UpdateService.startRollback(notifier);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(res.ok ? t['up_rollback_started']! : '${t['up_rollback_failed']}: ${res.result}')),
+      SnackBar(
+        content: Text(
+          res.ok
+              ? t['up_rollback_started']!
+              : '${t['up_rollback_failed']}: ${res.result}',
+        ),
+      ),
     );
     await res.afterAck?.call();
     await _loadUpdate();
@@ -6169,11 +6262,23 @@ class _CloudTabState extends State<_CloudTab> {
         context: context,
         builder: (ctx) => AlertDialog(
           backgroundColor: const Color(0xFF1A2233),
-          title: Text(t['up_adb']!, style: const TextStyle(color: Colors.white)),
-          content: Text(t['up_adb_warn']!, style: const TextStyle(color: Color(0xFFFFAA00))),
+          title: Text(
+            t['up_adb']!,
+            style: const TextStyle(color: Colors.white),
+          ),
+          content: Text(
+            t['up_adb_warn']!,
+            style: const TextStyle(color: Color(0xFFFFAA00)),
+          ),
           actions: [
-            TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: Text(t['cancel_btn']!)),
-            TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: Text(t['up_adb']!.split(':').first)),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text(t['cancel_btn']!),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(t['up_adb']!.split(':').first),
+            ),
           ],
         ),
       );
@@ -6182,7 +6287,9 @@ class _CloudTabState extends State<_CloudTab> {
     final done = await UpdateService.setAdbNetwork(want);
     if (!mounted) return;
     if (!done) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t['up_adb_failed']!)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(t['up_adb_failed']!)));
     }
     await _loadUpdate();
   }
@@ -6196,7 +6303,10 @@ class _CloudTabState extends State<_CloudTab> {
     setState(() => _diagBusy = true);
     final notifier = context.read<AppNotifier>();
     try {
-      await DiagnosticsService.collectAndSend(notifier, trigger: 'service_menu');
+      await DiagnosticsService.collectAndSend(
+        notifier,
+        trigger: 'service_menu',
+      );
     } finally {
       if (mounted) setState(() => _diagBusy = false);
     }
@@ -6522,14 +6632,18 @@ class _CloudTabState extends State<_CloudTab> {
           SizedBox(
             width: double.infinity,
             child: OutlinedButton(
-              onPressed: (_upd['rollback_available'] == true && !UpdateService.inProgress)
+              onPressed:
+                  (_upd['rollback_available'] == true &&
+                      !UpdateService.inProgress)
                   ? _rollback
                   : null,
               style: OutlinedButton.styleFrom(
                 foregroundColor: const Color(0xFFE53935),
                 side: const BorderSide(color: Color(0xFFE53935)),
                 padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
               child: Text(t['up_rollback']!),
             ),

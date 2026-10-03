@@ -109,6 +109,9 @@ esac''');
 echo "am $*" >> "$FAKE_DIR/calls.log"
 if [ "$FAKE_HEALTH" = "1" ]; then echo "ok $FAKE_CODE" > "$FAKE_HEALTH_FILE"; fi''');
       bin('cmd', r'echo "cmd $*" >> "$FAKE_DIR/calls.log"');
+      bin('stat', 'echo 10123:10123');
+      bin('chown', r'echo "chown $*" >> "$FAKE_DIR/calls.log"');
+      bin('restorecon', r'echo "restorecon $*" >> "$FAKE_DIR/calls.log"');
       bin('sleep', 'exec /bin/sleep 0.01');
       File('${dir.path}/old.apk').writeAsStringSync('OLD-APK-BYTES');
       File('${dir.path}/new.apk').writeAsStringSync('NEW-APK-BYTES');
@@ -125,6 +128,8 @@ if [ "$FAKE_HEALTH" = "1" ]; then echo "ok $FAKE_CODE" > "$FAKE_HEALTH_FILE"; fi
       String apk = 'new.apk',
       String kiosk = '0',
       String pkg = 'ee.test.pkg',
+      String activity = 'ee.test.MainActivity',
+      String alias = 'ee.test.KioskHomeAlias',
     }) async {
       final healthFile = '${dir.path}/health';
       final r = await Process.run(
@@ -138,8 +143,8 @@ if [ "$FAKE_HEALTH" = "1" ]; then echo "ok $FAKE_CODE" > "$FAKE_HEALTH_FILE"; fi
           '10',
           healthFile,
           '${dir.path}/protocol.log',
-          'ee.test.KioskHomeAlias',
-          'ee.test.MainActivity',
+          alias,
+          activity,
           kiosk,
           '4',
         ],
@@ -221,6 +226,38 @@ if [ "$FAKE_HEALTH" = "1" ]; then echo "ok $FAKE_CODE" > "$FAKE_HEALTH_FILE"; fi
       final (_, _, calls) = await run(kiosk: '1');
       expect(calls, contains('pm enable ee.test.pkg/ee.test.KioskHomeAlias'));
       expect(calls, contains('cmd role add-role-holder --user 0 android.app.role.HOME ee.test.pkg'));
+    });
+
+    test('пакет и namespace разные: компонент = пакет/класс из namespace', () async {
+      final (_, _, calls) = await run(
+        kiosk: '1',
+        pkg: 'ee.carfog.dryfog',
+        activity: 'com.example.dry_fog_app.MainActivity',
+        alias: 'com.example.dry_fog_app.KioskHomeAlias',
+      );
+      expect(calls, contains('am start -n ee.carfog.dryfog/com.example.dry_fog_app.MainActivity'));
+      expect(calls, contains('pm enable ee.carfog.dryfog/com.example.dry_fog_app.KioskHomeAlias'));
+      expect(calls, contains('android.app.role.HOME ee.carfog.dryfog'));
+      expect(calls, isNot(contains('ee.carfog.dryfog.MainActivity')));
+    });
+
+    test('протокол: диагностика, шаги с временем, владелец возвращён при выходе', () async {
+      final (_, proto, calls) = await run(kiosk: '1');
+      expect(proto.events, containsAllInOrder([
+        'diag', 'start', 'backup_ok', 'install_ok', 'alias_enabled',
+        'kiosk_role_restored', 'started', 'health_ok', 'owner_fixed',
+      ]));
+      final raw = File('${dir.path}/protocol.log').readAsStringSync();
+      expect(raw, contains('cgroup='));
+      expect(raw, contains('ctx='));
+      expect(raw, contains('pid='));
+      expect(calls, contains('chown -R 10123:10123 ${dir.path}'));
+      expect(calls, contains('restorecon -R ${dir.path}'));
+    });
+
+    test('владелец возвращается и при неудачной установке', () async {
+      final (_, _, calls) = await run(install: 'fail');
+      expect(calls, contains('chown -R 10123:10123'));
     });
 
     test('киоск выключен: роль не трогается', () async {

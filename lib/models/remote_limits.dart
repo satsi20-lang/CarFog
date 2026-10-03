@@ -108,17 +108,18 @@ class ConfigLimits {
   static const int priceMinCents = 50;
   static const int priceMaxCents = 2000;
 
-  // Продувка компрессора перед включением насосов/ТЭНа, с. Умолчание 10 с.
+  // Продувка компрессора перед включением насосов/ТЭНа, с. Умолчание 5 с (AppConfig.compressorPurgeS).
   // Верхний предел 60 с — ЗАДАНО владельцем 03.10.2026 (было 30 с по
-  // оценке); нижний 1 с — как стоял в локальном вводе, подлежит
+  // оценке); нижний 0 с — ЗАДАНО владельцем (0 = этап пропускается), подлежит
   // подтверждению.
-  static const int compressorPurgeMinS = 1;
+  static const int compressorPurgeMinS = 0;
   static const int compressorPurgeMaxS = 60;
 
-  // Работа насоса после ТЭНа (продувка в конце), с. Умолчание 5 с. Верхний
+  // Работа насоса после ТЭНа (продувка в конце), с. Умолчание 5 с (AppConfig.pumpAfterHeaterS). Верхний
   // предел 60 с — ЗАДАНО владельцем 03.10.2026 (было 30 с по оценке);
-  // нижний 1 с — как стоял в локальном вводе, подлежит подтверждению.
-  static const int pumpAfterHeaterMinS = 1;
+  // нижний 0 с — ЗАДАНО владельцем (0 = этап пропускается), подлежит
+  // подтверждению.
+  static const int pumpAfterHeaterMinS = 0;
   static const int pumpAfterHeaterMaxS = 60;
 
   // Диапазон поля или null, если для поля пределов нет.

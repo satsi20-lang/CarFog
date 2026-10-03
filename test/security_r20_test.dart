@@ -8,6 +8,7 @@ import 'package:dry_fog_app/screens/service/service_pin.dart';
 import 'package:dry_fog_app/services/cloud_service.dart';
 import 'package:dry_fog_app/services/master_code_service.dart';
 import 'package:dry_fog_app/services/pin_policy.dart';
+import 'package:dry_fog_app/services/remote_commands.dart';
 import 'package:dry_fog_app/services/security_service.dart';
 
 // R2.0, п. A/B: мастер-код на каждый аппарат (хэш с солью, показ один раз,
@@ -239,6 +240,56 @@ void main() {
       expect(n.config.servicePin, '8264');
       expect(n.state, AppState.serviceMenu);
       await t.pumpWidget(const SizedBox());
+    });
+  });
+
+  group('factory_reset и мастер-код', () {
+    Future<AppNotifier> reset() async {
+      final n = AppNotifier()
+        ..config = AppConfig(
+          thermoInstalled: true,
+          energyMeterInstalled: false,
+          servicePin: '7351',
+          deviceId: 'D1',
+        )
+        ..transition(AppState.standby);
+      final o = await RemoteCommands.handle(
+        CloudCommand(id: 'fr', action: 'factory_reset', createdAt: DateTime.now()),
+        n,
+      );
+      expect(o.ok, isTrue, reason: o.result);
+      return n;
+    }
+
+    test('сброс НЕ стирает хэш и признак: код остаётся своим, «известного» нет', () async {
+      final code = await MasterCodeService.generateNew();
+      await MasterCodeService.markAcknowledged();
+      final prefs = await SharedPreferences.getInstance();
+      final hash = prefs.getString('master_code_hash');
+      await reset();
+      expect(await MasterCodeService.hasCode(), isTrue);
+      expect(await MasterCodeService.isAcknowledged(), isTrue);
+      expect((await SharedPreferences.getInstance()).getString('master_code_hash'), hash);
+      expect(await MasterCodeService.verify(code), isTrue);
+      expect(await MasterCodeService.verify(oldCompromisedCode), isFalse);
+    });
+
+    test('сброс при непоказанном коде: признак остаётся false (меню покажет код)', () async {
+      await MasterCodeService.generateNew(); // ack=false
+      await reset();
+      expect(await MasterCodeService.isAcknowledged(), isFalse);
+    });
+
+    test('сброс без кода: код не появляется сам, прежний общий не принимается', () async {
+      await reset();
+      expect(await MasterCodeService.hasCode(), isFalse);
+      expect(await MasterCodeService.verify(oldCompromisedCode), isFalse);
+      expect(await MasterCodeService.verify('12345678'), isFalse);
+    });
+
+    test('после сброса PIN начальный (слабый): вход потребует смены', () async {
+      final n = await reset();
+      expect(PinPolicy.isWeak(n.config.servicePin), isTrue);
     });
   });
 }

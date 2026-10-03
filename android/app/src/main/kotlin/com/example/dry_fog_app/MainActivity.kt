@@ -322,6 +322,10 @@ class MainActivity : FlutterActivity() {
         try {
             val pi = packageManager.getPackageInfo(packageName, 0)
             info["package"] = packageName
+            // Классы — в namespace, пакет — applicationId: передаются
+            // раздельно (root-скрипт собирает "пакет/класс").
+            info["main_activity"] = ComponentNames.mainActivityClass()
+            info["alias_class"] = ComponentNames.kioskAliasClass()
             info["version_name"] = pi.versionName
             info["version_code"] =
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) pi.longVersionCode

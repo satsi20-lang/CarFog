@@ -14,13 +14,31 @@ Android ставит обновление поверх установленно�
 
 ## 1. Создайте ключ (один раз)
 
-В терминале (Java берётся из Android Studio):
+В терминале (Java берётся из Android Studio). Пути зависят от системы:
+
+| | macOS | Linux | Windows (PowerShell) |
+|---|---|---|---|
+| Java | `/Applications/Android Studio.app/Contents/jbr/Contents/Home` | `~/android-studio/jbr` (или `/opt/android-studio/jbr`) | `C:\Program Files\Android\Android Studio\jbr` |
+| Папка ключей | `~/carfog-keys` | `~/carfog-keys` | `$HOME\carfog-keys` |
+| apksigner | `~/Library/Android/sdk/build-tools/<версия>/apksigner` | `~/Android/Sdk/build-tools/<версия>/apksigner` | `$env:LOCALAPPDATA\Android\Sdk\build-tools\<версия>\apksigner.bat` |
+
+macOS / Linux:
 
 ```
-export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+export JAVA_HOME="<путь Java из таблицы>"
 mkdir -p ~/carfog-keys
 "$JAVA_HOME/bin/keytool" -genkeypair -v \
   -keystore ~/carfog-keys/carfog-release.jks \
+  -alias carfog -keyalg RSA -keysize 4096 -validity 10000
+```
+
+Windows (PowerShell):
+
+```
+$env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
+New-Item -ItemType Directory -Force "$HOME\carfog-keys"
+& "$env:JAVA_HOME\bin\keytool.exe" -genkeypair -v `
+  -keystore "$HOME\carfog-keys\carfog-release.jks" `
   -alias carfog -keyalg RSA -keysize 4096 -validity 10000
 ```
 
@@ -46,6 +64,8 @@ mkdir -p ~/carfog-keys
 
 ```
 storeFile=/Users/<вы>/carfog-keys/carfog-release.jks
+# Linux: /home/<вы>/carfog-keys/carfog-release.jks
+# Windows: C:/Users/<вы>/carfog-keys/carfog-release.jks  (слэши прямые, не \)
 storePassword=<пароль хранилища>
 keyAlias=carfog
 keyPassword=<пароль ключа>
@@ -61,9 +81,11 @@ keyPassword=<пароль ключа>
   build/app/outputs/flutter-apk/app-release.apk
 ```
 
-В ответе должен быть ваш сертификат (не `CN=Android Debug`). Запишите отпечаток
-SHA-256 сертификата в надёжное место: по нему потом сверяют подлинность
-обновлений.
+В ответе должен быть ваш сертификат (не `CN=Android Debug`). **Отпечаток SHA-256
+сертификата (строка `Signer #1 certificate SHA-256 digest`) обязательно
+запишите** в надёжное место (менеджер паролей, рядом с резервными копиями
+ключа, но не в репозиторий): по нему потом сверяют подлинность обновлений и
+проверяют, что ключ не подменили.
 
 ## Чего никогда не делать
 

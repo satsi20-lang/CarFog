@@ -422,6 +422,17 @@ class _TreatingScreenState extends State<TreatingScreen>
     _blinkController.stop();
     _blinkController.reset();
 
+    // Этап нулевой длительности (продувка/насос = 0) пропускается сразу: без
+    // секундного таймера, который ушёл бы в минус, и без деления на 0 в
+    // прогрессе.
+    if (seconds <= 0) {
+      _timer = null;
+      Future.microtask(() {
+        if (mounted && !_faulted) _nextPhase();
+      });
+      return;
+    }
+
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
       setState(() => _secondsLeft--);
@@ -548,6 +559,7 @@ class _TreatingScreenState extends State<TreatingScreen>
         total = _shutdownDelay;
         break;
     }
+    if (total <= 0) return 1.0;
     final elapsed = total - _secondsLeft;
     return (elapsed / total).clamp(0.0, 1.0);
   }

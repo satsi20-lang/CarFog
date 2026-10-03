@@ -15,6 +15,13 @@ object ComponentNames {
     private val namespace: String =
         MainActivity::class.java.`package`!!.name
 
+    // Полное имя класса в namespace (чистая функция — проверяется тестом).
+    internal fun className(namespace: String, simple: String): String =
+        "$namespace.$simple"
+
+    fun mainActivityClass(): String = className(namespace, "MainActivity")
+    fun kioskAliasClass(): String = className(namespace, "KioskHomeAlias")
+
     fun kioskHomeAlias(context: Context): ComponentName =
-        ComponentName(context.packageName, "$namespace.KioskHomeAlias")
+        ComponentName(context.packageName, kioskAliasClass())
 }

@@ -59,7 +59,17 @@ class AppInfo {
   final String packageName;
   final int versionCode;
   final String versionName;
-  const AppInfo(this.packageName, this.versionCode, this.versionName);
+  // Классы компонентов (в namespace Kotlin-кода, а не в пакете) — из нативной
+  // части; null — взять значения по умолчанию.
+  final String? mainActivity;
+  final String? aliasClass;
+  const AppInfo(
+    this.packageName,
+    this.versionCode,
+    this.versionName, {
+    this.mainActivity,
+    this.aliasClass,
+  });
 }
 
 class DownloadException implements Exception {
@@ -110,6 +120,8 @@ class UpdateService {
   static Future<ApkInfo?> Function(String path) apkVerifier = _nativeVerify;
   static Future<AppInfo?> Function() appInfoProvider = _nativeAppInfo;
   static Future<int?> Function() diskFreeProvider = _nativeDiskFree;
+  // Запасные значения (namespace Kotlin-кода, не applicationId); в работе
+  // берутся из нативного getAppInfo.
   static String mainActivity = 'com.example.dry_fog_app.MainActivity';
   static String aliasClass = 'com.example.dry_fog_app.KioskHomeAlias';
 
@@ -439,8 +451,8 @@ class UpdateService {
     targetVersionCode: targetCode,
     healthPath: '${dir.path}/${UpdateLimits.healthName}',
     logPath: '${dir.path}/${UpdateLimits.protocolName}',
-    aliasClass: aliasClass,
-    mainActivity: mainActivity,
+    aliasClass: current.aliasClass ?? aliasClass,
+    mainActivity: current.mainActivity ?? mainActivity,
     kioskEnabled: kiosk,
     healthTimeoutS: UpdateLimits.healthTimeout.inSeconds,
   );
@@ -659,6 +671,8 @@ class UpdateService {
         m['package'] as String,
         (m['version_code'] as num).toInt(),
         m['version_name'] as String? ?? '',
+        mainActivity: m['main_activity'] as String?,
+        aliasClass: m['alias_class'] as String?,
       );
     } catch (_) {
       return null;
