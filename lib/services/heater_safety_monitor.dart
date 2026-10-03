@@ -117,8 +117,27 @@ class HeaterSafetyMonitor {
     }
   }
 
+  // Последний сработавший детектор (для пакета диагностики): подтип,
+  // причина, время. Хранится статически — мониторы живут в экранах и
+  // исчезают вместе с ними.
+  static Map<String, dynamic>? lastFault;
+
+  static HeaterFault? _record(HeaterFault? f) {
+    if (f != null) {
+      lastFault = {
+        'subtype': f.subtype,
+        'reason': f.reason,
+        'at': DateTime.now().toIso8601String(),
+      };
+    }
+    return f;
+  }
+
   // Каждое показание температуры (в том числе null — не удалось прочитать).
-  HeaterFault? observeTemperature(double? temp) {
+  HeaterFault? observeTemperature(double? temp) =>
+      _record(_observeTemperature(temp));
+
+  HeaterFault? _observeTemperature(double? temp) {
     final now = _clock();
     final outOfBounds = !isUsable(temp);
     var jump = false;
@@ -195,6 +214,11 @@ class HeaterSafetyMonitor {
   // мощности со счётчика). targetReached — цель прогрева по показаниям уже
   // достигнута (тогда перерасход не отказ датчика, а просто долгий прогрев).
   HeaterFault? observeEnergy({
+    required double energyWh,
+    required bool targetReached,
+  }) => _record(_observeEnergy(energyWh: energyWh, targetReached: targetReached));
+
+  HeaterFault? _observeEnergy({
     required double energyWh,
     required bool targetReached,
   }) {

@@ -141,4 +141,9 @@ class _SlowTransport implements CloudTransport {
   Future<bool> ackCommand(
           String deviceId, String commandId, bool ok, String? result) async =>
       true;
+
+  @override
+  Future<bool> uploadDiagnostics(String deviceId, String bundleId, int part,
+          int parts, String data) async =>
+      true;
 }

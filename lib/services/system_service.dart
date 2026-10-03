@@ -63,4 +63,26 @@ class SystemService {
       return const {};
     }
   }
+
+  // Каталог файлов приложения (постоянный журнал стартует до runApp).
+  static Future<String?> getFilesDir() async {
+    try {
+      return await _channel.invokeMethod<String>('getFilesDir');
+    } catch (e) {
+      debugPrint('SystemService.getFilesDir error: $e');
+      return null;
+    }
+  }
+
+  // Удалённая команда restart_app (R1): нативная сторона планирует подъём
+  // приложения через AlarmManager и завершает процесс. Вызывающий код ОБЯЗАН
+  // сам проверить, что аппарат в покое (RemoteCommands), и отправить ack
+  // ДО вызова: процесс умрёт примерно через 1,5 с.
+  static Future<void> restartApp() async {
+    try {
+      await _channel.invokeMethod('restartApp');
+    } catch (e) {
+      debugPrint('SystemService.restartApp error: $e');
+    }
+  }
 }

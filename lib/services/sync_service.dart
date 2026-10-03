@@ -3,9 +3,10 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../models/app_state.dart';
 import 'cloud_service.dart';
-import 'config_service.dart';
+import 'diagnostics_service.dart';
 import 'modbus_service.dart';
-import 'security_service.dart';
+import 'remote_command_guard.dart';
+import 'remote_commands.dart';
 
 // Периодический обмен с облаком: отправка накопленных событий,
 // получение и выполнение команд, отчёт о результате.
@@ -119,6 +120,9 @@ class SyncService {
     try {
       await _maybeReportEnergy();
       await CloudService.flush();
+      // Отложенный пакет диагностики (не ушёл из-за связи) — повторная
+      // отправка; в занятых состояниях тик не выполняется вовсе.
+      await DiagnosticsService.retryPending();
 
       // Слепок настроек (Шаг 34) — задача 2.4: если сборка почему-то
       // упала, просто не прикладываем его в этот раз, опрос команд
@@ -153,7 +157,7 @@ class SyncService {
       }
 
       for (final command in result.commands) {
-        await _execute(command);
+        await _execute(command, serverTime: result.serverTime);
       }
     } catch (e) {
       debugPrint('SyncService._tick error: $e');
@@ -224,138 +228,40 @@ class SyncService {
   // ВЫПОЛНЕНИЕ КОМАНД
   // ============================================================
 
-  Future<void> _execute(CloudCommand command) async {
-    debugPrint('SyncService: команда ${command.action} ${command.params}');
+  Future<void> _execute(CloudCommand command, {DateTime? serverTime}) async {
+    // PIN и прочие параметры в журнал не пишутся: только действие и id.
+    debugPrint('SyncService: команда ${command.action} id=${command.id}');
 
-    bool ok = false;
-    String? result;
-
-    try {
-      switch (command.action) {
-        case 'ping':
-          ok = true;
-          result = 'pong';
-          break;
-
-        case 'unlock':
-          await SecurityService.resetAttempts();
-          ok = true;
-          result = 'блокировка снята';
-          break;
-
-        case 'set_pin':
-          final pin = (command.params['pin'] ?? '').toString().trim();
-          if (pin.length == 4 && int.tryParse(pin) != null) {
-            await notifier.saveConfig(
-              notifier.config.copyWith(servicePin: pin),
-            );
-            await SecurityService.resetAttempts();
-            ok = true;
-            result = 'PIN изменён';
-          } else {
-            result = 'PIN должен состоять из 4 цифр';
-          }
-          break;
-
-        case 'update_config':
-          final updated = _applyConfig(notifier.config, command.params);
-          await notifier.saveConfig(updated);
-          ok = true;
-          result = 'настройки применены';
-          break;
-
-        case 'factory_reset':
-          await _factoryReset();
-          ok = true;
-          result = 'сброшено к заводским, настройки облака сохранены';
-          break;
-
-        case 'reset_session':
-          notifier.resetSession();
-          ok = true;
-          result = 'сессия сброшена';
-          break;
-
-        // Снятие вывода из обслуживания — ТОЛЬКО на месте, из сервисного
-        // меню после пробного цикла (задача "вывод аппарата из
-        // обслуживания", требование 13). Отказ физический (сгорел
-        // предохранитель, пробило реле) — дистанционно он не чинится, а
-        // удалённое снятие вернуло бы аппарат к сбору денег с тем же
-        // дефектом. Команда не выполняется, отказ уходит в ответе и в
-        // событии commandExecuted ниже.
-        case 'clear_out_of_service':
-        case 'reset_out_of_service':
-        case 'resume_service':
-          result = 'отклонено: вывод из обслуживания снимается только на '
-              'месте, из сервисного меню, после пробного цикла';
-          debugPrint('SyncService: удалённое снятие вывода из обслуживания '
-              'проигнорировано (${command.action})');
-          break;
-
-        default:
-          result = 'неизвестная команда: ${command.action}';
-      }
-    } catch (e) {
-      result = 'ошибка выполнения: $e';
-    }
+    final outcome = await RemoteCommands.handle(
+      command,
+      notifier,
+      serverTime: serverTime,
+    );
 
     await CloudService.transport.ackCommand(
       CloudService.deviceId,
       command.id,
-      ok,
-      result,
+      outcome.ok,
+      outcome.result,
+    );
+
+    await CommandGuard.record(
+      action: command.action,
+      ok: outcome.ok,
+      result: outcome.result,
     );
 
     await CloudService.report(
       CloudEventType.commandExecuted,
       data: {
         'action': command.action,
-        'ok': ok,
-        'result': result,
+        'ok': outcome.ok,
+        'result': outcome.result,
       },
     );
-  }
 
-  // ============================================================
-  // ПРИМЕНЕНИЕ НАСТРОЕК
-  // ============================================================
-
-  AppConfig _applyConfig(AppConfig current, Map<String, dynamic> params) {
-    Map<String, List<String>>? names;
-    final rawNames = params['flavorNames'];
-    if (rawNames is Map) {
-      names = rawNames.map(
-        (k, v) => MapEntry(k.toString(), List<String>.from(v as List)),
-      );
-    }
-
-    return current.copyWith(
-      treatmentPriceCents: (params['treatmentPriceCents'] as num?)?.toInt(),
-      treatmentDurationS: (params['treatmentDurationS'] as num?)?.toInt(),
-      compressorPurgeS: (params['compressorPurgeS'] as num?)?.toInt(),
-      pumpAfterHeaterS: (params['pumpAfterHeaterS'] as num?)?.toInt(),
-      servicePin: params['servicePin'] as String?,
-      flavorNames: names,
-    );
-  }
-
-  // Сброс к заводским с сохранением подключения к облаку.
-  // Без этого аппарат после сброса потерял бы связь навсегда,
-  // и починить его можно было бы только на месте.
-  Future<void> _factoryReset() async {
-    final keep = notifier.config;
-
-    await ConfigService.reset();
-    await SecurityService.resetAttempts();
-
-    final fresh = AppConfig(
-      deviceId: keep.deviceId,
-      cloudUrl: keep.cloudUrl,
-      cloudAnonKey: keep.cloudAnonKey,
-      cloudToken: keep.cloudToken,
-      cloudEnabled: keep.cloudEnabled,
-    );
-
-    await notifier.saveConfig(fresh);
+    // Действие после ответа (перезапуск приложения): ack и событие уже
+    // отправлены, журнал сбрасывается внутри.
+    await outcome.afterAck?.call();
   }
 }

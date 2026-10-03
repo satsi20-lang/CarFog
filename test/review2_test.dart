@@ -59,7 +59,7 @@ void main() {
         meterInstalled: meter,
         forceOff: () async => coil,
         readPowerW: () async => power[(i++).clamp(0, power.length - 1)],
-        window: const Duration(milliseconds: 60),
+        window: const Duration(milliseconds: 600),
         poll: const Duration(milliseconds: 10),
       );
     }

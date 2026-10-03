@@ -2,7 +2,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'dart:io';
 import 'models/app_state.dart';
+import 'services/app_log_service.dart';
 import 'screens/language_select.dart';
 import 'screens/standby.dart';
 import 'screens/select_flavor.dart';
@@ -26,6 +28,20 @@ import 'services/system_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Причина запуска читается ОДИН раз (нативная сторона сбрасывает признак
+  // аварии) и используется и в отметке журнала, и в событии app_started.
+  final startReason = await SystemService.consumeStartReason();
+  // Постоянный журнал — самым первым: всё дальнейшее (включая ошибки
+  // старта) уже попадает в файл. Не блокирует запуск при сбое каталога.
+  final logDir = await SystemService.getFilesDir();
+  if (logDir != null) {
+    await AppLog.init(
+      dir: Directory(logDir),
+      reason: startReason,
+      version: CloudService.appVersion,
+    );
+  }
+  AppLog.install();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   // Планшет физически установлен в альбомной ориентации — весь UI
   // спроектирован под неё (см. переделанные экраны).
@@ -34,11 +50,17 @@ void main() async {
     DeviceOrientation.landscapeRight,
   ]);
   final config = await ConfigService.load();
+  // Секреты из настроек не должны попасть в журнал и пакет диагностики.
+  AppLog.setSecrets([config.servicePin, config.cloudToken, config.cloudAnonKey]);
 
   final notifier = AppNotifier()..config = config;
   // Блок оплаты по конфигурации (термопара/счётчик не отмечены) — до первого
   // экрана.
   notifier.refreshPaymentBlock();
+  notifier.addListener(() {
+    final c = notifier.config;
+    AppLog.setSecrets([c.servicePin, c.cloudToken, c.cloudAnonKey]);
+  });
 
   // Вывод аппарата из обслуживания (задача "вывод аппарата из
   // обслуживания", требования 2-5): состояние восстанавливается ДО runApp —
@@ -89,7 +111,7 @@ void main() async {
   // видно, каким путём поднялась именно эта активность (intent action,
   // категории, была ли она корнем задачи), без подключения к планшету.
   unawaited(() async {
-    final reason = await SystemService.consumeStartReason();
+    final reason = startReason;
     final launchDiagnostics = await SystemService.getLaunchDiagnostics();
     if (reason == 'crash') {
       await CloudService.report(

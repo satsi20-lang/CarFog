@@ -86,6 +86,19 @@ class OutputWatchdogService {
     }
   }
 
+  // Состояние сторожа для пакета диагностики.
+  static Map<String, dynamic> status() {
+    final s = _instance;
+    if (s == null) return {'running': false};
+    return {
+      'running': true,
+      'enabled_by_config': s._isEnabledByConfig(),
+      'paused': s._paused,
+      'recovery_only': s._recoveryOnly,
+      'consecutive_failures': s._consecutiveFailures,
+    };
+  }
+
   static void start(AppNotifier notifier) {
     stop();
     final service = OutputWatchdogService._(notifier);

@@ -48,6 +48,14 @@ class HeaterTrialService {
   static bool _cancelRequested = false;
   static bool get running => _running;
 
+  // Итог последнего пробного цикла (для пакета диагностики).
+  static Map<String, dynamic>? lastResult;
+
+  static Map<String, dynamic> status() => {
+    'running': _running,
+    if (lastResult != null) 'last': lastResult,
+  };
+
   // Уход с вкладки "Диагностика" посреди пробного цикла: её dispose()
   // принудительно гасит выходы, и цикл вышел бы "провалом" на исправном
   // аппарате — поэтому вместо этого цикл помечается прерванным.
@@ -215,6 +223,12 @@ class HeaterTrialService {
   static Future<TrialResult> runAndRecord(AppNotifier notifier) async {
     final wasOutOfService = notifier.isOutOfService;
     final result = await _execute(notifier);
+    lastResult = {
+      'at': DateTime.now().toIso8601String(),
+      'passed': result.passed,
+      'skipped': result.skipped,
+      'code': result.code,
+    };
     if (result.skipped) return result;
 
     await CloudService.report(

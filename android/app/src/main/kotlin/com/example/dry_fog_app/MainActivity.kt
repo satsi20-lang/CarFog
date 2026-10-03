@@ -3,7 +3,14 @@ package com.example.dry_fog_app
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.app.ActivityManager
 import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.net.wifi.WifiManager
+import android.os.Process
+import android.os.StatFs
+import android.os.SystemClock
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -138,6 +145,20 @@ class MainActivity : FlutterActivity() {
                         result.success(null)
                     }
                     "consumeStartReason" -> result.success(consumeStartReason())
+                    // Каталог файлов приложения — для постоянного журнала
+                    // (AppLog), который стартует до runApp.
+                    "getFilesDir" -> result.success(filesDir.absolutePath)
+                    // Версия Android, модель, аптайм, диск, память, сеть — для
+                    // пакета диагностики (R1). Каждая группа в своём try:
+                    // сбой одной не лишает остальных.
+                    "getDeviceInfo" -> result.success(collectDeviceInfo())
+                    // Удалённая команда restart_app: проверка "только в
+                    // покое" делается в Dart ДО вызова; здесь — планирование
+                    // подъёма через AlarmManager и завершение процесса.
+                    "restartApp" -> {
+                        result.success(true)
+                        restartApp()
+                    }
                     // Вывод аппарата из обслуживания (OutOfServiceStore) —
                     // синхронная запись с fsync, ответ приходит только
                     // после подтверждения записи на диск.
@@ -257,6 +278,78 @@ class MainActivity : FlutterActivity() {
             // Возвращаем то, что успели собрать (может быть пусто).
         }
         return removable + primary
+    }
+
+    private fun collectDeviceInfo(): Map<String, Any?> {
+        val info = mutableMapOf<String, Any?>()
+        try {
+            info["android_release"] = Build.VERSION.RELEASE
+            info["sdk_int"] = Build.VERSION.SDK_INT
+            info["model"] = Build.MODEL
+            info["manufacturer"] = Build.MANUFACTURER
+            info["fingerprint"] = Build.FINGERPRINT
+            info["build_type"] = Build.TYPE
+            info["uptime_s"] = SystemClock.elapsedRealtime() / 1000
+        } catch (e: Throwable) {
+            info["device_error"] = e.toString()
+        }
+        try {
+            val st = StatFs(filesDir.absolutePath)
+            info["disk_free_bytes"] = st.availableBytes
+            info["disk_total_bytes"] = st.totalBytes
+        } catch (e: Throwable) {
+            info["disk_error"] = e.toString()
+        }
+        try {
+            val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            val mi = ActivityManager.MemoryInfo()
+            am.getMemoryInfo(mi)
+            info["mem_free_bytes"] = mi.availMem
+            info["mem_total_bytes"] = mi.totalMem
+            info["mem_low"] = mi.lowMemory
+        } catch (e: Throwable) {
+            info["mem_error"] = e.toString()
+        }
+        try {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val net = cm.activeNetwork
+            val caps = if (net == null) null else cm.getNetworkCapabilities(net)
+            if (caps == null) {
+                info["net_type"] = "none"
+            } else {
+                info["net_type"] = when {
+                    caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "wifi"
+                    caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "cellular"
+                    caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "ethernet"
+                    else -> "other"
+                }
+                info["net_validated"] =
+                    caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    val s = caps.signalStrength
+                    if (s != NetworkCapabilities.SIGNAL_STRENGTH_UNSPECIFIED) info["net_signal"] = s
+                }
+            }
+            @Suppress("DEPRECATION")
+            val wifi = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+            @Suppress("DEPRECATION")
+            val rssi = wifi?.connectionInfo?.rssi
+            if (rssi != null && rssi > -127) info["wifi_rssi_dbm"] = rssi
+        } catch (e: Throwable) {
+            info["net_error"] = e.toString()
+        }
+        return info
+    }
+
+    // Подъём приложения после завершения процесса — тем же AlarmManager-
+    // механизмом, что и после аварии (DryFogApplication.scheduleRestart),
+    // но БЕЗ отметки об аварии: причина запуска будет 'normal'. Задержка
+    // даёт ответу в Dart уйти и журналу сброситься на диск.
+    private fun restartApp() {
+        (application as? DryFogApplication)?.scheduleRestart()
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            Process.killProcess(Process.myPid())
+        }, 1500)
     }
 
     override fun onDestroy() {

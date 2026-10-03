@@ -121,7 +121,10 @@ class DryFogApplication : Application() {
     // AlarmManager блокируется ограничением на старт активности из фона,
     // когда процесс, поставивший будильник, уже мёртв к моменту срабатывания
     // (см. комментарий в RestartReceiver.kt — проверено вживую).
-    private fun scheduleRestart() {
+    // internal: тот же механизм использует и удалённая команда restart_app
+    // (MainActivity.restartApp) — один проверенный вживую способ поднять
+    // приложение после завершения процесса.
+    internal fun scheduleRestart() {
         try {
             val pending = PendingIntent.getBroadcast(
                 this,

@@ -11,6 +11,10 @@
     <!-- Автозапуск после подачи питания (Шаг 32, задача 1) — терминал стоит
          на улице без оператора рядом. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Удалённая диагностика (R1): тип связи и уровень сигнала в пакете
+         диагностики. Обычные (не опасные) разрешения. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <!-- Рестарт после аварии (Шаг 32, задача 4) — setAlarmClock() требует
          точных будильников, зато (в отличие от обычного неточного
          будильника) реально пробивает ограничение на старт активности из

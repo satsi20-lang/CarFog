@@ -11,6 +11,8 @@ import '../../widgets/lang_switcher.dart';
 import '../../models/out_of_service.dart';
 import '../../services/cloud_service.dart';
 import '../../services/heater_trial_service.dart';
+import '../../services/remote_command_guard.dart';
+import '../../services/diagnostics_service.dart';
 import '../../services/modbus_service.dart';
 import '../../services/out_of_service_service.dart';
 import '../../services/sync_service.dart';
@@ -98,6 +100,15 @@ const Map<String, Map<String, String>> _i18n = {
     'unit_kwh': 'кВт⋅ч',
     'tab_cloud': 'Облако',
     'cloud_enabled': 'Отправлять данные в облако',
+    'rd_title': 'Удалённая диагностика',
+    'rd_send': 'Отправить диагностику',
+    'rd_sending': 'Собираю и отправляю…',
+    'rd_last': 'Последний пакет',
+    'rd_none': 'пакетов ещё не было',
+    'rd_sent': 'отправлен',
+    'rd_unsent': 'НЕ отправлен (ждёт связи)',
+    'rd_commands': 'Последние команды',
+    'rd_no_commands': 'команд ещё не было',
     'cloud_device_id': 'Номер аппарата',
     'cloud_url': 'Адрес сервера',
     'cloud_key': 'Публичный ключ (anon)',
@@ -368,6 +379,15 @@ const Map<String, Map<String, String>> _i18n = {
     'unit_kwh': 'kWh',
     'tab_cloud': 'Cloud',
     'cloud_enabled': 'Send data to the cloud',
+    'rd_title': 'Remote diagnostics',
+    'rd_send': 'Send diagnostics',
+    'rd_sending': 'Collecting and sending…',
+    'rd_last': 'Last bundle',
+    'rd_none': 'no bundles yet',
+    'rd_sent': 'sent',
+    'rd_unsent': 'NOT sent (waiting for connection)',
+    'rd_commands': 'Last commands',
+    'rd_no_commands': 'no commands yet',
     'cloud_device_id': 'Device ID',
     'cloud_url': 'Server URL',
     'cloud_key': 'Public key (anon)',
@@ -640,6 +660,15 @@ const Map<String, Map<String, String>> _i18n = {
     'unit_kwh': 'kWh',
     'tab_cloud': 'Pilv',
     'cloud_enabled': 'Saada andmed pilve',
+    'rd_title': 'Kaugdiagnostika',
+    'rd_send': 'Saada diagnostika',
+    'rd_sending': 'Kogun ja saadan…',
+    'rd_last': 'Viimane pakett',
+    'rd_none': 'pakette pole veel',
+    'rd_sent': 'saadetud',
+    'rd_unsent': 'POLE saadetud (ootab ühendust)',
+    'rd_commands': 'Viimased käsud',
+    'rd_no_commands': 'käske pole veel',
     'cloud_device_id': 'Seadme number',
     'cloud_url': 'Serveri aadress',
     'cloud_key': 'Avalik võti (anon)',
@@ -5837,10 +5866,29 @@ class _CloudTabState extends State<_CloudTab> {
   late TextEditingController _tokenCtrl;
   late bool _enabled;
   bool _testing = false;
+  // Удалённая диагностика (R1): отправка пакета и история команд.
+  bool _diagBusy = false;
+  List<Map<String, dynamic>> _commands = const [];
+
+  Future<void> _loadCommands() async {
+    final list = await CommandGuard.history();
+    if (mounted) setState(() => _commands = list);
+  }
+
+  Future<void> _sendDiagnostics() async {
+    setState(() => _diagBusy = true);
+    final notifier = context.read<AppNotifier>();
+    try {
+      await DiagnosticsService.collectAndSend(notifier, trigger: 'service_menu');
+    } finally {
+      if (mounted) setState(() => _diagBusy = false);
+    }
+  }
 
   @override
   void initState() {
     super.initState();
+    unawaited(_loadCommands());
     final config = context.read<AppNotifier>().config;
     _deviceIdCtrl = TextEditingController(text: config.deviceId);
     _urlCtrl = TextEditingController(text: config.cloudUrl);
@@ -6036,6 +6084,82 @@ class _CloudTabState extends State<_CloudTab> {
               child: Text(t['cloud_sync_now']!),
             ),
           ),
+          const SizedBox(height: 28),
+          Container(height: 1, color: const Color(0xFF1A2233)),
+          const SizedBox(height: 20),
+          Text(
+            t['rd_title']!,
+            style: const TextStyle(
+              color: Color(0xFF00C6B2),
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Builder(
+            builder: (context) {
+              final st = DiagnosticsService.last;
+              final line = st == null
+                  ? t['rd_none']!
+                  : '${st.at.toLocal().toString().split('.').first} · '
+                        '${(st.sizeBytes / 1024).toStringAsFixed(1)} КБ · '
+                        '${st.parts} ч. · '
+                        '${st.sent ? t['rd_sent'] : t['rd_unsent']}'
+                        '${st.error != null ? ' (${st.error})' : ''}';
+              return Text(
+                '${t['rd_last']}: $line',
+                style: TextStyle(
+                  color: st != null && !st.sent
+                      ? const Color(0xFFFFAA00)
+                      : const Color(0xFF8899AA),
+                  fontSize: 13,
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: _diagBusy ? null : _sendDiagnostics,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF00C6B2),
+                side: const BorderSide(color: Color(0xFF00C6B2)),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              child: Text(_diagBusy ? t['rd_sending']! : t['rd_send']!),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            t['rd_commands']!,
+            style: const TextStyle(color: Color(0xFF8899AA), fontSize: 13),
+          ),
+          const SizedBox(height: 6),
+          if (_commands.isEmpty)
+            Text(
+              t['rd_no_commands']!,
+              style: const TextStyle(color: Color(0xFF556677), fontSize: 12),
+            )
+          else
+            for (final c in _commands)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  '${(c['at'] as String).substring(5, 19).replaceAll('T', ' ')} · '
+                  '${c['action']} · ${c['ok'] == true ? 'OK' : 'отказ'} · '
+                  '${c['result']}',
+                  style: TextStyle(
+                    color: c['ok'] == true
+                        ? const Color(0xFF8899AA)
+                        : const Color(0xFFFFAA00),
+                    fontSize: 12,
+                  ),
+                ),
+              ),
         ],
       ),
     );

@@ -98,19 +98,25 @@ class CloudEvent {
 
 class CloudCommand {
   final String id;
-  final String action; // 'factory_reset' | 'set_pin' | 'unlock' | 'update_config'
+  final String action; // см. белый список в remote_commands.dart
   final Map<String, dynamic> params;
+  // Время создания команды НА СЕРВЕРЕ (поле created_at в ответе
+  // device_poll) — по нему отсекаются просроченные команды. null — сервер
+  // поле не отдал: срок проверить нечем (см. supabase/migrations).
+  final DateTime? createdAt;
 
   CloudCommand({
     required this.id,
     required this.action,
     Map<String, dynamic>? params,
+    this.createdAt,
   }) : params = params ?? const {};
 
   factory CloudCommand.fromJson(Map<String, dynamic> j) => CloudCommand(
         id: j['id'] as String? ?? '',
         action: j['action'] as String? ?? '',
         params: (j['params'] as Map<String, dynamic>?) ?? const {},
+        createdAt: DateTime.tryParse(j['created_at'] as String? ?? '')?.toLocal(),
       );
 }
 
@@ -126,8 +132,16 @@ class CloudCommand {
 class CloudPollResult {
   final List<CloudCommand> commands;
   final bool configReported;
+  // Время СЕРВЕРА на момент ответа (поле server_time device_poll). Срок
+  // действия команд считается как server_time − created_at, а не по часам
+  // планшета: у планшета время может уйти. null — сервер поле не отдал.
+  final DateTime? serverTime;
 
-  CloudPollResult({required this.commands, this.configReported = false});
+  CloudPollResult({
+    required this.commands,
+    this.configReported = false,
+    this.serverTime,
+  });
 }
 
 // ============================================================
@@ -150,6 +164,16 @@ abstract class CloudTransport {
     String commandId,
     bool ok,
     String? result,
+  );
+
+  // Загрузка пакета диагностики по частям (R1): part 1..parts, data — кусок
+  // JSON-текста. true — сервер принял именно эту часть.
+  Future<bool> uploadDiagnostics(
+    String deviceId,
+    String bundleId,
+    int part,
+    int parts,
+    String data,
   );
 }
 
@@ -188,6 +212,21 @@ class LocalLogTransport implements CloudTransport {
   ) async {
     debugPrint('CLOUD[$deviceId] ack $commandId ok=$ok result=$result');
     return true;
+  }
+
+  // Облако выключено: пакет диагностики никуда не уходит. false — чтобы
+  // он честно значился как НЕОТПРАВЛЕННЫЙ (и не терялся: DiagnosticsService
+  // оставляет его на диске для повторной отправки).
+  @override
+  Future<bool> uploadDiagnostics(
+    String deviceId,
+    String bundleId,
+    int part,
+    int parts,
+    String data,
+  ) async {
+    debugPrint('CLOUD[$deviceId] diagnostics $bundleId $part/$parts (облако выключено)');
+    return false;
   }
 }
 
@@ -286,10 +325,49 @@ class SupabaseTransport implements CloudTransport {
           ? raw.map((c) => CloudCommand.fromJson(c as Map<String, dynamic>)).toList()
           : <CloudCommand>[];
 
-      return CloudPollResult(commands: commands, configReported: config != null);
+      return CloudPollResult(
+        commands: commands,
+        configReported: config != null,
+        serverTime: DateTime.tryParse(body['server_time'] as String? ?? ''),
+      );
     } catch (e) {
       debugPrint('SupabaseTransport.fetchCommands error: $e');
       return CloudPollResult(commands: []);
+    }
+  }
+
+  @override
+  Future<bool> uploadDiagnostics(
+    String deviceId,
+    String bundleId,
+    int part,
+    int parts,
+    String data,
+  ) async {
+    try {
+      final resp = await http
+          .post(
+            _rpc('device_diag_put'),
+            headers: _headers,
+            body: jsonEncode({
+              'p_device': deviceId,
+              'p_token': deviceToken,
+              'p_bundle': bundleId,
+              'p_part': part,
+              'p_parts': parts,
+              'p_data': data,
+            }),
+          )
+          .timeout(_timeout);
+      if (resp.statusCode != 200) {
+        debugPrint('SupabaseTransport.uploadDiagnostics HTTP ${resp.statusCode}');
+        return false;
+      }
+      final body = jsonDecode(resp.body);
+      return body is Map && body['ok'] == true;
+    } catch (e) {
+      debugPrint('SupabaseTransport.uploadDiagnostics error: $e');
+      return false;
     }
   }
 
@@ -413,6 +491,10 @@ class CloudService {
   static bool _flushing = false;
   static bool _flushAgain = false;
 
+  // Время последней УСПЕШНОЙ отправки событий (для пакета диагностики и
+  // сервисного меню). null — с запуска ещё не было.
+  static DateTime? lastSuccessfulSendAt;
+
   // Попытаться отправить всё, что накопилось.
   // Нет связи — события остаются в очереди до следующего раза.
   static Future<void> flush() async {
@@ -430,6 +512,9 @@ class CloudService {
         if (queue.isEmpty) break;
         final ok = await transport.send(deviceId, queue);
         if (!ok) break;
+        // Только при включённом облаке: локальный транспорт "принимает"
+        // события, но никуда их не отправляет.
+        if (isCloudEnabled) lastSuccessfulSendAt = DateTime.now();
         // Удаляются ровно отправленные: очередь только растёт с конца, так
         // что это первые queue.length записей. Всё добавленное за время
         // отправки остаётся.
