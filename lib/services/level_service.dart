@@ -1,5 +1,6 @@
 import 'dart:async';
 import '../models/app_state.dart';
+import '../models/bus_map.dart';
 import 'cloud_service.dart';
 import 'modbus_service.dart';
 
@@ -43,7 +44,7 @@ class LevelService {
   // тик ловит импульс 131 мс с вероятностью около 4% (живой тест B5,
   // 02.10.2026). Шина в этом состоянии свободна, поэтому здесь, как на
   // экране оплаты, опрос частый и с защитной паузой на стороне Kotlin.
-  static const Duration _fastInterval = Duration(milliseconds: 50);
+  static const Duration _fastInterval = TerminalPolling.outOfServiceInterval;
   Timer? _fastTimer;
   bool _fastRunning = false;
 

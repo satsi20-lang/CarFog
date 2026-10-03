@@ -79,7 +79,7 @@ class ConfigService {
     paymentTerminalMode: (j['paymentTerminalMode'] as String?) ?? 'edge',
     paymentTerminalGuardMs: (j['paymentTerminalGuardMs'] as int?) ?? 3000,
     paymentTerminalEnabled: (j['paymentTerminalEnabled'] as bool?) ?? false,
-    outputWatchdogEnabled: (j['outputWatchdogEnabled'] as bool?) ?? false,
+    outputWatchdogEnabled: (j['outputWatchdogEnabled'] as bool?) ?? true,
     dioInstalled: (j['dioInstalled'] as bool?) ?? true,
     thermoInstalled: (j['thermoInstalled'] as bool?) ?? false,
     energyMeterInstalled: (j['energyMeterInstalled'] as bool?) ?? false,

@@ -36,6 +36,9 @@ void main() async {
   final config = await ConfigService.load();
 
   final notifier = AppNotifier()..config = config;
+  // Блок оплаты по конфигурации (термопара/счётчик не отмечены) — до первого
+  // экрана.
+  notifier.refreshPaymentBlock();
 
   // Вывод аппарата из обслуживания (задача "вывод аппарата из
   // обслуживания", требования 2-5): состояние восстанавливается ДО runApp —
@@ -182,6 +185,13 @@ class AppRouter extends StatelessWidget {
         state != AppState.servicePinEntry &&
         state != AppState.serviceMenu &&
         state != AppState.error) {
+      return const OutOfServiceScreen();
+    }
+    // Платные экраны при блоке по конфигурации (термопара/счётчик не
+    // отмечены установленными) — тоже только "не работает"; заставка и
+    // выбор языка остаются.
+    if (notifier.isConfigBlocked &&
+        (state == AppState.selectFlavor || state == AppState.payment)) {
       return const OutOfServiceScreen();
     }
     switch (state) {

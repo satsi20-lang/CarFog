@@ -116,6 +116,10 @@ class _TreatingScreenState extends State<TreatingScreen>
   );
   bool _faulted = false;
   bool _cancelling = false;
+  // Счётчик энергии установлен — нужен подтверждению выключения ТЭНа по
+  // мощности (HeaterShutdownService), в том числе из dispose, где
+  // context уже недоступен.
+  late final bool _meterInstalled;
 
   // Термостат вправе управлять реле только пока этот флаг поднят. Снимается
   // ПЕРВЫМ делом при конце обработки/отказе: тик, который уже ждал ответа
@@ -138,6 +142,7 @@ class _TreatingScreenState extends State<TreatingScreen>
   @override
   void initState() {
     super.initState();
+    _meterInstalled = context.read<AppNotifier>().config.energyMeterInstalled;
     _blinkController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 500),
@@ -168,7 +173,7 @@ class _TreatingScreenState extends State<TreatingScreen>
       }
       // Плохое чтение (null / обрыв / нереалистично) — не принимаем по нему
       // решений: -500°C как "ниже порога включения" включило бы ТЭН.
-      if (!HeaterSafetyMonitor.isUsable(temp)) return;
+      if (!HeaterSafetyMonitor.isUsable(temp) || _monitor.lastReadBad) return;
       setState(() => _currentTemp = temp!);
       // Аварийный потолок: в прогреве он есть, в обработке раньше не было
       // совсем — при залипшем реле от перегрева защищал бы только
@@ -293,16 +298,18 @@ class _TreatingScreenState extends State<TreatingScreen>
     notifier.resetSession();
   }
 
-  // Перегрев в обработке: тот же порог, что и в прогреве. Обычная ошибка
-  // с возвратом к ожиданию (не вывод из обслуживания): перегрев сам по себе
-  // не доказывает отказ аппарата, а если ТЭН не выключается — это поймает
-  // ensureOff и выведет аппарат.
+  // Перегрев в обработке: тот же порог, что и в прогреве. В обработке
+  // гистерезис выключает ТЭН при 190°C, поэтому достижение 240°C при
+  // ИСПРАВНОМ датчике (показание годное, детекторы не сработали) означает,
+  // что ТЭН не выключился (залипшее реле) или термостат не работает: это
+  // вывод из обслуживания (код overheat), а не обычная ошибка с возвратом
+  // к ожиданию. Выключение подтверждается по катушке и мощности (_shutdownAll).
   Future<void> _overheat(double temp) async {
     if (_faulted) return;
     _faulted = true;
     _stopCycleTimers();
     final notifier = context.read<AppNotifier>();
-    await _shutdownAll(notifier, 'treating_overheat');
+    final shutdown = _shutdownAll(notifier, 'treating_overheat');
     final plannedS = _treatmentDuration;
     final doneS = _treatmentDoneS(plannedS);
     final extra = <String, dynamic>{
@@ -311,6 +318,17 @@ class _TreatingScreenState extends State<TreatingScreen>
       'treatment_done_s': doneS,
       'treatment_share_pct': plannedS == 0 ? 0 : (doneS * 100 / plannedS).round(),
     };
+    await OutOfServiceService.trip(
+      notifier,
+      code: OutOfServiceCode.overheat,
+      details: {
+        'temp_c': temp,
+        'threshold_c': HeaterThresholds.overheatAbortC,
+        ...extra,
+      },
+      alongside: shutdown,
+      showScreen: false,
+    );
     await CloudService.report(
       CloudEventType.hardwareError,
       data: {'code': 'overheat', 'temp_c': temp, ...extra},
@@ -509,7 +527,10 @@ class _TreatingScreenState extends State<TreatingScreen>
     _thermostatActive = false;
     unawaited(() async {
       await ModbusService.safeAllOff();
-      await HeaterShutdownService.ensureOff('treating_dispose');
+      await HeaterShutdownService.ensureOff(
+        'treating_dispose',
+        meterInstalled: _meterInstalled,
+      );
     }());
     super.dispose();
   }

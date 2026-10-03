@@ -96,7 +96,10 @@ class AppConfig {
     this.paymentTerminalMode = 'edge',
     this.paymentTerminalGuardMs = 3000,
     this.paymentTerminalEnabled = false,
-    this.outputWatchdogEnabled = false,
+    // Включён по умолчанию (доработка после проверки 73acfe3, п.4): на
+    // боевом аппарате сторож — штатная защита, а не диагностика. Уже
+    // сохранённое явное значение не перезаписывается.
+    this.outputWatchdogEnabled = true,
     this.dioInstalled = true,
     this.thermoInstalled = false,
     this.energyMeterInstalled = false,
@@ -282,6 +285,32 @@ class AppNotifier extends ChangeNotifier {
   OutOfServiceState? get outOfService => _outOfService;
   bool get isOutOfService => _outOfService != null;
 
+  // --- Обязательные устройства (доработка после проверки коммита 73acfe3,
+  // п.3) --- Для платной работы термопара и счётчик энергии должны быть
+  // отмечены установленными: без термопары прогрев нечем контролировать
+  // (клиент заплатил бы, а цикл кончился бы ошибкой), без счётчика молча
+  // пропадают проверка мощности ТЭНа, энергетический бюджет и проверка
+  // выключения ТЭНа по мощности. Это СОСТОЯНИЕ КОНФИГУРАЦИИ, а не отказ:
+  // в постоянный признак вывода из обслуживания не пишется и пропадает
+  // сразу после включения флагов в сервисном меню.
+  List<String> get missingRequiredDevices => [
+    if (!config.thermoInstalled) 'thermocouple',
+    if (!config.energyMeterInstalled) 'energy_meter',
+  ];
+  bool get isConfigBlocked => missingRequiredDevices.isNotEmpty;
+  bool get isPaymentBlocked => isOutOfService || isConfigBlocked;
+
+  // Платёжный сервис блокируется и по признаку отказа, и по конфигурации;
+  // вызывается при любом изменении того и другого.
+  void refreshPaymentBlock() {
+    ModbusService.paymentBlocked = isPaymentBlocked;
+    // Флаги включили, пока клиент стоял на экране "не работает" без
+    // постоянного признака — возвращаемся в ожидание.
+    if (!isPaymentBlocked && _state == AppState.outOfService) {
+      _state = AppState.standby;
+    }
+  }
+
   // Пока признак стоит, достижимы только экраны, которые не принимают
   // деньги: сам экран "не работает", PIN/сервисное меню (техник) и экран
   // ошибки (клиенту, чья оплата уже прошла к моменту отказа, нужно
@@ -304,7 +333,7 @@ class AppNotifier extends ChangeNotifier {
   // работает" появится после него по таймеру возврата.
   void enterOutOfService(OutOfServiceState state, {bool showScreen = true}) {
     _outOfService = state;
-    ModbusService.paymentBlocked = true;
+    refreshPaymentBlock();
     _selectedFlavor = null;
     if (showScreen && _state != AppState.servicePinEntry && _state != AppState.serviceMenu) {
       _errorCode = null;
@@ -324,7 +353,7 @@ class AppNotifier extends ChangeNotifier {
   // (после подтверждённого удаления записи и успешного пробного цикла).
   void leaveOutOfService() {
     _outOfService = null;
-    ModbusService.paymentBlocked = false;
+    refreshPaymentBlock();
     if (_state == AppState.outOfService) {
       _state = AppState.standby;
     }
@@ -411,6 +440,13 @@ class AppNotifier extends ChangeNotifier {
       transition(AppState.outOfService);
       return;
     }
+    // Обязательные устройства не отмечены установленными — до оплаты
+    // показывается "временно не работает" (см. missingRequiredDevices).
+    if (isConfigBlocked) {
+      refreshPaymentBlock();
+      transition(AppState.outOfService);
+      return;
+    }
     // Не пускаем дальше выбора аромата, если шина недоступна (задача "не
     // брать деньги, если шина недоступна") — приём оплаты при потерянном
     // управлении оборудованием означает, что клиент заплатит и не получит
@@ -441,7 +477,7 @@ class AppNotifier extends ChangeNotifier {
     _errorCode = null;
     // В режиме "выведен из обслуживания" возврат "в ожидание" ведёт на экран
     // "не работает", а не на заставку, принимающую оплату.
-    _state = _outOfService != null ? AppState.outOfService : AppState.standby;
+    _state = isPaymentBlocked ? AppState.outOfService : AppState.standby;
     notifyListeners();
   }
 
@@ -451,11 +487,13 @@ class AppNotifier extends ChangeNotifier {
 
   void updateConfig(AppConfig newConfig) {
     config = newConfig;
+    refreshPaymentBlock();
     notifyListeners();
   }
 
   Future<void> saveConfig(AppConfig newConfig) async {
     config = newConfig;
+    refreshPaymentBlock();
     notifyListeners();
     await ConfigService.save(newConfig);
   }

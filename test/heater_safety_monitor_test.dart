@@ -215,4 +215,89 @@ void main() {
     expect(f.details['since_heater_on_s'], isA<double>());
     expect((f.details['recent_temps'] as List), isNotEmpty);
   });
+
+  group('нереальная скорость изменения (разовый выброс при обрыве)', () {
+    test('317°C после 40°C за один тик — плохое чтение, не отказ и не решение', () {
+      final m = monitor()..heaterCommanded(true, tempC: 40.0);
+      tick();
+      expect(m.observeTemperature(46.0), isNull);
+      tick();
+      expect(m.observeTemperature(317.5), isNull); // выброс при отсоединении
+      expect(m.lastReadBad, isTrue); // по нему нельзя решать "перегрев"
+      tick();
+      expect(m.observeTemperature(52.0), isNull); // датчик вернулся
+      expect(m.lastReadBad, isFalse);
+    });
+
+    test('три выброса подряд — отказ out_of_range / implausible_jump', () {
+      final m = monitor()..heaterCommanded(true, tempC: 40.0);
+      tick();
+      expect(m.observeTemperature(46.0), isNull);
+      HeaterFault? f;
+      for (var i = 0; i < 3; i++) {
+        tick();
+        f = m.observeTemperature(317.5);
+      }
+      expect(f?.kind, HeaterFaultKind.outOfRange);
+      expect(f?.reason, 'implausible_jump');
+    });
+
+    test('нормальный нагрев 3°C/с (9°C за тик) скачком НЕ считается', () {
+      final m = monitor()..heaterCommanded(true, tempC: 20.0);
+      var t = 20.0;
+      for (var i = 0; i < 15; i++) {
+        tick();
+        t += 9.0;
+        expect(m.observeTemperature(t), isNull, reason: 'тик $i');
+        expect(m.lastReadBad, isFalse);
+      }
+    });
+
+    test('выброс не сдвигает опору: следующее нормальное чтение — не скачок', () {
+      final m = monitor()..heaterCommanded(true, tempC: 40.0);
+      tick();
+      m.observeTemperature(46.0);
+      tick();
+      m.observeTemperature(317.5);
+      tick();
+      m.observeTemperature(52.0);
+      expect(m.lastReadBad, isFalse);
+    });
+
+    test('скачок при выключенном ТЭНе не даёт отказа', () {
+      final m = monitor();
+      m.observeTemperature(40.0);
+      tick();
+      expect(m.observeTemperature(317.5), isNull);
+    });
+
+    test('постоянный обрыв −500 по-прежнему out_of_range', () {
+      final m = monitor()..heaterCommanded(true, tempC: 40.0);
+      HeaterFault? f;
+      for (var i = 0; i < 3; i++) {
+        tick();
+        f = m.observeTemperature(-500.0);
+      }
+      expect(f?.kind, HeaterFaultKind.outOfRange);
+    });
+  });
+
+  group('бюджет энергии после пересмотра 03.10.2026', () {
+    test('измеренный холодный прогрев 36.3 Вт·ч проходит с запасом ≥ 40%', () {
+      final m = monitor()..heaterCommanded(true, tempC: 25.0);
+      tick();
+      expect(m.observeEnergy(energyWh: 36.3, targetReached: false), isNull);
+      expect(HeaterThresholds.preheatEnergyBudgetWh, greaterThanOrEqualTo(36.3 * 1.4));
+    });
+
+    test('оценка для −25°C (≈47 Вт·ч) проходит, 72 Вт·ч (таймаут) — отказ', () {
+      final m = monitor()..heaterCommanded(true, tempC: -25.0);
+      tick();
+      expect(m.observeEnergy(energyWh: 47.0, targetReached: false), isNull);
+      expect(
+        m.observeEnergy(energyWh: 72.0, targetReached: false)?.kind,
+        HeaterFaultKind.energyBudget,
+      );
+    });
+  });
 }

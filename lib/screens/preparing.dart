@@ -151,7 +151,12 @@ class _PreparingScreenState extends State<PreparingScreen> {
   // и закрывают цикл), здесь только страховка.
   void _abandonStart({required bool heaterCommanded}) {
     if (heaterCommanded) {
-      unawaited(HeaterShutdownService.ensureOff('preheat_abandoned'));
+      unawaited(
+        HeaterShutdownService.ensureOff(
+          'preheat_abandoned',
+          meterInstalled: _meterInstalled,
+        ),
+      );
     }
     CycleEnergyService.endCycle();
   }
@@ -236,7 +241,7 @@ class _PreparingScreenState extends State<PreparingScreen> {
     }
     // Плохое чтение, ещё не подтверждённое монитором (одиночный сбой
     // шины) — ждём следующего тика, не принимаем решений по мусору.
-    if (!_usable(temp)) return;
+    if (!_usable(temp) || _monitor.lastReadBad) return;
     _lastTempC = temp;
     setState(() => _currentTemp = temp!);
 
@@ -248,6 +253,15 @@ class _PreparingScreenState extends State<PreparingScreen> {
         hardwareErrorCode: 'overheat',
         tempC: temp,
         safeAllOffFirst: true,
+        // Деньги приняты, услуги нет; 240°C при годном датчике — ТЭН не
+        // выключается / термостат не работает → вывод из обслуживания.
+        serviceNotDelivered: true,
+        outOfServiceCode: OutOfServiceCode.overheat,
+        outOfServiceDetails: {
+          'temp_c': temp,
+          'threshold_c': HeaterThresholds.overheatAbortC,
+          'phase': 'preheat',
+        },
       );
       return;
     }
@@ -327,9 +341,12 @@ class _PreparingScreenState extends State<PreparingScreen> {
     // признака на диск (см. OutOfServiceService.trip): оба окна —
     // "отказ → выходы выключены" и "отказ → запись подтверждена" —
     // должны быть минимальными.
-    var heaterOffConfirmed = true;
+    HeaterOffResult? heaterOff;
     final shutdown = () async {
-      heaterOffConfirmed = await ModbusService.forceHeaterOff();
+      // Катушка + (если счётчик установлен) падение мощности.
+      heaterOff = await HeaterShutdownService.confirmOff(
+        meterInstalled: _meterInstalled,
+      );
       if (safeAllOffFirst) await ModbusService.safeAllOff();
     }();
     if (outOfServiceCode != null && notifier != null) {
@@ -345,23 +362,18 @@ class _PreparingScreenState extends State<PreparingScreen> {
     } else {
       await shutdown;
     }
-    if (!heaterOffConfirmed) {
-      // Выключение не подтверждено после всех повторов — реле могло
+    final off = heaterOff;
+    if (off != null && !off.confirmed) {
+      // Выключение не подтверждено (катушка или мощность) — реле могло
       // залипнуть. Если вывод из обслуживания уже сработал по другой
       // причине (там ТЭН тоже мог остаться горящим), событие всё равно
       // уходит оператору отдельно.
-      await CloudService.report(
-        CloudEventType.hardwareError,
-        data: {'code': 'heater_off_unconfirmed', 'where': 'preheat_fail:$logCode'},
+      await HeaterShutdownService.reportUnconfirmed(
+        'preheat_fail:$logCode',
+        off,
+        notifier: notifier,
+        tripOutOfService: outOfServiceCode == null,
       );
-      if (outOfServiceCode == null && notifier != null) {
-        await OutOfServiceService.trip(
-          notifier,
-          code: OutOfServiceCode.heaterOffUnconfirmed,
-          details: {'where': 'preheat_fail:$logCode'},
-          showScreen: false,
-        );
-      }
     }
     await _logError(
       logCode,

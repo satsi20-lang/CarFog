@@ -179,6 +179,9 @@ class SyncService {
       snapshot['out_of_service_code'] = oos.code;
       snapshot['out_of_service_since'] = oos.since.toIso8601String();
     }
+    // Оплата заблокирована конфигурацией (термопара/счётчик не отмечены
+    // установленными) — не отказ, в постоянный признак не пишется.
+    snapshot['payment_blocked_by_config'] = notifier.missingRequiredDevices;
     snapshot['debug_modes'] = await ModbusService.activeDebugModes();
 
     final last = _lastSentConfigSnapshot;

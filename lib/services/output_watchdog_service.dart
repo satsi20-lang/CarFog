@@ -1,7 +1,26 @@
 import 'dart:async';
 import '../models/app_state.dart';
+import '../models/bus_map.dart';
+import '../models/out_of_service.dart';
 import 'cloud_service.dart';
 import 'modbus_service.dart';
+import 'out_of_service_service.dart';
+
+// Не отправлять одинаковое событие чаще заданного интервала: раньше при
+// невыключаемом выходе unexpected_output_on уходило каждые 3 с. Другой
+// ключ (другой канал / другой исход) проходит сразу.
+class EventThrottle {
+  final Duration minInterval;
+  final Map<String, DateTime> _last = {};
+  EventThrottle(this.minInterval);
+
+  bool allow(String key, DateTime now) {
+    final last = _last[key];
+    if (last != null && now.difference(last) < minInterval) return false;
+    _last[key] = now;
+    return true;
+  }
+}
 
 // Сторож выходов (задача "сторож выходов"): в состояниях покоя
 // периодически сверяет фактическое состояние выходов (FC01, Read Coils)
@@ -29,6 +48,9 @@ class OutputWatchdogService {
   // без этого режима экран не закрывался бы никогда.
   bool _recoveryOnly = false;
   int _consecutiveFailures = 0;
+  final EventThrottle _eventThrottle = EventThrottle(
+    OutputWatchdogLimits.eventMinInterval,
+  );
 
   OutputWatchdogService._(this.notifier);
 
@@ -150,15 +172,38 @@ class OutputWatchdogService {
       final recheck = await ModbusService.readCoils();
       final confirmedOff = recheck != null &&
           !recheck.take(_watchedOutputs).any((v) => v);
-      await CloudService.report(
-        CloudEventType.hardwareError,
-        data: {
-          'code': 'unexpected_output_on',
-          'channel': onIndex,
-          'state': notifier.state.name,
-          'confirmed_off': confirmedOff,
-        },
-      );
+      // Выход остался включённым даже после safeAllOff и перепроверки —
+      // аппарат не может безопасно работать (реле/модуль залипли): вывод из
+      // обслуживания (output_stuck_on), а не бесконечные события каждые
+      // 3 с на аппарате, продолжающем принимать деньги. Не пишем, если
+      // перепроверка не прочиталась (это сбой шины, а не доказанное
+      // залипание) — тогда только событие.
+      final stuckIndex = recheck == null
+          ? -1
+          : recheck.take(_watchedOutputs).toList().indexWhere((v) => v);
+      if (stuckIndex >= 0 &&
+          notifier.outOfService?.code != OutOfServiceCode.outputStuckOn) {
+        await OutOfServiceService.trip(
+          notifier,
+          code: OutOfServiceCode.outputStuckOn,
+          details: {
+            'channel': stuckIndex,
+            'first_seen_channel': onIndex,
+            'state': notifier.state.name,
+          },
+        );
+      }
+      if (_eventThrottle.allow('$onIndex:$confirmedOff', DateTime.now())) {
+        await CloudService.report(
+          CloudEventType.hardwareError,
+          data: {
+            'code': 'unexpected_output_on',
+            'channel': onIndex,
+            'state': notifier.state.name,
+            'confirmed_off': confirmedOff,
+          },
+        );
+      }
     } finally {
       _running = false;
     }

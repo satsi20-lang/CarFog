@@ -59,6 +59,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
   // Переход к прогреву уже запущен: монета и карта одновременно не должны
   // запустить его дважды (двойная сессия, двойной прогрев).
   bool _proceeding = false;
+  // Способ, которым запущен переход к прогреву ('coins' | 'card' | 'mixed') —
+  // для записи о повторной оплате.
+  String? _firstMethod;
 
   Timer? _coinTimer;
   Timer? _countdownTimer;
@@ -88,7 +91,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
     // "вывод аппарата из обслуживания"): сюда попасть нельзя, но если всё
     // же — не заводить ни опрос монетоприёмника, ни терминал, ни
     // таймеры, и сразу уйти на экран "не работает".
-    if (context.read<AppNotifier>().isOutOfService) {
+    if (context.read<AppNotifier>().isPaymentBlocked) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           context.read<AppNotifier>().transition(AppState.outOfService);
@@ -142,7 +145,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
     try {
       final status = await ModbusService.getCoinAcceptorStatus();
       _coinFailureCount = status.failureCount;
-      if (status.cents > 0 && mounted) {
+      if (status.cents > 0 && _proceeding) {
+        // Монета пришла уже ПОСЛЕ защёлки перехода к прогреву — раньше она
+        // пропадала без записи.
+        _reportDuplicate(method: 'coins', cents: status.cents, reason: 'after_latch');
+      } else if (status.cents > 0 && mounted) {
         setState(() {
           _balanceCents += status.cents;
           // Клиент вносит деньги — окно оплаты продлевается; раньше 120 с
@@ -213,7 +220,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
     } finally {
       _checkingTerminal = false;
     }
-    if (poll != null && poll.confirmed) {
+    if (poll != null && poll.confirmed && _proceeding) {
+      // Второй платёж картой после защёлки (монета и карта почти
+      // одновременно, либо повторное касание).
+      _reportDuplicate(method: 'card', cents: _priceCents, reason: 'after_latch');
+    } else if (poll != null && poll.confirmed) {
       _proceedToTreatment(
         paymentMethod: _balanceCents > 0 ? 'mixed' : 'card',
         coinsCents: _balanceCents > 0 ? _balanceCents : null,
@@ -231,6 +242,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   void _proceedToTreatment({required String paymentMethod, int? coinsCents}) {
     if (ModbusService.paymentBlocked || _proceeding) return;
     _proceeding = true;
+    _firstMethod = paymentMethod;
     _coinTimer?.cancel();
     _countdownTimer?.cancel();
     _terminalTimer?.cancel();
@@ -260,7 +272,57 @@ class _PaymentScreenState extends State<PaymentScreen> {
         readStartEnergy: notifier.config.energyMeterInstalled,
       ),
     );
+    // Монетами внесено, а завершила карта — клиент переплатил (карта идёт на
+    // полную цену поверх монет): оператору нужна запись для возврата. Сессия
+    // создаётся синхронно в start(), идентификатор уже доступен.
+    if (paymentMethod == 'mixed') {
+      _reportDuplicate(
+        method: 'coins_then_card',
+        cents: coinsCents ?? 0,
+        reason: 'coins_and_card',
+      );
+    }
+    // Монета, принятая монетоприёмником между последним опросом и остановкой
+    // счёта, остаётся в нативном буфере и стёрлась бы при следующем окне
+    // оплаты — забираем её здесь и фиксируем.
+    unawaited(_drainLateCoin());
     notifier.transition(AppState.preparing);
+  }
+
+  void _reportDuplicate({
+    required String method,
+    required int cents,
+    required String reason,
+  }) {
+    unawaited(
+      CloudService.report(
+        CloudEventType.duplicatePayment,
+        data: {
+          'reason': reason,
+          'method': method,
+          'cents': cents,
+          'first_method': ?_firstMethod,
+          'balance_cents': _balanceCents,
+          'price_cents': _priceCents,
+          'session_id': ?SessionService.currentSessionId,
+        },
+      ),
+    );
+  }
+
+  Future<void> _drainLateCoin() async {
+    // Дать фоновому потоку счёта дочитать последний тик после остановки.
+    await Future.delayed(const Duration(milliseconds: 400));
+    try {
+      final status = await ModbusService.getCoinAcceptorStatus();
+      if (status.cents > 0) {
+        _reportDuplicate(
+          method: 'coins',
+          cents: status.cents,
+          reason: 'late_coin',
+        );
+      }
+    } catch (_) {}
   }
 
   void _cancel({String reason = 'cancelled'}) {

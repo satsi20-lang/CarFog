@@ -192,11 +192,11 @@ const Map<String, Map<String, String>> _i18n = {
     'bus_healthy': 'Шина работает',
     'bus_unhealthy': 'Шина недоступна',
     'diag_port_busy': 'Порт занят другим процессом:',
-    'watchdog_enabled': 'Сторож выходов (диагностический режим)',
+    'watchdog_enabled': 'Сторож выходов',
     'watchdog_hint':
         'Периодически сверяет фактическое состояние выходов с ожидаемым '
-        '"всё выключено" в покое. Выключен по умолчанию — включайте, только '
-        'когда обмен по шине подтверждённо исправен.',
+        '"всё выключено" в покое; включённый выход гасит, а если он не '
+        'гаснет — выводит аппарат из обслуживания. Включён по умолчанию.',
     'diag_devices_section': 'Устройства на шине',
     'diag_device_thermo': 'Термопара',
     'diag_device_energy': 'Счётчик энергии',
@@ -209,6 +209,8 @@ const Map<String, Map<String, String>> _i18n = {
         'Отладка: термопара «залипает» на последнем значении, шину не читает — для проверки детекторов отказа датчика. Проверка идёт с ВКЛЮЧЁННЫМ ТЭНом: техник стоит рядом и готов отключить питание. Живёт до ручного выключения, автоснятие через 30 минут, видно в облаке.',
     'diag_freeze_temp_failed': 'Заморозить нечем: нет ни одного чтения температуры',
     'oos_status_ok': 'Аппарат принимает оплату',
+    'oos_status_cfg_blocked': 'ОПЛАТА ЗАБЛОКИРОВАНА конфигурацией (это не отказ)',
+    'oos_cfg_missing': 'Не отмечены установленными (включите: Диагностика → Устройства на шине)',
     'oos_status_blocked': 'ВЫВЕДЕН ИЗ ОБСЛУЖИВАНИЯ — оплата заблокирована',
     'oos_reason': 'Причина',
     'oos_since': 'С',
@@ -216,6 +218,8 @@ const Map<String, Map<String, String>> _i18n = {
     'oos_code_temp_sensor_fault': 'отказ датчика температуры / убегающий нагрев',
     'oos_code_heat_timeout': 'прогрев не достиг цели за 180 с',
     'oos_code_heater_off_unconfirmed': 'выключение ТЭНа не подтверждено (возможно, залипло реле)',
+    'oos_code_overheat': 'перегрев (ТЭН не выключается или не работает термостат)',
+    'oos_code_output_stuck_on': 'выход остаётся включённым после аварийного выключения',
     'oos_code_state_unreadable': 'состояние не читается (fail-closed при старте)',
     'oos_trial_btn': 'Пробный цикл (без оплаты)',
     'oos_trial_running': 'Идёт пробный цикл…',
@@ -226,6 +230,7 @@ const Map<String, Map<String, String>> _i18n = {
     'oos_trial_fail': 'Пробный цикл провален',
     'oos_trial_too_hot': 'Испаритель горячий — подождите остывания',
     'oos_trial_busy': 'Пробный цикл сейчас недоступен',
+    'oos_trial_abort': 'Прервать пробный цикл',
     'oos_trial_no_thermo': 'Термопара не отмечена как установленная — пробный цикл невозможен',
     'oos_trial_cancelled': 'Пробный цикл прерван',
     'oos_clear_btn': 'Снять блокировку',
@@ -457,11 +462,11 @@ const Map<String, Map<String, String>> _i18n = {
     'bus_healthy': 'Bus is working',
     'bus_unhealthy': 'Bus unavailable',
     'diag_port_busy': 'Port occupied by another process:',
-    'watchdog_enabled': 'Output watchdog (diagnostic mode)',
+    'watchdog_enabled': 'Output watchdog',
     'watchdog_hint':
-        'Periodically checks that outputs are actually off while idle, as '
-        'expected. Off by default — enable only once bus exchange is '
-        'confirmed healthy.',
+        'Periodically checks that outputs are actually off while idle; '
+        'switches off any output found on and, if it will not switch off, '
+        'takes the machine out of service. On by default.',
     'diag_devices_section': 'Devices on the bus',
     'diag_device_thermo': 'Thermocouple',
     'diag_device_energy': 'Energy meter',
@@ -474,6 +479,8 @@ const Map<String, Map<String, String>> _i18n = {
         'Debug: the thermocouple "sticks" at its last value, the bus is not read — for testing the sensor-fault detectors. The test runs with the heater ON: the technician stays next to the machine ready to cut power. Stays on until switched off, auto-off after 30 minutes, visible in the cloud.',
     'diag_freeze_temp_failed': 'Nothing to freeze: no temperature reading yet',
     'oos_status_ok': 'Machine is accepting payments',
+    'oos_status_cfg_blocked': 'PAYMENT BLOCKED by configuration (not a fault)',
+    'oos_cfg_missing': 'Not marked as installed (enable: Diagnostics → Devices on the bus)',
     'oos_status_blocked': 'OUT OF SERVICE — payments blocked',
     'oos_reason': 'Reason',
     'oos_since': 'Since',
@@ -481,6 +488,8 @@ const Map<String, Map<String, String>> _i18n = {
     'oos_code_temp_sensor_fault': 'temperature sensor fault / runaway heating',
     'oos_code_heat_timeout': 'preheat did not reach the target in 180 s',
     'oos_code_heater_off_unconfirmed': 'heater switch-off not confirmed (relay may be stuck)',
+    'oos_code_overheat': 'overheating (heater does not switch off or thermostat failed)',
+    'oos_code_output_stuck_on': 'an output stays on after emergency switch-off',
     'oos_code_state_unreadable': 'state unreadable (fail-closed at startup)',
     'oos_trial_btn': 'Trial cycle (no payment)',
     'oos_trial_running': 'Trial cycle running…',
@@ -491,6 +500,7 @@ const Map<String, Map<String, String>> _i18n = {
     'oos_trial_fail': 'Trial cycle failed',
     'oos_trial_too_hot': 'Evaporator is hot — wait for it to cool',
     'oos_trial_busy': 'Trial cycle is not available right now',
+    'oos_trial_abort': 'Abort trial cycle',
     'oos_trial_no_thermo': 'Thermocouple is not marked as installed — trial cycle is not possible',
     'oos_trial_cancelled': 'Trial cycle interrupted',
     'oos_clear_btn': 'Lift the block',
@@ -724,11 +734,11 @@ const Map<String, Map<String, String>> _i18n = {
     'bus_healthy': 'Siin töötab',
     'bus_unhealthy': 'Siin pole saadaval',
     'diag_port_busy': 'Port on hõivatud teise protsessi poolt:',
-    'watchdog_enabled': 'Väljundite valvur (diagnostikarežiim)',
+    'watchdog_enabled': 'Väljundite valvur',
     'watchdog_hint':
-        'Kontrollib perioodiliselt, kas väljundid on tegelikult välja '
-        'lülitatud, kui peaks. Vaikimisi väljas — lülita sisse alles siis, '
-        'kui siiniühendus on kinnitatult korras.',
+        'Kontrollib perioodiliselt, kas väljundid on puhkeolekus välja '
+        'lülitatud; sisselülitatud väljundi lülitab välja ja kui see ei '
+        'lülitu, võtab seadme hooldusest välja. Vaikimisi sees.',
     'diag_devices_section': 'Seadmed siinil',
     'diag_device_thermo': 'Termopaar',
     'diag_device_energy': 'Energiaarvesti',
@@ -741,6 +751,8 @@ const Map<String, Map<String, String>> _i18n = {
         'Silumine: termopaar «kleepub» viimase väärtuse külge, siini ei loeta — anduririkke tuvastajate testimiseks. Test käib SISSELÜLITATUD küttekehaga: tehnik seisab kõrval ja on valmis toite katkestama. Püsib sees kuni käsitsi väljalülitamiseni, 30 minuti pärast lülitub ise välja, nähtav pilves.',
     'diag_freeze_temp_failed': 'Pole mida külmutada: temperatuuri pole veel loetud',
     'oos_status_ok': 'Seade võtab makseid vastu',
+    'oos_status_cfg_blocked': 'MAKSED BLOKEERITUD seadistusega (see ei ole rike)',
+    'oos_cfg_missing': 'Pole paigaldatuks märgitud (lülita sisse: Diagnostika → Siini seadmed)',
     'oos_status_blocked': 'HOOLDUSEST VÄLJAS — maksed blokeeritud',
     'oos_reason': 'Põhjus',
     'oos_since': 'Alates',
@@ -748,6 +760,8 @@ const Map<String, Map<String, String>> _i18n = {
     'oos_code_temp_sensor_fault': 'temperatuuriandurite rike / kontrollimatu kuumutamine',
     'oos_code_heat_timeout': 'eelsoojendus ei saavutanud sihti 180 s jooksul',
     'oos_code_heater_off_unconfirmed': 'küttekeha väljalülitust ei kinnitatud (relee võib olla kinni)',
+    'oos_code_overheat': 'ülekuumenemine (küttekeha ei lülitu välja või termostaat ei tööta)',
+    'oos_code_output_stuck_on': 'väljund jääb pärast avariilülitust sisse',
     'oos_code_state_unreadable': 'olek ei ole loetav (fail-closed käivitusel)',
     'oos_trial_btn': 'Prooviring (ilma makseta)',
     'oos_trial_running': 'Prooviring käib…',
@@ -758,6 +772,7 @@ const Map<String, Map<String, String>> _i18n = {
     'oos_trial_fail': 'Prooviring ebaõnnestus',
     'oos_trial_too_hot': 'Aurusti on kuum — oota jahtumist',
     'oos_trial_busy': 'Prooviring ei ole praegu saadaval',
+    'oos_trial_abort': 'Katkesta prooviring',
     'oos_trial_no_thermo': 'Termopaari ei ole paigaldatuks märgitud — prooviring pole võimalik',
     'oos_trial_cancelled': 'Prooviring katkestati',
     'oos_clear_btn': 'Eemalda blokeering',
@@ -1390,6 +1405,11 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
   bool _compressorOn = false;
   bool _heaterOn = false;
   bool _busy = false;
+  // Ручные выходы заблокированы, пока идёт пробный цикл: он владеет
+  // выходами, а "Всё выкл." или автовыключение ТЭНа сорвали бы его и вывели
+  // исправный аппарат из обслуживания. Учитывается и сам сервис (вкладка
+  // могла быть пересоздана, а цикл ещё идёт).
+  bool get _outputsLocked => _busy || HeaterTrialService.running;
 
   Map<String, double> _energy = {
     'voltage': 0.0,
@@ -2056,13 +2076,25 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
     final oos = notifier.outOfService;
     final blocked = oos != null;
     final canClear = blocked && OutOfServiceService.trialPassedRecently;
-    final accent = blocked ? const Color(0xFFE53935) : const Color(0xFF00C6B2);
+    final cfgBlocked = !blocked && notifier.isConfigBlocked;
+    final accent = blocked
+        ? const Color(0xFFE53935)
+        : cfgBlocked
+        ? const Color(0xFFFFAA00)
+        : const Color(0xFF00C6B2);
+    String deviceName(String code) => switch (code) {
+      'thermocouple' => t['diag_device_thermo']!,
+      'energy_meter' => t['diag_device_energy']!,
+      _ => code,
+    };
 
     String reasonText(String code) => switch (code) {
       OutOfServiceCode.heaterNoPower => t['oos_code_heater_no_power']!,
       OutOfServiceCode.tempSensorFault => t['oos_code_temp_sensor_fault']!,
       OutOfServiceCode.heatTimeout => t['oos_code_heat_timeout']!,
       OutOfServiceCode.heaterOffUnconfirmed => t['oos_code_heater_off_unconfirmed']!,
+      OutOfServiceCode.overheat => t['oos_code_overheat']!,
+      OutOfServiceCode.outputStuckOn => t['oos_code_output_stuck_on']!,
       OutOfServiceCode.stateUnreadable => t['oos_code_state_unreadable']!,
       _ => code,
     };
@@ -2071,6 +2103,7 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
       final d = s.details;
       final parts = <String>[
         if (d['subtype'] != null) '${d['subtype']}',
+        if (d['confirmed_by'] != null) '${d['confirmed_by']}',
         if (d['power_w'] is num)
           '${(d['power_w'] as num).toStringAsFixed(0)} ${t['unit_w']}',
         if (d['voltage_v'] is num)
@@ -2094,13 +2127,24 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            blocked ? t['oos_status_blocked']! : t['oos_status_ok']!,
+            blocked
+                ? t['oos_status_blocked']!
+                : cfgBlocked
+                ? t['oos_status_cfg_blocked']!
+                : t['oos_status_ok']!,
             style: TextStyle(
               color: accent,
               fontWeight: FontWeight.bold,
               fontSize: 14,
             ),
           ),
+          if (cfgBlocked) ...[
+            const SizedBox(height: 6),
+            Text(
+              '${t['oos_cfg_missing']}: ${notifier.missingRequiredDevices.map(deviceName).join(', ')}',
+              style: const TextStyle(color: Color(0xFFFFAA00), fontSize: 12),
+            ),
+          ],
           if (oos != null) ...[
             const SizedBox(height: 8),
             Text(
@@ -2138,6 +2182,24 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
               ),
             ),
           ),
+          if (_trialRunning || HeaterTrialService.running) ...[
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: HeaterTrialService.cancel,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFFE53935),
+                  side: const BorderSide(color: Color(0xFFE53935)),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                child: Text(t['oos_trial_abort']!),
+              ),
+            ),
+          ],
           const SizedBox(height: 6),
           Text(
             t['oos_trial_hint']!,
@@ -2473,7 +2535,7 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
                     ? '$label — $secondsLeft${t['diag_seconds_suffix']}'
                     : label,
                 value: _pumpOn[i],
-                onChanged: _busy ? null : (v) => _setPump(i, v),
+                onChanged: _outputsLocked ? null : (v) => _setPump(i, v),
               );
             }),
             _ToggleRow(
@@ -2481,14 +2543,14 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
                   ? '${t['compressor']} — $_compressorSecondsLeft${t['diag_seconds_suffix']}'
                   : t['compressor']!,
               value: _compressorOn,
-              onChanged: _busy ? null : _setCompressor,
+              onChanged: _outputsLocked ? null : _setCompressor,
             ),
             _ToggleRow(
               label: _heaterSecondsLeft != null
                   ? '${t['heater']} — $_heaterSecondsLeft${t['diag_seconds_suffix']}'
                   : t['heater']!,
               value: _heaterOn,
-              onChanged: _busy ? null : _setHeater,
+              onChanged: _outputsLocked ? null : _setHeater,
             ),
           ];
           return List.generate(5, (row) {
@@ -2510,7 +2572,7 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
           children: [
             Expanded(
               child: ElevatedButton(
-                onPressed: _busy ? null : _allOn,
+                onPressed: _outputsLocked ? null : _allOn,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF00C6B2),
                   foregroundColor: Colors.black,
@@ -2528,7 +2590,7 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
             const SizedBox(width: 12),
             Expanded(
               child: ElevatedButton(
-                onPressed: _busy ? null : _allOff,
+                onPressed: _outputsLocked ? null : _allOff,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFFE53935),
                   foregroundColor: Colors.white,
@@ -2550,7 +2612,7 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
         SizedBox(
           width: double.infinity,
           child: OutlinedButton(
-            onPressed: _busy ? null : _checkColdStart,
+            onPressed: _outputsLocked ? null : _checkColdStart,
             style: OutlinedButton.styleFrom(
               foregroundColor: const Color(0xFF00C6B2),
               side: const BorderSide(color: Color(0xFF00C6B2)),
@@ -5476,6 +5538,7 @@ class _JournalTabState extends State<_JournalTab> {
     'out_of_service_cleared': 'Вывод из обслуживания снят',
     'out_of_service_trial': 'Пробный цикл',
     'payment_abandoned': 'Оплата не завершена (внесённая сумма)',
+    'duplicate_payment': 'ПОВТОРНАЯ ОПЛАТА (клиент заплатил дважды)',
   };
 
   static const _alarmTypes = {
@@ -5485,6 +5548,7 @@ class _JournalTabState extends State<_JournalTab> {
     'hardware_error',
     'app_started_after_crash',
     'unexpected_payment',
+    'duplicate_payment',
     'out_of_service',
     'out_of_service_restored',
   };

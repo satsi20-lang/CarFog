@@ -22,6 +22,10 @@ const String energyCheckpointAtKey = 'energy_checkpoint_at';
 class SessionService {
   static _Session? _current;
 
+  // Идентификатор текущей платной сессии (попадает во все события о ней, в
+  // том числе duplicate_payment). null — сессии нет.
+  static String? get currentSessionId => _current?.id;
+
   // Вызывается с payment.dart в момент, когда внесённой суммы достаточно,
   // до перехода к подготовке. Отдельно снимает базовое показание общего
   // счётчика энергии — из него в конце вычитается финальное для расхода
@@ -56,6 +60,7 @@ class SessionService {
     // Сессия создаётся СРАЗУ, до чтения счётчика: отказ или отмена, случившиеся
     // раньше, чем дочитался бы счётчик, иначе не оставили бы записи.
     final session = _Session(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
       flavorIndex: flavorIndex,
       flavorNameRu: flavorNameRu,
       priceCents: priceCents,
@@ -117,6 +122,7 @@ class SessionService {
 
     final durationS = DateTime.now().difference(session.startedAt).inSeconds;
     final data = <String, dynamic>{
+      'session_id': session.id,
       'flavor_index': session.flavorIndex,
       'flavor': session.flavorNameRu,
       'price_cents': session.priceCents,
@@ -142,6 +148,12 @@ class SessionService {
     // фиктивные нули.
     final cycleSummary = CycleEnergyService.endCycle();
     if (cycleSummary != null) data.addAll(cycleSummary);
+    // energy_wh — интеграл мощности по отсчётам счётчика (шаг регистра
+    // 10 Вт·ч слишком груб для цикла ≈20 Вт·ч); разность показаний
+    // регистра остаётся контрольным полем energy_wh_counter.
+    final integralWh = cycleSummary?['cycle_energy_wh'] as double?;
+    data.remove('cycle_energy_wh');
+    if (integralWh != null) data['energy_wh'] = integralWh;
     final gridVoltage = cycleSummary?['grid_voltage_v'] as double?;
     if (gridVoltage != null && gridVoltage < PowerSignature.gridVoltageSagWarningV) {
       // Не авария — просто пометка в той же записи, отдельного события не
@@ -157,7 +169,11 @@ class SessionService {
     final endEnergy = await ModbusService.readEnergy();
     endKwh = endEnergy?['totalEnergy'];
     if (startKwh != null && endKwh != null) {
-      data['energy_wh'] = (endKwh - startKwh) * 1000.0;
+      final counterWh = (endKwh - startKwh) * 1000.0;
+      data['energy_wh_counter'] = counterWh;
+      // Интеграла нет (цикл не начинался, отсчётов не было) — разность
+      // показаний остаётся единственным значением.
+      data.putIfAbsent('energy_wh', () => counterWh);
     }
 
     // Контрольная точка для различения краша софта и пропадания питания
@@ -187,6 +203,7 @@ class SessionService {
 }
 
 class _Session {
+  final String id;
   final int flavorIndex;
   final String flavorNameRu;
   final int priceCents;
@@ -199,6 +216,7 @@ class _Session {
   bool ended = false;
 
   _Session({
+    required this.id,
     required this.flavorIndex,
     required this.flavorNameRu,
     required this.priceCents,

@@ -71,8 +71,14 @@ class HeaterTrialService {
     // Блокировка по таймауту прогрева (heat_timeout) снимается только
     // если пробный прогрев ДОСТИГ ЦЕЛИ за тот же срок, что и боевой, а не
     // просто показал рост на 3°C — иначе тот же отказ прошёл бы незамеченным.
+    // Для overheat то же + ТЭН обязан выключиться ПОДТВЕРЖДЁННО, с падением
+    // мощности (HeaterShutdownService.confirmOff): причина — именно
+    // невыключающийся ТЭН.
+    final oosCode = notifier.outOfService?.code;
     final requireTarget =
-        notifier.outOfService?.code == OutOfServiceCode.heatTimeout;
+        oosCode == OutOfServiceCode.heatTimeout ||
+        oosCode == OutOfServiceCode.overheat;
+    final requireOffByPower = oosCode == OutOfServiceCode.overheat;
     _running = true;
     _cancelRequested = false;
     try {
@@ -124,13 +130,27 @@ class HeaterTrialService {
             ...fault.details,
           });
         }
-        if (HeaterSafetyMonitor.isUsable(t) && t! >= HeaterThresholds.overheatAbortC) {
+        if (HeaterSafetyMonitor.isUsable(t) &&
+            !monitor.lastReadBad &&
+            t! >= HeaterThresholds.overheatAbortC) {
           // Аварийный потолок прогрева (тот же, что в preparing.dart).
           return TrialResult.fail('overheat', {'temp_c': t});
         }
         if (requireTarget) {
           if (HeaterSafetyMonitor.isUsable(t) &&
+              !monitor.lastReadBad &&
               t! >= HeaterThresholds.preheatTargetC) {
+            if (requireOffByPower) {
+              final off = await HeaterShutdownService.confirmOff(
+                meterInstalled: config.energyMeterInstalled,
+              );
+              if (!off.confirmed) {
+                return TrialResult.fail(OutOfServiceCode.heaterOffUnconfirmed, {
+                  'temp_c': t,
+                  ...off.toDetails(),
+                });
+              }
+            }
             return TrialResult.pass({
               'power_w': ?CycleEnergyService.lastPowerW,
               'voltage_v': ?CycleEnergyService.lastVoltageV,
@@ -151,14 +171,19 @@ class HeaterTrialService {
         }
       }
       if (requireTarget) {
-        return TrialResult.fail(OutOfServiceCode.heatTimeout, {
-          'timeout_s': HeaterThresholds.preheatTimeout.inSeconds,
-          'target_c': HeaterThresholds.preheatTargetC,
-          'start_temp_c': ?temp0,
-          'last_temp_c': ?lastTemp,
-          'energy_since_heater_on_wh':
-              CycleEnergyService.energySinceHeaterCommandWh,
-        });
+        return TrialResult.fail(
+          oosCode == OutOfServiceCode.overheat
+              ? OutOfServiceCode.overheat
+              : OutOfServiceCode.heatTimeout,
+          {
+            'timeout_s': HeaterThresholds.preheatTimeout.inSeconds,
+            'target_c': HeaterThresholds.preheatTargetC,
+            'start_temp_c': ?temp0,
+            'last_temp_c': ?lastTemp,
+            'energy_since_heater_on_wh':
+                CycleEnergyService.energySinceHeaterCommandWh,
+          },
+        );
       }
       // Время вышло, а подъёма нет, хотя детектор не успел сработать
       // (задержки опроса) — это тоже "нет роста".
@@ -213,6 +238,9 @@ class HeaterTrialService {
         code: switch (result.code) {
           OutOfServiceCode.heaterNoPower => OutOfServiceCode.heaterNoPower,
           OutOfServiceCode.heatTimeout => OutOfServiceCode.heatTimeout,
+          OutOfServiceCode.overheat => OutOfServiceCode.overheat,
+          OutOfServiceCode.heaterOffUnconfirmed =>
+            OutOfServiceCode.heaterOffUnconfirmed,
           _ => OutOfServiceCode.tempSensorFault,
         },
         details: {...result.details, 'source': 'trial_cycle'},
@@ -223,6 +251,9 @@ class HeaterTrialService {
         code: switch (result.code) {
           OutOfServiceCode.heaterNoPower => OutOfServiceCode.heaterNoPower,
           OutOfServiceCode.heatTimeout => OutOfServiceCode.heatTimeout,
+          OutOfServiceCode.overheat => OutOfServiceCode.overheat,
+          OutOfServiceCode.heaterOffUnconfirmed =>
+            OutOfServiceCode.heaterOffUnconfirmed,
           _ => OutOfServiceCode.tempSensorFault,
         },
         details: {...result.details, 'source': 'trial_cycle'},

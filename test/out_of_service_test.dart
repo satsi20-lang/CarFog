@@ -12,6 +12,11 @@ import 'package:dry_fog_app/services/out_of_service_service.dart';
 // на диск → экран → облако", блокировка всех входов в оплату и снятие
 // только после пробного цикла. Нативное хранилище подменяется
 // обработчиком канала — само OutOfServiceStore проверяется Kotlin-тестами.
+// Аппарат с обязательными устройствами, отмеченными установленными (иначе
+// оплата блокируется конфигурацией — AppNotifier.isConfigBlocked).
+AppNotifier readyNotifier() => AppNotifier()
+  ..config = AppConfig(thermoInstalled: true, energyMeterInstalled: true);
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -116,7 +121,7 @@ void main() {
 
   group('trip: порядок записи, экрана и облака', () {
     test('запись на диск подтверждена РАНЬШЕ, чем показан экран', () async {
-      final notifier = AppNotifier();
+      final notifier = readyNotifier();
       final order = <String>[];
       handler = (call) async {
         if (call.method == 'writeOutOfService') {
@@ -142,7 +147,7 @@ void main() {
     });
 
     test('отключение выходов идёт параллельно с записью, а не после неё', () async {
-      final notifier = AppNotifier();
+      final notifier = readyNotifier();
       final order = <String>[];
       handler = (call) async {
         if (call.method == 'writeOutOfService') {
@@ -166,7 +171,7 @@ void main() {
     });
 
     test('запись не подтверждена — аппарат всё равно заблокирован в памяти', () async {
-      final notifier = AppNotifier();
+      final notifier = readyNotifier();
       handler = (call) => call.method == 'writeOutOfService' ? false : null;
       await OutOfServiceService.trip(
         notifier,
@@ -179,7 +184,7 @@ void main() {
     });
 
     test('нативная запись бросает исключение — блокировка остаётся', () async {
-      final notifier = AppNotifier();
+      final notifier = readyNotifier();
       handler = (call) => call.method == 'writeOutOfService'
           ? throw PlatformException(code: 'IO')
           : null;
@@ -191,7 +196,7 @@ void main() {
     });
 
     test('повторный отказ не затирает момент первого вывода', () async {
-      final notifier = AppNotifier();
+      final notifier = readyNotifier();
       handler = (call) => call.method == 'writeOutOfService' ? true : null;
       await OutOfServiceService.trip(notifier, code: OutOfServiceCode.heaterNoPower);
       final first = notifier.outOfService!.since;
@@ -203,7 +208,7 @@ void main() {
     });
 
     test('showScreen=false: клиент сначала увидит экран ошибки', () async {
-      final notifier = AppNotifier()..transition(AppState.preparing);
+      final notifier = readyNotifier()..transition(AppState.preparing);
       handler = (call) => call.method == 'writeOutOfService' ? true : null;
       await OutOfServiceService.trip(
         notifier,
@@ -223,7 +228,7 @@ void main() {
     late AppNotifier notifier;
 
     setUp(() async {
-      notifier = AppNotifier();
+      notifier = readyNotifier();
       handler = (call) => call.method == 'writeOutOfService' ? true : null;
       await OutOfServiceService.trip(
         notifier,
@@ -276,7 +281,7 @@ void main() {
     late AppNotifier notifier;
 
     setUp(() async {
-      notifier = AppNotifier();
+      notifier = readyNotifier();
       handler = (call) {
         if (call.method == 'writeOutOfService') return true;
         if (call.method == 'clearOutOfService') return true;
@@ -342,7 +347,7 @@ void main() {
   });
 
   test('клиент в обычном состоянии: переходы не блокируются', () {
-    final notifier = AppNotifier();
+    final notifier = readyNotifier();
     notifier.transition(AppState.standby);
     expect(notifier.state, AppState.standby);
     notifier.transition(AppState.payment);

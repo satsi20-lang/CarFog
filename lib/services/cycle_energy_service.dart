@@ -45,6 +45,14 @@ class CycleEnergyService {
   // отдаёт шаг 0,01 кВт·ч = 10 Вт·ч, для бюджета прогрева 45 Вт·ч это
   // грубее допустимого. Нужна детектору "убегающего" нагрева
   // (HeaterSafetyMonitor.observeEnergy).
+  // Энергия ВСЕГО цикла — интеграл мощности по отсчётам от beginCycle до
+  // endCycle (энергия за сессию в session_complete, п.6 доработки после
+  // проверки 73acfe3). Регистр счётчика отдаёт шаг 0,01 кВт·ч = 10 Вт·ч при
+  // расходе сухого цикла ≈20 Вт·ч — разность показаний слишком груба.
+  static double _cycleEnergyWh = 0;
+  static DateTime? _cycleLastAt;
+  static double _cycleLastPowerW = 0;
+
   static bool _integrating = false;
   static DateTime? _lastSampleAt;
   static double _lastPowerW = 0;
@@ -90,6 +98,9 @@ class CycleEnergyService {
     _preheatSeconds = null;
     _lastReadPowerW = null;
     _lastReadVoltageV = null;
+    _cycleEnergyWh = 0;
+    _cycleLastAt = null;
+    _cycleLastPowerW = 0;
 
     if (!_meterInstalled) {
       _baselinePowerW = null;
@@ -98,6 +109,10 @@ class CycleEnergyService {
     }
     final energy = await ModbusService.readEnergy();
     _baselinePowerW = energy == null ? null : energy['power']! * 1000;
+    if (_baselinePowerW != null) {
+      _cycleLastAt = DateTime.now();
+      _cycleLastPowerW = _baselinePowerW!;
+    }
 
     _timer = Timer.periodic(_sampleInterval, (_) => _sample());
   }
@@ -160,6 +175,15 @@ class CycleEnergyService {
     _voltageSamples++;
 
     final now = DateTime.now();
+    final cycleAt = _cycleLastAt;
+    if (cycleAt != null) {
+      final dtS = now.difference(cycleAt).inMilliseconds / 1000.0;
+      if (dtS > 0) {
+        _cycleEnergyWh += (_cycleLastPowerW + powerW) / 2 * dtS / 3600.0;
+      }
+    }
+    _cycleLastAt = now;
+    _cycleLastPowerW = powerW;
     final prevAt = _lastSampleAt;
     if (_integrating && prevAt != null) {
       final dtS = now.difference(prevAt).inMilliseconds / 1000.0;
@@ -204,7 +228,16 @@ class CycleEnergyService {
       _aboveThreshold = false;
     }
 
+    // Последний неполный интервал (от последнего отсчёта до конца цикла) —
+    // при постоянной мощности последнего отсчёта.
+    final lastAt = _cycleLastAt;
+    if (lastAt != null) {
+      final dtS = DateTime.now().difference(lastAt).inMilliseconds / 1000.0;
+      if (dtS > 0) _cycleEnergyWh += _cycleLastPowerW * dtS / 3600.0;
+    }
+    final haveIntegral = lastAt != null;
     final result = <String, dynamic>{
+      if (haveIntegral) 'cycle_energy_wh': _cycleEnergyWh,
       if (_baselinePowerW != null) 'baseline_power_w': _baselinePowerW,
       'peak_power_w': _peakPowerW,
       if (_timeToFullPowerMs != null)
@@ -222,6 +255,7 @@ class CycleEnergyService {
       },
     };
 
+    _cycleLastAt = null;
     _baselinePowerW = null;
     _voltageSamples = 0;
     _voltageSum = 0;

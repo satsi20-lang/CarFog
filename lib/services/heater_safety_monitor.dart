@@ -70,10 +70,21 @@ class HeaterSafetyMonitor {
   bool _riseConfirmed = false;
   double? _lastTemp;
   DateTime? _lastChangeAt;
+  // Последнее годное (не выброс) показание и его время — для проверки
+  // скорости изменения; обновляется и при выключенном ТЭНе.
+  double? _lastGood;
+  DateTime? _lastGoodAt;
+  bool _lastReadBad = false;
   int _consecutiveBad = 0;
   final List<Map<String, dynamic>> _recent = [];
 
   bool get heaterOn => _heaterOn;
+
+  // Последнее показание признано плохим (null / вне диапазона / нереальный
+  // скачок). Вызывающий код НЕ принимает по нему решений (перегрев,
+  // гистерезис, цель прогрева): одиночный выброс не должен ни выводить
+  // аппарат из обслуживания "перегревом", ни включать/выключать реле.
+  bool get lastReadBad => _lastReadBad;
 
   // Показание годно для принятия решений (в допустимом диапазоне). null,
   // служебное значение обрыва и нереалистично высокое — нет. Управление
@@ -109,8 +120,25 @@ class HeaterSafetyMonitor {
   // Каждое показание температуры (в том числе null — не удалось прочитать).
   HeaterFault? observeTemperature(double? temp) {
     final now = _clock();
-    final bad = !isUsable(temp);
+    final outOfBounds = !isUsable(temp);
+    var jump = false;
+    final good = _lastGood;
+    final goodAt = _lastGoodAt;
+    if (!outOfBounds && good != null && goodAt != null) {
+      final delta = (temp! - good).abs();
+      final dtS = now.difference(goodAt).inMilliseconds / 1000.0;
+      jump = delta >= HeaterThresholds.sensorJumpMinDeltaC &&
+          (dtS <= 0 || delta / dtS > HeaterThresholds.sensorMaxRateCPerS);
+    }
+    final bad = outOfBounds || jump;
+    _lastReadBad = bad;
     _remember(now, temp);
+    // Опорное годное показание — только из НЕвыбросов (иначе выброс сам
+    // сдвинул бы опору и следующее нормальное чтение выглядело бы скачком).
+    if (!bad) {
+      _lastGood = temp;
+      _lastGoodAt = now;
+    }
 
     if (!_heaterOn) {
       _consecutiveBad = 0;
@@ -123,6 +151,8 @@ class HeaterSafetyMonitor {
       if (_consecutiveBad >= HeaterThresholds.sensorBadReadConfirmCount) {
         final reason = temp == null
             ? 'no_reading'
+            : jump
+            ? 'implausible_jump'
             : (temp <= HeaterThresholds.sensorPlausibleMinC
                   ? 'below_min'
                   : 'above_max');
