@@ -21,14 +21,18 @@ create table if not exists public.app_releases (
 alter table public.app_releases enable row level security;
 revoke all on table public.app_releases from public, anon;
 
--- Читать и писать может только вошедший владелец. Правило то же, что на
--- devices: подзапрос к devices выполняется ПОД ПРАВАМИ пользователя, то есть
+-- Вошедший пользователь может ТОЛЬКО читать (по решению владельца
+-- 04.10.2026). Политик insert/update/delete нет вовсе: запись о релизе
+-- создаётся только под полными правами (SQL Editor в панели Supabase).
+-- Подзапрос к devices выполняется ПОД ПРАВАМИ пользователя, то есть
 -- возвращает строки, только если RLS devices пропускает этого пользователя.
--- anon прав не имеет вовсе.
-create policy app_releases_owner_all on public.app_releases
-  for all to authenticated
-  using (exists (select 1 from public.devices))
-  with check (exists (select 1 from public.devices));
+-- anon прав не имеет вовсе. Права на запись отозваны и на уровне таблицы
+-- (второй рубеж поверх RLS).
+create policy app_releases_read on public.app_releases
+  for select to authenticated
+  using (exists (select 1 from public.devices));
+
+revoke insert, update, delete, truncate on table public.app_releases from authenticated;
 
 -- ---------- Запись о релизе для устройства ----------
 -- Вызывается Edge Function release-url под сервисным ключом после
@@ -86,16 +90,7 @@ insert into storage.buckets (id, name, public)
 values ('releases', 'releases', false)
 on conflict (id) do update set public = false;
 
--- Владелец может загружать и просматривать файлы релизов (например, из
--- панели Supabase). anon не получает ничего.
-create policy releases_owner_read on storage.objects
-  for select to authenticated
-  using (bucket_id = 'releases' and exists (select 1 from public.devices));
-
-create policy releases_owner_write on storage.objects
-  for insert to authenticated
-  with check (bucket_id = 'releases' and exists (select 1 from public.devices));
-
-create policy releases_owner_delete on storage.objects
-  for delete to authenticated
-  using (bucket_id = 'releases' and exists (select 1 from public.devices));
+-- Политик на storage.objects для бакета releases НЕТ намеренно (решение
+-- владельца 04.10.2026): файлы читает только Edge Function по подписанной
+-- ссылке (сервисный ключ обходит RLS), а загружает владелец через панель
+-- Supabase. anon и authenticated не получают ничего.

@@ -33,9 +33,13 @@
    shasum -a 256 build/app/outputs/flutter-apk/app-release.apk
    stat -f%z build/app/outputs/flutter-apk/app-release.apk
    ```
-3. Загрузите файл в бакет `releases` (Storage → releases → Upload). Имя с
+3. Загрузите файл в бакет `releases` (Storage → releases → Upload) **только из
+   панели Supabase под владельцем проекта**: никаких политик на запись для
+   пользователей нет, из приложений и скриптов под обычным входом загрузить
+   файл нельзя. Имя с
    случайным хвостом: `carfog-1.6.0+10-a1b2c3d4e5f6.apk`.
-4. Добавьте запись (SQL Editor):
+4. Добавьте запись (SQL Editor, **только под владельцем проекта**: у
+   обычного входа права на запись в `app_releases` отозваны, читать можно):
    ```sql
    insert into app_releases (version_name, version_code, file_path, sha256, size_bytes, notes)
    values ('1.6.0', 10, 'carfog-1.6.0+10-a1b2c3d4e5f6.apk', '<sha256>', <размер>, 'что изменилось')
