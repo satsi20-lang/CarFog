@@ -111,6 +111,10 @@ class UpdateService {
   // результата; при успехе процесс всё равно будет заменён.
   static bool inProgress = false;
 
+  // Не писать сигнал здоровья (только тестовая сборка для проверки отката,
+  // см. UpdateLimits.skipHealthSignalBuild).
+  static bool skipHealthSignal = UpdateLimits.skipHealthSignalBuild;
+
   // ---- подменяемые в тестах зависимости ----
   static PrivilegedInstaller installer = RootInstaller();
   static Future<Directory?> Function() dirProvider = _defaultDir;
@@ -306,6 +310,7 @@ class UpdateService {
       'to_code': ticket.versionCode,
       'to_name': ticket.versionName,
       'release_id': releaseId,
+      'kiosk': n.config.kioskModeEnabled,
       'started_at': DateTime.now().toIso8601String(),
     });
     await _deleteQuietly(File('${dir.path}/${UpdateLimits.protocolName}'));
@@ -335,6 +340,7 @@ class UpdateService {
       'from_name': current.versionName,
       'to_code': toCode,
       'to_name': backup['version_name'],
+      'kiosk': n.config.kioskModeEnabled,
       'started_at': DateTime.now().toIso8601String(),
     });
     await _deleteQuietly(File('${dir.path}/${UpdateLimits.protocolName}'));
@@ -378,6 +384,7 @@ class UpdateService {
       // Работает НОВАЯ версия (после установки или ручного отката): ждём
       // условий здоровья и подтверждаем скрипту.
       AppLog.log('UpdateService', 'запущена целевая версия ${current.versionName}($toCode), mode=$mode');
+      await _repairIfScriptIncomplete(dir, pending, current, summary);
       _healthLoop(n, dir, pending, current, summary, startedAt);
       return;
     }
@@ -398,6 +405,32 @@ class UpdateService {
     // Версия ни целевая, ни прежняя — запись устарела.
     await _record('stale_pending', current.versionName, pending['to_name'] as String?);
     await _deleteQuietly(pendingFile);
+  }
+
+  // Скрипт мог не дойти до конца (убит при замене пакета на ядре/прошивке, где
+  // выход из cgroup не сработал): тогда в протоколе нет owner_fixed. Новое
+  // приложение само возвращает владельца/контекст каталога и роль HOME.
+  // Протокол может быть нечитаем (root:root 0600) — пусто тоже значит «чинить».
+  static Future<void> _repairIfScriptIncomplete(
+    Directory dir,
+    Map<String, dynamic> pending,
+    AppInfo current,
+    ProtocolSummary summary,
+  ) async {
+    if (summary.events.contains('owner_fixed')) return;
+    final ok = await installer.repairAfterUpdate(
+      dir: dir.path,
+      packageName: current.packageName,
+      aliasClass: current.aliasClass ?? aliasClass,
+      kiosk: pending['kiosk'] == true,
+    );
+    AppLog.log('UpdateService', 'починка после обновления (скрипт не дошёл до конца): ${ok ? 'ок' : 'не удалась'}');
+    if (!ok) {
+      await _event(CloudEventType.updateFailed, {
+        'action': 'repair',
+        'reason': 'repair_failed',
+      });
+    }
   }
 
   // ============================================================== состояние
@@ -540,6 +573,7 @@ class UpdateService {
       await _record(reason, pending['from_name'] as String?, pending['to_name'] as String?, failed: true);
     }
     await _deleteQuietly(File('${dir.path}/${UpdateLimits.pendingName}'));
+    await _deleteQuietly(File('${dir.path}/${UpdateLimits.newApkName}'));
     inProgress = false;
     n.setMaintenance(false);
   }
@@ -553,6 +587,10 @@ class UpdateService {
     ProtocolSummary summary,
     DateTime? startedAt,
   ) {
+    if (skipHealthSignal) {
+      AppLog.log('UpdateService', 'SKIP_HEALTH_SIGNAL: сигнал здоровья не пишется (тестовая сборка)');
+      return;
+    }
     inProgress = true; // оплата заблокирована до подтверждения здоровья
     n.setMaintenance(true);
     final bootAt = DateTime.now();
@@ -597,6 +635,7 @@ class UpdateService {
         await _record('installed', pending['from_name'] as String?, pending['to_name'] as String?);
       }
       await _deleteQuietly(File('${dir.path}/${UpdateLimits.pendingName}'));
+      await _deleteQuietly(File('${dir.path}/${UpdateLimits.newApkName}'));
       inProgress = false;
       n.setMaintenance(false);
     });
@@ -803,6 +842,7 @@ class UpdateService {
 
   @visibleForTesting
   static void resetForTest() {
+    skipHealthSignal = UpdateLimits.skipHealthSignalBuild;
     _watchTimer?.cancel();
     _watchTimer = null;
     inProgress = false;

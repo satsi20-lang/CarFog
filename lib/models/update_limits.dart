@@ -48,4 +48,13 @@ class UpdateLimits {
   static const String protocolName = 'protocol.log';
   static const String healthName = 'health';
   static const String scriptName = 'update.sh';
+
+  // ТОЛЬКО ДЛЯ ЖИВОЙ ПРОВЕРКИ ОТКАТА: сборка с
+  // --dart-define=SKIP_HEALTH_SIGNAL=true не пишет сигнал здоровья, и
+  // скрипт по таймауту откатывает её на резерв. В обычной сборке (без флага)
+  // сигнал пишется всегда: значение по умолчанию false проверяется тестом.
+  static const bool skipHealthSignalBuild = bool.fromEnvironment(
+    'SKIP_HEALTH_SIGNAL',
+    defaultValue: false,
+  );
 }

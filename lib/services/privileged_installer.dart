@@ -1,4 +1,6 @@
 import 'dart:io';
+
+import 'update_script.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
@@ -48,6 +50,15 @@ abstract class PrivilegedInstaller {
   // Запуск установки/отката в отдельном процессе, переживающем смерть
   // приложения. true — скрипт ЗАПУЩЕН (его результат — в протоколе).
   Future<bool> startScript(InstallRequest request, String scriptText);
+
+  // Новое приложение после обновления, если скрипт не дошёл до конца: вернуть
+  // владельца каталога update, контекст и роль домашнего экрана. true — ок.
+  Future<bool> repairAfterUpdate({
+    required String dir,
+    required String packageName,
+    required String aliasClass,
+    required bool kiosk,
+  });
 
   // «ADB по сети» (persist.adb.tcp.port): записать / прочитать.
   Future<bool> setAdbNetwork(bool enabled);
@@ -115,6 +126,25 @@ class RootInstaller implements PrivilegedInstaller {
     }
   }
 
+  @override
+  Future<bool> repairAfterUpdate({
+    required String dir,
+    required String packageName,
+    required String aliasClass,
+    required bool kiosk,
+  }) async {
+    final r = await _exec(
+      buildRepairCommand(
+        dir: dir,
+        packageName: packageName,
+        aliasClass: aliasClass,
+        kiosk: kiosk,
+      ),
+      timeoutMs: 20000,
+    );
+    return r != null && r['exit'] == 0;
+  }
+
   // Включение: порт 5555 переживает перезагрузку (persist.*), ADB включён.
   // Выключение: порт сбрасывается; adb_enabled не трогаем (отключить
   // отладку под текущим подключением значило бы отрезать себя).
@@ -147,6 +177,14 @@ class DeviceOwnerInstaller implements PrivilegedInstaller {
   @override
   Future<bool> startScript(InstallRequest request, String scriptText) async =>
       false;
+
+  @override
+  Future<bool> repairAfterUpdate({
+    required String dir,
+    required String packageName,
+    required String aliasClass,
+    required bool kiosk,
+  }) async => false;
 
   @override
   Future<bool> setAdbNetwork(bool enabled) async => false;

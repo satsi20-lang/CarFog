@@ -130,8 +130,31 @@ if [ "$FAKE_HEALTH" = "1" ]; then echo "ok $FAKE_CODE" > "$FAKE_HEALTH_FILE"; fi
       String pkg = 'ee.test.pkg',
       String activity = 'ee.test.MainActivity',
       String alias = 'ee.test.KioskHomeAlias',
+      // root — уже вне cgroup приложения; movable — в cgroup приложения, но
+      // перенос в корень удаётся; stuck — в cgroup приложения, перенос не
+      // удаётся (нет прав / нет cgroup2 / другое ядро).
+      String cg = 'root',
     }) async {
       final healthFile = '${dir.path}/health';
+      final cgRoot = Directory('${dir.path}/cgroot')..createSync(recursive: true);
+      final cgSelf = '${cgRoot.path}/cgroup.procs';
+      File('${dir.path}/mounts').writeAsStringSync(
+        cg == 'nocgroup2'
+            ? 'none /dev/cpuctl cgroup rw 0 0\n'
+            : 'none ${cgRoot.path} cgroup2 rw 0 0\n',
+      );
+      // «/proc/self/cgroup» подменён файлом; для movable это ТОТ ЖЕ файл, что
+      // cgroup.procs: запись PID в него = «перенос», строки cgroup пропадают.
+      final selfFile = cg == 'stuck' || cg == 'nocgroup2'
+          ? '${dir.path}/self_cgroup'
+          : cgSelf;
+      File(selfFile).writeAsStringSync(
+        cg == 'root' ? '0::/\n' : '0::/uid_10123/pid_4242\n',
+      );
+      if (cg == 'stuck') {
+        // cgroup.procs есть, но «запись» ничего не меняет (self_cgroup — другой файл)
+        File(cgSelf).writeAsStringSync('');
+      }
       final r = await Process.run(
         'sh',
         [
@@ -158,6 +181,8 @@ if [ "$FAKE_HEALTH" = "1" ]; then echo "ok $FAKE_CODE" > "$FAKE_HEALTH_FILE"; fi
           'FAKE_HEALTH_FILE': healthFile,
           'FAKE_INSTALL': install,
           'FAKE_ROLLBACK': rollback,
+          'CG_SELF': selfFile,
+          'CG_MOUNTS': '${dir.path}/mounts',
         },
       );
       final proto = File('${dir.path}/protocol.log').existsSync()
@@ -226,6 +251,40 @@ if [ "$FAKE_HEALTH" = "1" ]; then echo "ok $FAKE_CODE" > "$FAKE_HEALTH_FILE"; fi
       final (_, _, calls) = await run(kiosk: '1');
       expect(calls, contains('pm enable ee.test.pkg/ee.test.KioskHomeAlias'));
       expect(calls, contains('cmd role add-role-holder --user 0 android.app.role.HOME ee.test.pkg'));
+    });
+
+    test('выживание: в cgroup приложения, перенос удаётся — установка идёт', () async {
+      final (r, proto, calls) = await run(cg: 'movable');
+      expect(r.exitCode, 0, reason: '${r.stderr}');
+      expect(proto.events, containsAllInOrder(['diag', 'survive_ok', 'backup_ok', 'install_ok', 'health_ok']));
+      expect(calls, contains('pm install -r'));
+    });
+
+    for (final cg in ['stuck', 'nocgroup2']) {
+      test('no_survive ($cg): перенос не удался — pm install НЕ вызывается, exit 15', () async {
+        final (r, proto, calls) = await run(cg: cg);
+        expect(r.exitCode, 15, reason: cg);
+        expect(proto.outcome, UpdateOutcome.failed, reason: cg);
+        expect(proto.detail, startsWith('root='), reason: cg);
+        expect(proto.events, contains('no_survive'), reason: cg);
+        expect(proto.events, isNot(contains('backup_ok')), reason: cg);
+        expect(calls, isNot(contains('pm install')), reason: cg);
+        expect(calls, isNot(contains('pm path')), reason: cg);
+        expect(calls, contains('chown -R'), reason: '$cg: файлы всё равно отдаются приложению');
+      });
+    }
+
+    test('no_survive и в режиме отката', () async {
+      final (r, _, calls) = await run(mode: 'rollback', cg: 'stuck');
+      expect(r.exitCode, 15);
+      expect(calls, isNot(contains('pm install')));
+    });
+
+    test('успех: new.apk удаляется скриптом после health_ok', () async {
+      File('${dir.path}/new.apk').writeAsStringSync('X');
+      await run();
+      expect(File('${dir.path}/new.apk').existsSync(), isFalse);
+      expect(File('${dir.path}/backup.apk').existsSync(), isTrue); // резерв остаётся
     });
 
     test('пакет и namespace разные: компонент = пакет/класс из namespace', () async {
@@ -523,6 +582,92 @@ if [ "$FAKE_HEALTH" = "1" ]; then echo "ok $FAKE_CODE" > "$FAKE_HEALTH_FILE"; fi
       expect((st['last'] as Map)['result'], 'installed');
     }, timeout: const Timeout(Duration(seconds: 30)));
 
+    test('новое приложение: скрипт не дошёл до конца → само чинит каталог и роль', () async {
+      setup();
+      UpdateService.appInfoProvider = () async => const AppInfo('ee.test.pkg', 10, '1.6.0');
+      Directory('${tmp.path}/update').createSync(recursive: true);
+      File('${tmp.path}/update/new.apk').writeAsStringSync('X');
+      File('${tmp.path}/update/pending.json').writeAsStringSync(jsonEncode({
+        'mode': 'install', 'from_code': 9, 'from_name': '1.5.1', 'to_code': 10, 'to_name': '1.6.0',
+        'kiosk': true, 'started_at': DateTime.now().toIso8601String(),
+      }));
+      // протокол оборван на backup_ok (как было на планшете), нечитаем или пуст
+      File('${tmp.path}/update/protocol.log').writeAsStringSync('1 diag x\n2 start\n3 backup_ok\n');
+      n.setBusHealthy(true);
+      await UpdateService.onStartup(n);
+      expect(installer.repairs, hasLength(1));
+      expect(installer.repairs.single['kiosk'], isTrue);
+      expect(installer.repairs.single['pkg'], 'ee.test.pkg');
+      await Future.delayed(const Duration(milliseconds: 3500));
+      expect(File('${tmp.path}/update/new.apk').existsSync(), isFalse); // мусор убран
+      UpdateService.resetForTest();
+    }, timeout: const Timeout(Duration(seconds: 30)));
+
+    test('новое приложение: скрипт дошёл до конца (owner_fixed) — починка не нужна', () async {
+      setup();
+      UpdateService.appInfoProvider = () async => const AppInfo('ee.test.pkg', 10, '1.6.0');
+      Directory('${tmp.path}/update').createSync(recursive: true);
+      File('${tmp.path}/update/pending.json').writeAsStringSync(jsonEncode({
+        'mode': 'install', 'from_code': 9, 'from_name': '1.5.1', 'to_code': 10, 'to_name': '1.6.0',
+        'started_at': DateTime.now().toIso8601String(),
+      }));
+      File('${tmp.path}/update/protocol.log').writeAsStringSync('1 start\n2 health_ok\n3 owner_fixed owner=1:1\n');
+      await UpdateService.onStartup(n);
+      expect(installer.repairs, isEmpty);
+      UpdateService.resetForTest();
+    });
+
+    test('починка не удалась → событие update_failed (repair_failed)', () async {
+      setup();
+      installer.repairOk = false;
+      UpdateService.appInfoProvider = () async => const AppInfo('ee.test.pkg', 10, '1.6.0');
+      Directory('${tmp.path}/update').createSync(recursive: true);
+      File('${tmp.path}/update/pending.json').writeAsStringSync(jsonEncode({
+        'mode': 'install', 'from_code': 9, 'from_name': '1.5.1', 'to_code': 10, 'to_name': '1.6.0',
+        'started_at': DateTime.now().toIso8601String(),
+      }));
+      await UpdateService.onStartup(n);
+      final ev = (await CloudService.history()).lastWhere((e) => e.type == CloudEventType.updateFailed);
+      expect(ev.data['reason'], 'repair_failed');
+      UpdateService.resetForTest();
+    });
+
+    test('no_survive в протоколе: приложение остаётся прежним, update_failed:no_survive, блок снят', () async {
+      setup();
+      Directory('${tmp.path}/update').createSync(recursive: true);
+      File('${tmp.path}/update/new.apk').writeAsStringSync('X');
+      File('${tmp.path}/update/pending.json').writeAsStringSync(jsonEncode({
+        'mode': 'install', 'from_code': 9, 'from_name': '1.5.1', 'to_code': 10, 'to_name': '1.6.0',
+        'started_at': DateTime.now().toIso8601String(),
+      }));
+      File('${tmp.path}/update/protocol.log').writeAsStringSync(
+        '1 diag x\n2 no_survive root=/sys/fs/cgroup uid=10123 cgroup=0::/uid_10123/pid_1;\n',
+      );
+      await UpdateService.onStartup(n); // текущая версия (9) == прежняя
+      final ev = (await CloudService.history()).lastWhere((e) => e.type == CloudEventType.updateFailed);
+      expect((ev.data['reason'] as String), startsWith('root='));
+      expect(n.isMaintenance, isFalse);
+      expect(File('${tmp.path}/update/new.apk').existsSync(), isFalse);
+      expect(File('${tmp.path}/update/pending.json').existsSync(), isFalse);
+    });
+
+    test('флаг SKIP_HEALTH_SIGNAL: по умолчанию выключен; включённый — сигнала нет', () async {
+      expect(UpdateLimits.skipHealthSignalBuild, isFalse);
+      expect(UpdateService.skipHealthSignal, isFalse);
+      setup();
+      UpdateService.appInfoProvider = () async => const AppInfo('ee.test.pkg', 10, '1.6.0');
+      Directory('${tmp.path}/update').createSync(recursive: true);
+      File('${tmp.path}/update/pending.json').writeAsStringSync(jsonEncode({
+        'mode': 'install', 'from_code': 9, 'from_name': '1.5.1', 'to_code': 10, 'to_name': '1.6.0',
+        'started_at': DateTime.now().toIso8601String(),
+      }));
+      UpdateService.skipHealthSignal = true;
+      await UpdateService.onStartup(n);
+      await Future.delayed(const Duration(milliseconds: 3500));
+      expect(File('${tmp.path}/update/health').existsSync(), isFalse);
+      expect(n.isMaintenance, isFalse);
+    }, timeout: const Timeout(Duration(seconds: 30)));
+
     test('при старте прежней версии: откат по протоколу → update_rolled_back, блок снят', () async {
       setup();
       Directory('${tmp.path}/update').createSync(recursive: true);
@@ -774,6 +919,28 @@ if [ "$FAKE_HEALTH" = "1" ]; then echo "ok $FAKE_CODE" > "$FAKE_HEALTH_FILE"; fi
     });
   });
 
+  group('команда починки', () {
+    test('кавычки и киоск', () {
+      final c = buildRepairCommand(
+        dir: "/data/x/it's/update", packageName: 'ee.carfog.dryfog',
+        aliasClass: 'com.example.dry_fog_app.KioskHomeAlias', kiosk: true);
+      expect(c, contains("'/data/x/it'\\''s/update'"));
+      expect(c, contains('chown -R'));
+      expect(c, contains('restorecon -R'));
+      expect(c, contains("pm enable 'ee.carfog.dryfog/com.example.dry_fog_app.KioskHomeAlias'"));
+      expect(c, contains('android.app.role.HOME'));
+    });
+    test('без киоска роль не трогается', () {
+      final c = buildRepairCommand(dir: '/d', packageName: 'p', aliasClass: 'a', kiosk: false);
+      expect(c, isNot(contains('cmd role')));
+      expect(c, isNot(contains('pm enable')));
+    });
+    test('командная оболочка принимает собранную команду (sh -n)', () {
+      final c = buildRepairCommand(dir: '/d', packageName: 'p', aliasClass: 'a', kiosk: true);
+      expect(Process.runSync('sh', ['-n', '-c', c]).exitCode, 0);
+    });
+  });
+
   test('свежие параметры: обновление не чаще, чем задано владельцем', () {
     expect(UpdateLimits.commandMinInterval, const Duration(minutes: 10));
     expect(UpdateLimits.commandsPerDay, 3);
@@ -807,6 +974,20 @@ class _FakeInstaller implements PrivilegedInstaller {
     started.add(request);
     scriptTexts.add(scriptText);
     return startOk;
+  }
+
+  final List<Map<String, Object?>> repairs = [];
+  bool repairOk = true;
+
+  @override
+  Future<bool> repairAfterUpdate({
+    required String dir,
+    required String packageName,
+    required String aliasClass,
+    required bool kiosk,
+  }) async {
+    repairs.add({'dir': dir, 'pkg': packageName, 'alias': aliasClass, 'kiosk': kiosk});
+    return repairOk;
   }
 
   @override

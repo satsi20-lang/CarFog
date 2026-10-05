@@ -43,6 +43,28 @@ trap fix_owner EXIT
 # скрипт окажется там же, он умрёт посреди установки (по протоколу видно).
 log "diag pid=$$ ppid=$PPID uid=$(id -u) ctx=$(id -Z 2> /dev/null) cgroup=$(tr '\n' ';' < /proc/$$/cgroup 2> /dev/null)"
 
+# ВЫЖИВАНИЕ. Скрипт запускается из процесса приложения и наследует его cgroup
+# (uid_<uid>/pid_<pid>). При замене пакета система убивает эту cgroup целиком —
+# вместе со скриптом, посреди pm install (проверено на планшете: протокол
+# обрывался на backup_ok). Поэтому до установки скрипт переносит себя в корень
+# cgroup2 и ПРОВЕРЯЕТ по /proc/self/cgroup, что вышел. Не вышел (нет прав на
+# cgroup.procs, нет cgroup2, другое ядро/SELinux) — безопасный отказ no_survive,
+# установка не начинается, приложение остаётся прежним.
+# CG_SELF/CG_MOUNTS — только для тестов на компьютере.
+CGSELF="${CG_SELF:-/proc/self/cgroup}"
+CGMOUNTS="${CG_MOUNTS:-/proc/mounts}"
+APPUID="${OWNER%%:*}"
+in_app_cgroup() { grep -Eq "/uid_${APPUID}(/|\$)" "$CGSELF" 2> /dev/null; }
+CGROOT=$(grep ' cgroup2 ' "$CGMOUNTS" 2> /dev/null | head -n 1 | cut -d' ' -f2)
+if [ -n "$APPUID" ] && in_app_cgroup && [ -n "$CGROOT" ]; then
+  echo $$ > "$CGROOT/cgroup.procs" 2> /dev/null
+fi
+if [ -z "$APPUID" ] || in_app_cgroup; then
+  log "no_survive root=${CGROOT:-none} uid=${APPUID:-unknown} cgroup=$(tr '\n' ';' < "$CGSELF" 2> /dev/null)"
+  exit 15
+fi
+log "survive_ok cgroup=$(tr '\n' ';' < "$CGSELF" 2> /dev/null)"
+
 # Android сбрасывает роль домашнего экрана при замене пакета: вернуть её (если
 # киоск был включён) и запустить приложение (root может стартовать активность
 # из фона, в отличие от самого приложения).
@@ -79,7 +101,7 @@ if [ "$MODE" = "install" ]; then
   log "backup_ok"
   OUT=$(pm install -r "$APK" 2>&1)
   case "$OUT" in
-    *Success*) log "install_ok" ;;
+    *Success*) log "install_ok"; INSTALLED=1 ;;
     *) log "install_failed $(first_line "$OUT")"; exit 12 ;;
   esac
 elif [ "$MODE" = "rollback" ]; then
@@ -100,6 +122,7 @@ i=0
 while [ "$i" -lt "$TIMEOUT" ]; do
   if [ -f "$HEALTH" ] && grep -q "^ok $CODE\$" "$HEALTH" 2> /dev/null; then
     log "health_ok"
+    rm -f "$APK" 2> /dev/null && log "cleanup_ok"
     exit 0
   fi
   sleep 2
@@ -114,6 +137,30 @@ fi
 log "health_timeout_after_rollback"
 exit 0
 ''';
+
+// Команда «починки» для нового приложения, если скрипт не дошёл до конца
+// (в протоколе нет owner_fixed): вернуть владельца и контекст каталога update,
+// включить алиас и вернуть роль домашнего экрана. Всё идемпотентно.
+String shQuote(String s) => "'${s.replaceAll("'", "'\\''")}'";
+
+String buildRepairCommand({
+  required String dir,
+  required String packageName,
+  required String aliasClass,
+  required bool kiosk,
+}) {
+  final d = shQuote(dir);
+  final b = StringBuffer()
+    ..write('chown -R "\$(stat -c %u:%g $d)" $d; ')
+    ..write('restorecon -R $d > /dev/null 2>&1; ');
+  if (kiosk) {
+    b
+      ..write('pm enable ${shQuote('$packageName/$aliasClass')} > /dev/null 2>&1; ')
+      ..write('cmd role add-role-holder --user 0 android.app.role.HOME ${shQuote(packageName)} > /dev/null 2>&1; ');
+  }
+  b.write('echo repaired');
+  return b.toString();
+}
 
 // ---------------------------------------------------------------------------
 // Разбор протокола скрипта
@@ -181,6 +228,7 @@ class UpdateProtocol {
           break;
         case 'install_failed':
         case 'backup_failed':
+        case 'no_survive':
         case 'bad_mode':
           outcome = UpdateOutcome.failed;
           detail = extra ?? name;
