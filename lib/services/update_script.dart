@@ -32,6 +32,7 @@ first_line() { echo "$1" | head -n 1; }
 DIR=$(dirname "$LOG")
 OWNER=$(stat -c %u:%g "$DIR" 2> /dev/null)
 fix_owner() {
+  chmod 644 "$LOG" 2> /dev/null
   [ -n "$OWNER" ] && chown -R "$OWNER" "$DIR" 2> /dev/null
   restorecon -R "$DIR" > /dev/null 2>&1
   log "owner_fixed owner=${OWNER:-unknown} $(ls -ldZ "$DIR" 2> /dev/null | tr -s ' ' | head -n 1)"
@@ -42,6 +43,8 @@ trap fix_owner EXIT
 # запущен. pm install убивает процесс приложения вместе с его cgroup; если
 # скрипт окажется там же, он умрёт посреди установки (по протоколу видно).
 log "diag pid=$$ ppid=$PPID uid=$(id -u) ctx=$(id -Z 2> /dev/null) cgroup=$(tr '\n' ';' < /proc/$$/cgroup 2> /dev/null)"
+
+chmod 644 "$LOG" 2> /dev/null  # приложение должно читать протокол и пока скрипт работает
 
 # ВЫЖИВАНИЕ. Скрипт запускается из процесса приложения и наследует его cgroup
 # (uid_<uid>/pid_<pid>). При замене пакета система убивает эту cgroup целиком —

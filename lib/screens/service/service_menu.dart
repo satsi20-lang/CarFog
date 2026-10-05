@@ -6240,7 +6240,7 @@ class _CloudTabState extends State<_CloudTab> {
     if (ok != true) return;
     // Ручной откат из сервисного меню: техник на месте (проверка покоя, как
     // для команды из облака, здесь не нужна — меню само не принимает оплату).
-    final res = await UpdateService.startRollback(notifier);
+    final res = await UpdateService.startRollback(notifier, countQuota: false);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(

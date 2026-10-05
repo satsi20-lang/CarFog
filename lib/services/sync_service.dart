@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../models/app_state.dart';
+import '../models/update_limits.dart';
 import 'cloud_service.dart';
 import 'diagnostics_service.dart';
 import 'master_code_service.dart';
@@ -206,6 +207,9 @@ class SyncService {
     snapshot['rollback_available'] = upd['rollback_available'];
     snapshot['last_update_result'] = (upd['last'] as Map?)?['result'];
     snapshot['adb_network'] = UpdateService.adbNetwork;
+    // Тестовая сборка без сигнала здоровья (только для проверки отката): в
+    // панели должна быть видна, в боевых аппаратах всегда false.
+    snapshot['skip_health_signal_build'] = UpdateLimits.skipHealthSignalBuild;
     snapshot['master_code_acknowledged'] = await MasterCodeService.isAcknowledged();
     snapshot['service_pin_weak'] = PinPolicy.isWeak(notifier.config.servicePin);
 

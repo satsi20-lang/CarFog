@@ -9,6 +9,21 @@ class UpdateLimits {
   static const Duration commandMinInterval = Duration(minutes: 10);
   static const int commandsPerDay = 3;
 
+  // В суточный лимит commandsPerDay входят только попытки, дошедшие до
+  // запуска скрипта; пауза commandMinInterval действует между ЛЮБЫМИ
+  // попытками. Неудачи ДО запуска (sha_mismatch, not_newer, no_root,
+  // no_space, download_failed, url_failed…) ограничены отдельно, чтобы
+  // нельзя было гонять 19 МБ раз в 10 минут круглые сутки. ЗАДАНО
+  // владельцем: 12 в сутки (не измерено).
+  static const int failuresPerDay = 12;
+  static const Duration quotaWindow = Duration(days: 1);
+
+  // Новое приложение после обновления: сколько ждать, пока скрипт допишет
+  // owner_fixed, прежде чем чинить каталог и роль самому, и как часто
+  // перечитывать протокол. НЕ ИЗМЕРЕНО.
+  static const Duration repairGrace = Duration(seconds: 30);
+  static const Duration repairPoll = Duration(seconds: 2);
+
   // Свободного места нужно не меньше N размеров APK (скачанный файл +
   // резервная копия + запас). ЗАДАНО владельцем: 3.
   static const int diskSpaceFactor = 3;

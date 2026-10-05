@@ -13,6 +13,7 @@ import 'cloud_service.dart';
 import 'heater_shutdown_service.dart';
 import 'modbus_service.dart';
 import 'privileged_installer.dart';
+import 'remote_command_guard.dart';
 import 'sync_service.dart';
 import 'update_script.dart';
 
@@ -77,6 +78,26 @@ class DownloadException implements Exception {
   const DownloadException(this.code);
   @override
   String toString() => 'DownloadException($code)';
+}
+
+// Причина сетевого сбоя при запросе ссылки / скачивании (чистая функция —
+// проверяется тестами): dns, timeout, tls, connect или other. Нужна для
+// диагностики «url_failed:network:<причина>» без утечки деталей наружу.
+String classifyNetworkError(Object e) {
+  if (e is TimeoutException) return 'timeout';
+  if (e is HandshakeException || e is TlsException) return 'tls';
+  final text = e.toString().toLowerCase();
+  if (e is SocketException || e is http.ClientException) {
+    if (text.contains('host lookup') ||
+        text.contains('no address associated') ||
+        text.contains('errno = 7')) {
+      return 'dns';
+    }
+    if (text.contains('handshake') || text.contains('certificate')) return 'tls';
+    if (text.contains('timed out') || text.contains('timeout')) return 'timeout';
+    return 'connect';
+  }
+  return 'other';
 }
 
 // Условие сигнала здоровья новой версии (чистая функция — проверяется
@@ -154,7 +175,50 @@ class UpdateService {
 
   // ============================================================ update_app
 
-  static Future<UpdateResult> startUpdate(AppNotifier n, String releaseId) async {
+  // Часы для меток лимита (в тестах подменяются).
+  @visibleForTesting
+  static DateTime Function() clock = DateTime.now;
+
+  // Скрипт действительно запущен в последнем _launch* (для учёта запуска).
+  static bool _lastLaunchStarted = false;
+
+  // Учёт суточных лимитов: запуск скрипта — в счёт запусков, отказ ДО запуска
+  // (в том числе install_start_failed) — в счёт неудач. Локальные действия
+  // из сервисного меню (countQuota=false) в удалённый лимит не входят.
+  static Future<UpdateResult> _withQuota(
+    String action,
+    bool countQuota,
+    Future<UpdateResult> Function() body,
+  ) async {
+    _lastLaunchStarted = false;
+    final r = await body();
+    if (!countQuota || r.result == 'update_in_progress') return r;
+    if (!r.ok || r.afterAck == null) {
+      await CommandGuard.countFailure(action, now: clock(), window: UpdateLimits.quotaWindow);
+      return r;
+    }
+    final orig = r.afterAck!;
+    return UpdateResult(
+      true,
+      r.result,
+      afterAck: () async {
+        await orig();
+        if (_lastLaunchStarted) {
+          await CommandGuard.countRun(action, now: clock(), window: UpdateLimits.quotaWindow);
+        } else {
+          await CommandGuard.countFailure(action, now: clock(), window: UpdateLimits.quotaWindow);
+        }
+      },
+    );
+  }
+
+  static Future<UpdateResult> startUpdate(
+    AppNotifier n,
+    String releaseId, {
+    bool countQuota = true,
+  }) => _withQuota('update_app', countQuota, () => _startUpdate(n, releaseId));
+
+  static Future<UpdateResult> _startUpdate(AppNotifier n, String releaseId) async {
     if (inProgress) return const UpdateResult(false, 'update_in_progress');
     inProgress = true;
     n.setMaintenance(true);
@@ -248,7 +312,12 @@ class UpdateService {
         File('${dir.path}/${UpdateLimits.backupInfoName}').existsSync();
   }
 
-  static Future<UpdateResult> startRollback(AppNotifier n) async {
+  static Future<UpdateResult> startRollback(
+    AppNotifier n, {
+    bool countQuota = true,
+  }) => _withQuota('rollback_app', countQuota, () => _startRollback(n));
+
+  static Future<UpdateResult> _startRollback(AppNotifier n) async {
     if (inProgress) return const UpdateResult(false, 'update_in_progress');
     inProgress = true;
     n.setMaintenance(true);
@@ -318,6 +387,7 @@ class UpdateService {
       _request(dir, current, 'install', apk.path, ticket.versionCode, n.config.kioskModeEnabled),
       updateScriptText,
     );
+    _lastLaunchStarted = started;
     if (!started) {
       await _deleteQuietly(File('${dir.path}/${UpdateLimits.pendingName}'));
       await _deleteQuietly(apk);
@@ -348,6 +418,7 @@ class UpdateService {
       _request(dir, current, 'rollback', '', toCode, n.config.kioskModeEnabled),
       updateScriptText,
     );
+    _lastLaunchStarted = started;
     if (!started) {
       await _deleteQuietly(File('${dir.path}/${UpdateLimits.pendingName}'));
       await _fail(n, 'install_start_failed', action: 'rollback');
@@ -384,7 +455,6 @@ class UpdateService {
       // Работает НОВАЯ версия (после установки или ручного отката): ждём
       // условий здоровья и подтверждаем скрипту.
       AppLog.log('UpdateService', 'запущена целевая версия ${current.versionName}($toCode), mode=$mode');
-      await _repairIfScriptIncomplete(dir, pending, current, summary);
       _healthLoop(n, dir, pending, current, summary, startedAt);
       return;
     }
@@ -407,17 +477,44 @@ class UpdateService {
     await _deleteQuietly(pendingFile);
   }
 
+  // Подменяемые в тестах интервалы ожидания (см. UpdateLimits.repairGrace).
+  static int _repairGen = 0;
+  @visibleForTesting
+  static Duration repairGrace = UpdateLimits.repairGrace;
+  @visibleForTesting
+  static Duration repairPoll = UpdateLimits.repairPoll;
+
   // Скрипт мог не дойти до конца (убит при замене пакета на ядре/прошивке, где
-  // выход из cgroup не сработал): тогда в протоколе нет owner_fixed. Новое
-  // приложение само возвращает владельца/контекст каталога и роль HOME.
-  // Протокол может быть нечитаем (root:root 0600) — пусто тоже значит «чинить».
+  // выход из cgroup не сработал): тогда в протоколе нет owner_fixed. Вызывается
+  // ПОСЛЕ записи сигнала здоровья — скрипт, которому он адресован, успевает
+  // дописать owner_fixed и выйти. Новое приложение само возвращает
+  // владельца/контекст каталога и роль HOME, если за repairGrace
+  // owner_fixed так и не появился.
+  // НЕЧИТАЕМЫЙ протокол (нет прав на чтение) считается «скрипт ещё работает»:
+  // чинить не спешим и ждём до protocolWatchMax, после чего не чиним вовсе
+  // (не затираем то, что делает живой скрипт под root).
   static Future<void> _repairIfScriptIncomplete(
     Directory dir,
     Map<String, dynamic> pending,
     AppInfo current,
-    ProtocolSummary summary,
   ) async {
-    if (summary.events.contains('owner_fixed')) return;
+    final started = DateTime.now();
+    final gen = _repairGen;
+    while (true) {
+      if (gen != _repairGen) return; // сброс состояния (тесты): задача устарела
+      final r = await _readProtocolState(dir);
+      if (r.readable && r.summary.events.contains('owner_fixed')) return;
+      final waited = DateTime.now().difference(started);
+      if (!r.readable) {
+        if (waited >= UpdateLimits.protocolWatchMax) {
+          AppLog.log('UpdateService', 'протокол нечитаем — скрипт считается работающим, починка не выполняется');
+          return;
+        }
+      } else if (waited >= repairGrace) {
+        break; // читается, owner_fixed нет, время вышло — скрипта больше нет
+      }
+      await Future.delayed(repairPoll);
+    }
     final ok = await installer.repairAfterUpdate(
       dir: dir.path,
       packageName: current.packageName,
@@ -611,6 +708,7 @@ class UpdateService {
       } catch (e) {
         AppLog.log('UpdateService', 'не удалось записать сигнал здоровья: ${e.runtimeType}');
       }
+      unawaited(_repairIfScriptIncomplete(dir, pending, current));
       final mode = pending['mode'] as String? ?? 'install';
       final duration = startedAt == null
           ? null
@@ -645,6 +743,20 @@ class UpdateService {
       s == AppState.standby ||
       s == AppState.outOfService ||
       s == AppState.selectLanguage;
+
+  // Протокол с признаком «прочитан»: нет файла — читаем как пустой (скрипт
+  // ничего не писал), ошибка чтения (права) — readable=false.
+  static Future<({bool readable, ProtocolSummary summary})> _readProtocolState(
+    Directory dir,
+  ) async {
+    try {
+      final f = File('${dir.path}/${UpdateLimits.protocolName}');
+      if (!f.existsSync()) return (readable: true, summary: UpdateProtocol.parse(''));
+      return (readable: true, summary: UpdateProtocol.parse(await f.readAsString()));
+    } catch (_) {
+      return (readable: false, summary: UpdateProtocol.parse(''));
+    }
+  }
 
   static Future<ProtocolSummary> _readProtocol(Directory dir) async {
     try {
@@ -763,8 +875,11 @@ class UpdateService {
             }),
           )
           .timeout(UpdateLimits.urlRequestTimeout);
-    } catch (_) {
-      throw const DownloadException('network');
+    } catch (e) {
+      final why = classifyNetworkError(e);
+      // В журнал — тип исключения и причина (адрес и тело запроса не пишутся).
+      AppLog.log('UpdateService', 'release-url: ${e.runtimeType} → network:$why');
+      throw DownloadException('network:$why');
     }
     if (resp.statusCode != 200) {
       final code = switch (resp.statusCode) {
@@ -843,6 +958,11 @@ class UpdateService {
   @visibleForTesting
   static void resetForTest() {
     skipHealthSignal = UpdateLimits.skipHealthSignalBuild;
+    clock = DateTime.now;
+    _repairGen++;
+    repairGrace = UpdateLimits.repairGrace;
+    repairPoll = UpdateLimits.repairPoll;
+    _lastLaunchStarted = false;
     _watchTimer?.cancel();
     _watchTimer = null;
     inProgress = false;

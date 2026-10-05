@@ -92,6 +92,68 @@ class CommandGuard {
     return true;
   }
 
+  // ---- Лимиты update_app / rollback_app ----
+  //  * пауза minInterval между ЛЮБЫМИ принятыми попытками;
+  //  * суточный счёт запусков скрипта (maxRuns за window) — метку ставит
+  //    countRun, когда скрипт действительно запущен;
+  //  * суточный счёт неудач до запуска (maxFailures) — countFailure.
+  // Отказ (false) ничего не записывает.
+  static String _lastKey(String a) => 'remote_upd_last_$a';
+  static String _runsKey(String a) => 'remote_upd_runs_$a';
+  static String _failsKey(String a) => 'remote_upd_fails_$a';
+
+  static Future<List<DateTime>> _stamps(
+    SharedPreferences prefs,
+    String key,
+    DateTime now,
+    Duration window,
+  ) async => (prefs.getStringList(key) ?? <String>[])
+      .map(DateTime.tryParse)
+      .whereType<DateTime>()
+      .where((d) => now.difference(d) < window)
+      .toList();
+
+  static Future<bool> allowUpdateAttempt(
+    String action, {
+    DateTime? now,
+    required Duration minInterval,
+    required Duration window,
+    required int maxRuns,
+    required int maxFailures,
+  }) async {
+    final t = now ?? DateTime.now();
+    final prefs = await SharedPreferences.getInstance();
+    final last = DateTime.tryParse(prefs.getString(_lastKey(action)) ?? '');
+    // Часы ушли назад (last в будущем) — паузой не блокируем навсегда.
+    if (last != null && t.isAfter(last) && t.difference(last) < minInterval) {
+      return false;
+    }
+    if ((await _stamps(prefs, _runsKey(action), t, window)).length >= maxRuns) {
+      return false;
+    }
+    if ((await _stamps(prefs, _failsKey(action), t, window)).length >= maxFailures) {
+      return false;
+    }
+    await prefs.setString(_lastKey(action), t.toIso8601String());
+    return true;
+  }
+
+  static Future<void> _append(String key, Duration window, DateTime? now) async {
+    final t = now ?? DateTime.now();
+    final prefs = await SharedPreferences.getInstance();
+    final list = await _stamps(prefs, key, t, window)
+      ..add(t);
+    await prefs.setStringList(key, list.map((d) => d.toIso8601String()).toList());
+  }
+
+  // Скрипт обновления/отката запущен.
+  static Future<void> countRun(String action, {DateTime? now, required Duration window}) =>
+      _append(_runsKey(action), window, now);
+
+  // Попытка закончилась отказом ДО запуска скрипта.
+  static Future<void> countFailure(String action, {DateTime? now, required Duration window}) =>
+      _append(_failsKey(action), window, now);
+
   // ---------------- история для сервисного меню ----------------
 
   static Future<void> record({

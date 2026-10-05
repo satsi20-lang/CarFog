@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:crypto/crypto.dart';
@@ -134,6 +135,7 @@ if [ "$FAKE_HEALTH" = "1" ]; then echo "ok $FAKE_CODE" > "$FAKE_HEALTH_FILE"; fi
       // перенос в корень удаётся; stuck — в cgroup приложения, перенос не
       // удаётся (нет прав / нет cgroup2 / другое ядро).
       String cg = 'root',
+      String umask = '022',
     }) async {
       final healthFile = '${dir.path}/health';
       final cgRoot = Directory('${dir.path}/cgroot')..createSync(recursive: true);
@@ -158,6 +160,9 @@ if [ "$FAKE_HEALTH" = "1" ]; then echo "ok $FAKE_CODE" > "$FAKE_HEALTH_FILE"; fi
       final r = await Process.run(
         'sh',
         [
+          '-c',
+          'umask $umask; exec sh "\$@"',
+          'sh',
           '${dir.path}/update.sh',
           mode,
           pkg,
@@ -285,6 +290,12 @@ if [ "$FAKE_HEALTH" = "1" ]; then echo "ok $FAKE_CODE" > "$FAKE_HEALTH_FILE"; fi
       await run();
       expect(File('${dir.path}/new.apk').existsSync(), isFalse);
       expect(File('${dir.path}/backup.apk').existsSync(), isTrue); // резерв остаётся
+    });
+
+    test('протокол читаем приложению: chmod 644 даже при umask 077', () async {
+      await run(umask: '077');
+      final mode = File('${dir.path}/protocol.log').statSync().mode & 0x1ff;
+      expect(mode.toRadixString(8), '644');
     });
 
     test('пакет и namespace разные: компонент = пакет/класс из namespace', () async {
@@ -584,6 +595,8 @@ if [ "$FAKE_HEALTH" = "1" ]; then echo "ok $FAKE_CODE" > "$FAKE_HEALTH_FILE"; fi
 
     test('новое приложение: скрипт не дошёл до конца → само чинит каталог и роль', () async {
       setup();
+      UpdateService.repairGrace = const Duration(milliseconds: 200);
+      UpdateService.repairPoll = const Duration(milliseconds: 50);
       UpdateService.appInfoProvider = () async => const AppInfo('ee.test.pkg', 10, '1.6.0');
       Directory('${tmp.path}/update').createSync(recursive: true);
       File('${tmp.path}/update/new.apk').writeAsStringSync('X');
@@ -595,10 +608,11 @@ if [ "$FAKE_HEALTH" = "1" ]; then echo "ok $FAKE_CODE" > "$FAKE_HEALTH_FILE"; fi
       File('${tmp.path}/update/protocol.log').writeAsStringSync('1 diag x\n2 start\n3 backup_ok\n');
       n.setBusHealthy(true);
       await UpdateService.onStartup(n);
+      expect(installer.repairs, isEmpty); // ещё рано: нет сигнала здоровья
+      await Future.delayed(const Duration(milliseconds: 4500));
       expect(installer.repairs, hasLength(1));
       expect(installer.repairs.single['kiosk'], isTrue);
       expect(installer.repairs.single['pkg'], 'ee.test.pkg');
-      await Future.delayed(const Duration(milliseconds: 3500));
       expect(File('${tmp.path}/update/new.apk').existsSync(), isFalse); // мусор убран
       UpdateService.resetForTest();
     }, timeout: const Timeout(Duration(seconds: 30)));
@@ -612,10 +626,38 @@ if [ "$FAKE_HEALTH" = "1" ]; then echo "ok $FAKE_CODE" > "$FAKE_HEALTH_FILE"; fi
         'started_at': DateTime.now().toIso8601String(),
       }));
       File('${tmp.path}/update/protocol.log').writeAsStringSync('1 start\n2 health_ok\n3 owner_fixed owner=1:1\n');
+      n.setBusHealthy(true);
+      UpdateService.repairGrace = const Duration(milliseconds: 100);
+      UpdateService.repairPoll = const Duration(milliseconds: 50);
       await UpdateService.onStartup(n);
+      await Future.delayed(const Duration(milliseconds: 4500));
       expect(installer.repairs, isEmpty);
       UpdateService.resetForTest();
-    });
+    }, timeout: const Timeout(Duration(seconds: 30)));
+
+    test('протокол нечитаем (нет прав) = скрипт ещё работает: не чиним', () async {
+      setup();
+      UpdateService.repairGrace = const Duration(milliseconds: 100);
+      UpdateService.repairPoll = const Duration(milliseconds: 50);
+      UpdateService.appInfoProvider = () async => const AppInfo('ee.test.pkg', 10, '1.6.0');
+      Directory('${tmp.path}/update').createSync(recursive: true);
+      // файл без прав на чтение (как root:root 0600 для приложения)
+      File('${tmp.path}/update/protocol.log').writeAsStringSync('1 start\n');
+      Process.runSync('chmod', ['000', '${tmp.path}/update/protocol.log']);
+      File('${tmp.path}/update/pending.json').writeAsStringSync(jsonEncode({
+        'mode': 'install', 'from_code': 9, 'from_name': '1.5.1', 'to_code': 10, 'to_name': '1.6.0',
+        'started_at': DateTime.now().toIso8601String(),
+      }));
+      n.setBusHealthy(true);
+      await UpdateService.onStartup(n);
+      await Future.delayed(const Duration(milliseconds: 5000));
+      expect(installer.repairs, isEmpty); // грации вышли давно, но нечитаемый ≠ мёртвый
+      // протокол стал читаемым и без owner_fixed → теперь чинит
+      Process.runSync('chmod', ['644', '${tmp.path}/update/protocol.log']);
+      await Future.delayed(const Duration(milliseconds: 600));
+      expect(installer.repairs, hasLength(1));
+      UpdateService.resetForTest();
+    }, timeout: const Timeout(Duration(seconds: 30)));
 
     test('починка не удалась → событие update_failed (repair_failed)', () async {
       setup();
@@ -626,11 +668,15 @@ if [ "$FAKE_HEALTH" = "1" ]; then echo "ok $FAKE_CODE" > "$FAKE_HEALTH_FILE"; fi
         'mode': 'install', 'from_code': 9, 'from_name': '1.5.1', 'to_code': 10, 'to_name': '1.6.0',
         'started_at': DateTime.now().toIso8601String(),
       }));
+      UpdateService.repairGrace = const Duration(milliseconds: 100);
+      UpdateService.repairPoll = const Duration(milliseconds: 50);
+      n.setBusHealthy(true);
       await UpdateService.onStartup(n);
+      await Future.delayed(const Duration(milliseconds: 4500));
       final ev = (await CloudService.history()).lastWhere((e) => e.type == CloudEventType.updateFailed);
       expect(ev.data['reason'], 'repair_failed');
       UpdateService.resetForTest();
-    });
+    }, timeout: const Timeout(Duration(seconds: 30)));
 
     test('no_survive в протоколе: приложение остаётся прежним, update_failed:no_survive, блок снят', () async {
       setup();
@@ -649,6 +695,136 @@ if [ "$FAKE_HEALTH" = "1" ]; then echo "ok $FAKE_CODE" > "$FAKE_HEALTH_FILE"; fi
       expect(n.isMaintenance, isFalse);
       expect(File('${tmp.path}/update/new.apk').existsSync(), isFalse);
       expect(File('${tmp.path}/update/pending.json').existsSync(), isFalse);
+    });
+
+    // ---- учёт лимитов: суточный счёт — только запуски скрипта ----
+    const relId = '123e4567-e89b-12d3-a456-426614174000';
+    Future<CommandOutcome> go(String id, DateTime at, {String action = 'update_app'}) {
+      UpdateService.clock = () => at;
+      return RemoteCommands.handle(
+        CloudCommand(id: id, action: action, params: action == 'update_app' ? {'release_id': relId} : {}, createdAt: at),
+        n,
+        now: at,
+      );
+    }
+
+    // Принятая команда доводится до запуска скрипта (как после ack).
+    Future<String> goRun(String id, DateTime at) async {
+      final o = await go(id, at);
+      if (o.afterAck != null) await o.afterAck!();
+      UpdateService.inProgress = false;
+      n.setMaintenance(false);
+      return o.result;
+    }
+
+    final t0 = DateTime(2026, 10, 4, 9);
+    Duration m(int x) => Duration(minutes: x);
+
+    test('неудачи до запуска не расходуют квоту запусков, но пауза 10 минут действует', () async {
+      setup(t: ticket(sha: 'a' * 64)); // sha_mismatch
+      expect((await go('f1', t0)).result, 'sha_mismatch');
+      expect((await go('f2', t0.add(m(5)))).result, 'rate_limited'); // пауза
+      for (var i = 0; i < 5; i++) {
+        expect((await go('g$i', t0.add(m(11 * (i + 1))))).result, 'sha_mismatch');
+      }
+      // квота запусков нетронута: три запуска подряд проходят
+      setup();
+      final base = t0.add(m(200));
+      expect(await goRun('r1', base), 'update_started');
+      expect(await goRun('r2', base.add(m(11))), 'update_started');
+      expect(await goRun('r3', base.add(m(22))), 'update_started');
+      expect((await go('r4', base.add(m(33)))).result, 'rate_limited'); // 4-й запуск за сутки
+      expect((await go('r5', base.add(const Duration(hours: 25)))).ok, isTrue); // окно ушло
+      UpdateService.inProgress = false;
+    });
+
+    test('потолок неудач до запуска: 12 в сутки, 13-я — rate_limited', () async {
+      setup(t: ticket(code: 9)); // not_newer
+      for (var i = 0; i < 12; i++) {
+        expect((await go('n$i', t0.add(m(11 * i)))).result, 'not_newer', reason: '$i');
+      }
+      expect((await go('n12', t0.add(m(11 * 12)))).result, 'rate_limited');
+      // через сутки после первой метки окно сдвинулось
+      expect((await go('n13', t0.add(const Duration(hours: 24, minutes: 30)))).result, 'not_newer');
+    });
+
+    test('busy, invalid и дубль: паузу и счётчики не занимают', () async {
+      setup();
+      final busy = AppNotifier()
+        ..config = AppConfig(thermoInstalled: true, energyMeterInstalled: false)
+        ..transition(AppState.payment);
+      UpdateService.clock = () => t0;
+      final o = await RemoteCommands.handle(
+        CloudCommand(id: 'b1', action: 'update_app', params: {'release_id': relId}, createdAt: t0), busy, now: t0);
+      expect(o.result, startsWith('busy'));
+      final bad = await RemoteCommands.handle(
+        CloudCommand(id: 'b2', action: 'update_app', params: {'release_id': 'x'}, createdAt: t0), n, now: t0);
+      expect(bad.result, 'invalid:release_id');
+      expect(await goRun('ok1', t0), 'update_started'); // сразу, паузы не было
+    });
+
+    test('install_start_failed: скрипт не запущен → это неудача, не запуск', () async {
+      installer.startOk = false;
+      setup();
+      final o = await go('s1', t0);
+      expect(o.result, 'update_started');
+      await o.afterAck!(); // startScript вернул false
+      UpdateService.inProgress = false;
+      n.setMaintenance(false);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getStringList('remote_upd_fails_update_app'), hasLength(1));
+      expect(prefs.getStringList('remote_upd_runs_update_app'), isNull);
+    });
+
+    test('no_survive считается запуском скрипта (скрипт был запущен)', () async {
+      setup();
+      expect(await goRun('v1', t0), 'update_started');
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getStringList('remote_upd_runs_update_app'), hasLength(1));
+    });
+
+    test('rollback_app считается отдельно; локальная кнопка в лимит не входит', () async {
+      setup();
+      Directory('${tmp.path}/update').createSync(recursive: true);
+      File('${tmp.path}/update/backup.apk').writeAsStringSync('B');
+      File('${tmp.path}/update/backup.json').writeAsStringSync(jsonEncode({'version_code': 8, 'version_name': '1.4.0'}));
+      expect(await goRun('u1', t0), 'update_started');
+      final o = await go('rb1', t0.add(m(11)), action: 'rollback_app');
+      expect(o.result, 'rollback_started'); // свой счётчик, пауза от update_app не мешает
+      await o.afterAck!();
+      UpdateService.inProgress = false;
+      n.setMaintenance(false);
+      // локальный откат из меню: не считается
+      final local = await UpdateService.startRollback(n, countQuota: false);
+      expect(local.ok, isTrue);
+      await local.afterAck!();
+      UpdateService.inProgress = false;
+      n.setMaintenance(false);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getStringList('remote_upd_runs_rollback_app'), hasLength(1));
+    });
+
+    test('причины сетевого сбоя различаются (dns / timeout / tls / connect)', () {
+      expect(classifyNetworkError(TimeoutException('x')), 'timeout');
+      expect(classifyNetworkError(const HandshakeException('x')), 'tls');
+      expect(
+        classifyNetworkError(http.ClientException(
+          "SocketException: Failed host lookup: 'h' (OS Error: No address associated with hostname, errno = 7)")),
+        'dns',
+      );
+      expect(classifyNetworkError(const SocketException('Connection reset by peer', osError: OSError('Connection reset by peer', 104))), 'connect');
+      expect(classifyNetworkError(const SocketException('Network is unreachable')), 'connect');
+      expect(classifyNetworkError(StateError('x')), 'other');
+    });
+
+    test('url_failed несёт причину: network:<dns|timeout|…>', () async {
+      setup();
+      UpdateService.ticketFetcher = UpdateService.ticketFetcherDefault;
+      final res = await http.runWithClient(
+        () => UpdateService.startUpdate(n, relId),
+        () => MockClient((req) async => throw http.ClientException('Failed host lookup: x')),
+      );
+      expect(res.result, 'url_failed:network:dns');
     });
 
     test('флаг SKIP_HEALTH_SIGNAL: по умолчанию выключен; включённый — сигнала нет', () async {
@@ -895,20 +1071,6 @@ if [ "$FAKE_HEALTH" = "1" ]; then echo "ok $FAKE_CODE" > "$FAKE_HEALTH_FILE"; fi
       }
     });
 
-    test('лимит: не чаще раза в 10 минут и 3 в сутки', () async {
-      UpdateService.installer = _FakeInstaller()..available = false;
-      UpdateService.dirProvider = () async => Directory.systemTemp.createTempSync('rate');
-      final t0 = DateTime(2026, 10, 4, 9);
-      Future<String> go(String id, DateTime at) async => (await RemoteCommands.handle(
-            cmd('update_app', id: id, at: at), n, now: at)).result;
-      expect(await go('a1', t0), 'no_root'); // дошла до исполнения
-      expect(await go('a2', t0.add(const Duration(minutes: 5))), 'rate_limited');
-      expect(await go('a3', t0.add(const Duration(minutes: 11))), 'no_root');
-      expect(await go('a4', t0.add(const Duration(minutes: 22))), 'no_root');
-      expect(await go('a5', t0.add(const Duration(minutes: 33))), 'rate_limited'); // 4-я за сутки
-      expect(await go('a6', t0.add(const Duration(hours: 25))), 'no_root');
-    });
-
     test('rollback_app без резерва: no_backup (без root-вызовов)', () async {
       final f = _FakeInstaller();
       UpdateService.installer = f;
@@ -941,10 +1103,31 @@ if [ "$FAKE_HEALTH" = "1" ]; then echo "ok $FAKE_CODE" > "$FAKE_HEALTH_FILE"; fi
     });
   });
 
+  group('версия приложения', () {
+    test('формат versionName+versionCode, без имени — запасное значение', () {
+      expect(CloudService.formatVersion('1.5.8', 16), '1.5.8+16');
+      expect(CloudService.formatVersion('1.5.8', null), '1.5.8');
+      expect(CloudService.formatVersion(null, 16), CloudService.fallbackVersion);
+      expect(CloudService.formatVersion('', 16), CloudService.fallbackVersion);
+    });
+    test('initVersion берёт значения из нативного getAppInfo; сбой → запасное', () async {
+      const ch = MethodChannel('com.carfog.dryfog/system');
+      messenger.setMockMethodCallHandler(ch, (c) async =>
+          c.method == 'getAppInfo' ? {'version_name': '1.5.8', 'version_code': 16, 'package': 'p'} : null);
+      await CloudService.initVersion();
+      expect(CloudService.appVersion, '1.5.8+16');
+      messenger.setMockMethodCallHandler(ch, (c) async => throw PlatformException(code: 'x'));
+      await CloudService.initVersion();
+      expect(CloudService.appVersion, CloudService.fallbackVersion);
+      messenger.setMockMethodCallHandler(ch, null);
+    });
+  });
+
   test('свежие параметры: обновление не чаще, чем задано владельцем', () {
     expect(UpdateLimits.commandMinInterval, const Duration(minutes: 10));
     expect(UpdateLimits.commandsPerDay, 3);
     expect(UpdateLimits.diskSpaceFactor, 3);
+    expect(UpdateLimits.failuresPerDay, 12);
     expect(UpdateLimits.healthTimeout, const Duration(minutes: 5));
   });
 

@@ -235,13 +235,16 @@ class RemoteCommands {
           }
           releaseId = r;
         }
-        // Не чаще раза в 10 минут и 3 в сутки (на каждую команду свой счётчик).
-        if (!await CommandGuard.allowRate(
+        // Пауза 10 минут между любыми попытками; в сутки — 3 запуска скрипта и
+        // 12 неудач до запуска (счётчики на каждую команду свои). Метки
+        // запусков и неудач ставит UpdateService.
+        if (!await CommandGuard.allowUpdateAttempt(
           action,
           now: now,
           minInterval: UpdateLimits.commandMinInterval,
-          window: const Duration(days: 1),
-          maxPerWindow: UpdateLimits.commandsPerDay,
+          window: UpdateLimits.quotaWindow,
+          maxRuns: UpdateLimits.commandsPerDay,
+          maxFailures: UpdateLimits.failuresPerDay,
         )) {
           return const CommandOutcome(false, 'rate_limited');
         }

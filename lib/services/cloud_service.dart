@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -451,15 +452,33 @@ class CloudService {
   static bool isCloudEnabled = false;
 
   // Версия, которую аппарат сообщает облаку при каждом опросе (p_version в
-  // device_poll) — колонка devices.app_version в панели полезна, только
-  // если это число реально меняется. Правило: поднимать при каждой
-  // заметной правке (перед OTA-обновлениями это станет обязательным —
-  // без честной версии на аппарате понять, что реально раскатано, будет
-  // нечем). Дублирует pubspec.yaml.version не автоматически, а вручную —
-  // здесь нет зависимости от package_info_plus, чтобы не тащить лишний
-  // плагин ради одной строки; при желании завести единый источник истины
-  // это можно сделать отдельно.
-  static const String appVersion = '1.5.1';
+  // device_poll → devices.app_version, а также ping и пакет диагностики).
+  // Источник — установленный пакет (versionName+versionCode из нативного
+  // getAppInfo), заполняется при старте (initVersion). Запасное значение
+  // ниже используется только если нативный вызов не ответил (и в тестах) —
+  // его больше не надо поднимать вручную.
+  static const String fallbackVersion = 'unknown';
+  static String appVersion = fallbackVersion;
+
+  static const MethodChannel _versionChannel = MethodChannel('com.carfog.dryfog/system');
+
+  // Формат: "<versionName>+<versionCode>", например "1.5.8+16".
+  static String formatVersion(String? name, num? code) {
+    if (name == null || name.isEmpty) return fallbackVersion;
+    return code == null ? name : '$name+${code.toInt()}';
+  }
+
+  static Future<void> initVersion() async {
+    try {
+      final m = await _versionChannel.invokeMethod<Map>('getAppInfo');
+      appVersion = formatVersion(
+        m?['version_name'] as String?,
+        m?['version_code'] as num?,
+      );
+    } catch (_) {
+      appVersion = fallbackVersion;
+    }
+  }
 
   static const _queueKey = 'cloud_event_queue';
   static const _maxQueue = 500;
