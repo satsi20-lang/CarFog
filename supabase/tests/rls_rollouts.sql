@@ -63,10 +63,27 @@ begin
 end $$;
 
 do $$
-declare r jsonb; v uuid := nullif(current_setting('rt.rollout', true), '')::uuid;
+declare r jsonb;
 begin
+  r := public.rollout_create('<RELEASE_UUID>', 'test', '03:00', '03:00');
+  if r->>'error' = 'bad_request' then raise notice 'ok: окно start = end отклонено (bad_request)';
+  else raise notice 'ОШИБКА: окно start = end принято или другой ответ: %', r; end if;
+  r := public.rollout_create('<RELEASE_UUID>', 'all', '22:00', '03:00');
+  if (r->>'ok')::boolean then raise notice 'ok: окно через полночь 22:00–03:00 допустимо';
+  else raise notice 'ОШИБКА: окно через полночь отклонено: %', r; end if;
+end $$;
+
+do $$
+declare r jsonb; v uuid := nullif(current_setting('rt.rollout', true), '')::uuid; v_res timestamptz;
+begin
+  select resumed_at into v_res from public.rollouts where id = v;
+  if v_res is null then raise notice 'ok: resumed_at пуст до первого запуска';
+  else raise notice 'ОШИБКА: resumed_at заполнен до запуска'; end if;
   r := public.rollout_set_status(v, 'active');
   if (r->>'ok')::boolean then raise notice 'ok: paused -> active'; else raise notice 'ОШИБКА: %', r; end if;
+  select resumed_at into v_res from public.rollouts where id = v;
+  if v_res is not null then raise notice 'ok: resumed_at заполнен после active (%)', v_res;
+  else raise notice 'ОШИБКА: resumed_at не заполнен после active'; end if;
   r := public.rollout_set_status(v, 'paused');
   if (r->>'ok')::boolean then raise notice 'ok: active -> paused'; else raise notice 'ОШИБКА: %', r; end if;
   r := public.rollout_set_status(v, 'done');

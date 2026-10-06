@@ -83,8 +83,14 @@ create table if not exists public.rollouts (
   pause_reason   text,
   created_at     timestamptz not null default now(),
   created_by     uuid        default auth.uid(),
-  updated_at     timestamptz not null default now()
+  updated_at     timestamptz not null default now(),
+  -- Момент последнего перехода в 'active' (в том числе возобновления после
+  -- паузы): автопауза считает ошибки установки только после него, чтобы
+  -- старые ошибки не ставили возобновлённую раскатку на паузу снова.
+  resumed_at     timestamptz
 );
+
+alter table public.rollouts add column if not exists resumed_at timestamptz;
 
 -- Не более одной активной раскатки на пару (организация, кольцо).
 create unique index if not exists rollouts_one_active_per_ring
@@ -149,7 +155,8 @@ begin
   end if;
   if p_ring not in ('test', 'early', 'all')
      or p_jitter is null or p_jitter not between 0 and 120
-     or p_start is null or p_end is null then
+     or p_start is null or p_end is null
+     or p_start = p_end then          -- пустое окно: цель не выдавалась бы никому
     return jsonb_build_object('ok', false, 'error', 'bad_request');
   end if;
   if not exists (select 1 from public.app_releases where id = p_release) then
@@ -208,6 +215,7 @@ begin
     update public.rollouts
        set status       = p_status,
            pause_reason = case when p_status = 'active' then null else pause_reason end,
+           resumed_at   = case when p_status = 'active' then now() else resumed_at end,
            updated_at   = now()
      where id = r.id;
   exception when unique_violation then
@@ -298,9 +306,16 @@ begin
   if v_inst >= r.version_code then return null; end if;
 
   -- пояс аппарата; неизвестный пояс → UTC
+  -- (pg_timezone_names здесь не трогаем: это медленное представление, а
+  -- пояс проверяется при записи в device_set_ring_tz. Ловим ТОЛЬКО ошибку
+  -- неверного пояса.)
   v_tz := coalesce(d.timezone, 'UTC');
-  if not exists (select 1 from pg_timezone_names where name = v_tz) then v_tz := 'UTC'; end if;
-  v_local := (now() at time zone v_tz)::time;
+  begin
+    v_local := (now() at time zone v_tz)::time;
+  exception when invalid_parameter_value then
+    v_tz := 'UTC';
+    v_local := (now() at time zone 'UTC')::time;
+  end;
 
   v_m   := extract(hour from v_local)::int * 60 + extract(minute from v_local)::int;
   v_ms  := extract(hour from r.window_start)::int * 60 + extract(minute from r.window_start)::int;
@@ -442,14 +457,14 @@ begin
   end if;
 
   for r in
-    select ro.id, ro.created_at from public.rollouts ro
+    select ro.id, coalesce(ro.resumed_at, ro.created_at) as since from public.rollouts ro
      where ro.org_id = v_dev.org_id and ro.ring = v_dev.ring and ro.status = 'active'
   loop
     select count(distinct e.device_id) into v_n
       from public.events e
       join public.devices d on d.id = e.device_id
      where e.type = 'update_failed'
-       and e.received_at >= r.created_at
+       and e.received_at >= r.since   -- с последнего запуска/возобновления
        and d.org_id = v_dev.org_id and d.ring = v_dev.ring
        and coalesce(e.data->>'reason', '') not in
            ('busy', 'not_newer', 'download_failed', 'no_space')
