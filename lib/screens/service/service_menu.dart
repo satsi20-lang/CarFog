@@ -16,6 +16,7 @@ import '../../services/pin_policy.dart';
 import '../../services/heater_trial_service.dart';
 import '../../services/remote_command_guard.dart';
 import '../../services/diagnostics_service.dart';
+import '../../services/factory_config_service.dart';
 import '../../services/modbus_service.dart';
 import '../../services/out_of_service_service.dart';
 import '../../services/sync_service.dart';
@@ -123,6 +124,19 @@ const Map<String, Map<String, String>> _i18n = {
     'cloud_enabled': 'Отправлять данные в облако',
     'rd_title': 'Удалённая диагностика',
     'up_title': 'Обновление приложения',
+    'fc_title': 'Заводская конфигурация',
+    'fc_cloud': 'Облако настроено',
+    'fc_device': 'Номер аппарата',
+    'fc_config_id': 'config_id',
+    'fc_yes': 'да',
+    'fc_no': 'нет',
+    'fc_finish_btn': 'Завершить пуско-наладку',
+    'fc_finish_hint': 'Удаляет файл заводской конфигурации с общего каталога (в нём лежит токен). Делайте в конце наладки.',
+    'fc_finish_title': 'Завершить пуско-наладку?',
+    'fc_finish_body': 'Файл device_config.json будет удалён. Облачные настройки в приложении останутся, но при стирании данных приложения сами уже не восстановятся.',
+    'fc_deleted': 'файл удалён',
+    'fc_absent': 'файла не было',
+    'fc_failed': 'не удалось удалить',
     'up_version': 'Версия',
     'up_backup': 'Резервная версия',
     'up_backup_none': 'нет (появится после первого обновления)',
@@ -448,6 +462,19 @@ const Map<String, Map<String, String>> _i18n = {
     'cloud_enabled': 'Send data to the cloud',
     'rd_title': 'Remote diagnostics',
     'up_title': 'App update',
+    'fc_title': 'Factory configuration',
+    'fc_cloud': 'Cloud configured',
+    'fc_device': 'Device ID',
+    'fc_config_id': 'config_id',
+    'fc_yes': 'yes',
+    'fc_no': 'no',
+    'fc_finish_btn': 'Finish commissioning',
+    'fc_finish_hint': 'Deletes the factory configuration file from shared storage (it holds the token). Do this at the end of commissioning.',
+    'fc_finish_title': 'Finish commissioning?',
+    'fc_finish_body': 'The file device_config.json will be deleted. Cloud settings stay in the app, but will no longer restore themselves if app data is wiped.',
+    'fc_deleted': 'file deleted',
+    'fc_absent': 'no file found',
+    'fc_failed': 'could not delete',
     'up_version': 'Version',
     'up_backup': 'Backup version',
     'up_backup_none': 'none (appears after the first update)',
@@ -769,6 +796,19 @@ const Map<String, Map<String, String>> _i18n = {
     'cloud_enabled': 'Saada andmed pilve',
     'rd_title': 'Kaugdiagnostika',
     'up_title': 'Rakenduse uuendus',
+    'fc_title': 'Tehasekonfiguratsioon',
+    'fc_cloud': 'Pilv seadistatud',
+    'fc_device': 'Seadme number',
+    'fc_config_id': 'config_id',
+    'fc_yes': 'jah',
+    'fc_no': 'ei',
+    'fc_finish_btn': 'Lõpeta kasutuselevõtt',
+    'fc_finish_hint': 'Kustutab tehasekonfiguratsiooni faili ühiskaustast (seal on token). Tee seda kasutuselevõtu lõpus.',
+    'fc_finish_title': 'Lõpetada kasutuselevõtt?',
+    'fc_finish_body': 'Fail device_config.json kustutatakse. Pilveseaded jäävad rakendusse, kuid andmete kustutamisel ise enam ei taastu.',
+    'fc_deleted': 'fail kustutatud',
+    'fc_absent': 'faili ei olnud',
+    'fc_failed': 'kustutamine ebaõnnestus',
     'up_version': 'Versioon',
     'up_backup': 'Varuversioon',
     'up_backup_none': 'puudub (ilmub pärast esimest uuendust)',
@@ -6197,6 +6237,102 @@ class _CloudTabState extends State<_CloudTab> {
   Map<String, dynamic> _upd = const {};
   bool? _adb;
 
+  // Заводская конфигурация (без значений токена и ключа).
+  bool _fcCloud = false;
+  String _fcDevice = '';
+  String? _fcId;
+  String? _fcResult;
+
+  Future<void> _loadFactory() async {
+    final c = context.read<AppNotifier>().config;
+    final sm = await FactoryConfigService.summary(c);
+    if (mounted) {
+      setState(() {
+        _fcCloud = sm.cloudConfigured;
+        _fcDevice = sm.deviceId;
+        _fcId = sm.configId;
+      });
+    }
+  }
+
+  Future<void> _finishCommissioning() async {
+    final t = _i18n[context.read<AppNotifier>().lang]!;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A2233),
+        title: Text(t['fc_finish_title']!, style: const TextStyle(color: Colors.white)),
+        content: Text(t['fc_finish_body']!, style: const TextStyle(color: Color(0xFF8899AA))),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(t['cancel_btn']!),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(
+              t['fc_finish_btn']!,
+              style: const TextStyle(color: Color(0xFFE53935)),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final r = await FactoryConfigService.finishCommissioning();
+    if (!mounted) return;
+    setState(() {
+      _fcResult = switch (r.status) {
+        FileDeleteStatus.deleted => t['fc_deleted']!,
+        FileDeleteStatus.absent => t['fc_absent']!,
+        FileDeleteStatus.failed => '${t['fc_failed']!}: ${r.reason ?? '?'}',
+      };
+    });
+  }
+
+  Widget _factorySection(Map<String, String> t) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 28),
+        Container(height: 1, color: const Color(0xFF1A2233)),
+        const SizedBox(height: 20),
+        Text(
+          t['fc_title']!,
+          style: const TextStyle(
+            color: Color(0xFF00C6B2),
+            fontSize: 15,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          '${t['fc_cloud']}: ${_fcCloud ? t['fc_yes'] : t['fc_no']}\n'
+          '${t['fc_device']}: $_fcDevice\n'
+          '${t['fc_config_id']}: ${_fcId ?? '—'}',
+          style: const TextStyle(color: Color(0xFF8899AA), fontSize: 13),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          t['fc_finish_hint']!,
+          style: const TextStyle(color: Color(0xFF556677), fontSize: 12),
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton(
+            onPressed: _finishCommissioning,
+            child: Text(t['fc_finish_btn']!),
+          ),
+        ),
+        if (_fcResult != null) ...[
+          const SizedBox(height: 8),
+          Text(_fcResult!, style: const TextStyle(color: Color(0xFFFFAA00), fontSize: 13)),
+        ],
+      ],
+    );
+  }
+
   Future<void> _loadUpdate() async {
     final st = await UpdateService.status();
     if (mounted) {
@@ -6317,6 +6453,7 @@ class _CloudTabState extends State<_CloudTab> {
     super.initState();
     unawaited(_loadCommands());
     unawaited(_loadUpdate());
+    unawaited(_loadFactory());
     final config = context.read<AppNotifier>().config;
     _deviceIdCtrl = TextEditingController(text: config.deviceId);
     _urlCtrl = TextEditingController(text: config.cloudUrl);
@@ -6667,6 +6804,7 @@ class _CloudTabState extends State<_CloudTab> {
             '${t['up_adb_state']}: ${_adb == null ? t['up_adb_unknown'] : (_adb! ? 'ON (5555)' : 'OFF')}',
             style: const TextStyle(color: Color(0xFF8899AA), fontSize: 12),
           ),
+          _factorySection(t),
         ],
       ),
     );
