@@ -123,7 +123,11 @@ class FileDeleteResult {
 }
 
 abstract class FactoryConfigStore {
-  Future<FileReadResult> read();
+  // allowRoot=false — только прямое чтение (без запасного пути через su):
+  // так проверяется возврат приложения на передний план, чтобы не дёргать su
+  // при каждом resume (запрос разрешения su, лишняя работа). На старте
+  // приложения allowRoot=true.
+  Future<FileReadResult> read({bool allowRoot = true});
   Future<FileDeleteResult> delete();
 }
 
@@ -153,15 +157,16 @@ class SharedStorageConfigStore implements FactoryConfigStore {
   }
 
   @override
-  Future<FileReadResult> read() async {
+  Future<FileReadResult> read({bool allowRoot = true}) async {
     try {
       final f = File(path);
       if (await f.exists()) {
         return FileReadResult(FileReadStatus.ok, await f.readAsString());
       }
     } on FileSystemException {
-      // нет прав — пробуем root ниже
+      // нет прав — пробуем root ниже (если разрешено)
     } catch (_) {}
+    if (!allowRoot) return const FileReadResult(FileReadStatus.absent);
     final r = await _root('[ -f ${_q(path)} ] && cat ${_q(path)}');
     if (r == null) {
       // su недоступен: различить «нет файла» и «нет прав» нельзя; прямой
@@ -241,10 +246,13 @@ class FactoryConfigService {
 
   // Сверка файла с текущими настройками. Ничего не сохраняет: сохранение — у
   // вызывающего (на старте до runApp и в работающем приложении по-разному).
-  static Future<FactoryApplyResult> evaluate(AppConfig current) async {
+  static Future<FactoryApplyResult> evaluate(
+    AppConfig current, {
+    bool allowRoot = true,
+  }) async {
     final FileReadResult read;
     try {
-      read = await store.read();
+      read = await store.read(allowRoot: allowRoot);
     } catch (_) {
       return FactoryApplyResult(FactoryApplyStatus.unreadable, current);
     }
@@ -286,7 +294,7 @@ class FactoryConfigService {
 
   // Старт приложения (до runApp): возвращает настройки с применённым файлом.
   static Future<AppConfig> applyOnStartup(AppConfig current) async {
-    final r = await evaluate(current);
+    final r = await evaluate(current); // запасной путь через root разрешён
     if (!r.changed) return current;
     // Секреты — в маску ДО любой записи в журнал.
     AppLog.setSecrets([r.config.servicePin, r.config.cloudToken, r.config.cloudAnonKey]);
@@ -297,9 +305,11 @@ class FactoryConfigService {
   }
 
   // Работающее приложение (возврат на передний план): применяет и
-  // переконфигурирует облако.
+  // переконфигурирует облако. ТОЛЬКО прямое чтение, без su: после «Завершить
+  // пуско-наладку» файла нет на всех боевых аппаратах, и ходить за ним через
+  // root при каждом возврате незачем.
   static Future<FactoryApplyStatus> applyIfNeeded(AppNotifier n) async {
-    final r = await evaluate(n.config);
+    final r = await evaluate(n.config, allowRoot: false);
     if (!r.changed) return r.status;
     AppLog.setSecrets([r.config.servicePin, r.config.cloudToken, r.config.cloudAnonKey]);
     await n.saveConfig(r.config);

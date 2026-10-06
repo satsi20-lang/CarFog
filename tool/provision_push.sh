@@ -24,6 +24,18 @@ REMOTE="$REMOTE_DIR/device_config.json"
 
 die() { echo "ОШИБКА: $*" >&2; exit 1; }
 
+# нужные утилиты (на части систем shasum нет — есть sha256sum)
+for c in adb awk grep tr wc; do
+  command -v "$c" >/dev/null 2>&1 || die "не найдена утилита $c"
+done
+if command -v shasum >/dev/null 2>&1; then
+  sha256_of() { shasum -a 256 "$1" | awk '{print $1}'; }
+elif command -v sha256sum >/dev/null 2>&1; then
+  sha256_of() { sha256sum "$1" | awk '{print $1}'; }
+else
+  die "нет ни shasum, ни sha256sum: установите одну из них (macOS: shasum; Linux: coreutils)"
+fi
+
 [ -n "$ID" ] || die "использование: tool/provision_push.sh <ID> [adb-серийник]"
 [[ "$ID" =~ ^[A-Za-z0-9._-]{1,64}$ ]] || die "недопустимый номер аппарата"
 
@@ -47,7 +59,7 @@ fi
 A=(adb -s "$SERIAL")
 
 local_size=$(wc -c < "$LOCAL" | tr -d ' ')
-local_sha=$(shasum -a 256 "$LOCAL" | awk '{print $1}')
+local_sha=$(sha256_of "$LOCAL")
 
 "${A[@]}" shell "mkdir -p $REMOTE_DIR" >/dev/null 2>&1 || die "не удалось создать $REMOTE_DIR на аппарате"
 "${A[@]}" push "$LOCAL" "$REMOTE" >/dev/null 2>&1 || die "adb push не удался"

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:dry_fog_app/models/app_state.dart';
@@ -225,6 +226,57 @@ void main() {
       expect(await FactoryConfigService.applyIfNeeded(n), FactoryApplyStatus.upToDate);
     });
 
+    test('запасной путь через root: на старте разрешён, при возврате на передний план — нет', () async {
+      store.text = file();
+      await FactoryConfigService.applyOnStartup(base());
+      expect(store.readCalls, [true]);
+      store.readCalls.clear();
+      final n = AppNotifier()..config = base();
+      await FactoryConfigService.applyIfNeeded(n);
+      expect(store.readCalls, [false]);
+    });
+
+    test('resume при отсутствии файла: прямое чтение, без su, ничего не меняется', () async {
+      final n = AppNotifier()
+        ..config = base(url: 'https://x.y', anon: 'k', tok: 'manualtoken', enabled: true);
+      for (var i = 0; i < 3; i++) {
+        expect(await FactoryConfigService.applyIfNeeded(n), FactoryApplyStatus.noFile);
+      }
+      expect(store.readCalls, [false, false, false]);
+      expect(n.config.cloudToken, 'manualtoken');
+    });
+
+    test('resume при уже выданном разрешении: файл читается и применяется как раньше', () async {
+      store.text = file();
+      final n = AppNotifier()..config = base();
+      expect(await FactoryConfigService.applyIfNeeded(n), FactoryApplyStatus.applied);
+      expect(n.config.cloudToken, token);
+      expect(store.readCalls, [false]);
+    });
+
+    test('SharedStorageConfigStore: allowRoot=false не обращается к su (канал не вызывается)', () async {
+      final tmp = await Directory.systemTemp.createTemp('fcroot');
+      try {
+        var rootCalls = 0;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+          const MethodChannel('com.carfog.dryfog/system'),
+          (c) async {
+            if (c.method == 'rootExec') rootCalls++;
+            return null;
+          },
+        );
+        final s = SharedStorageConfigStore(path: '${tmp.path}/нет/device_config.json');
+        expect((await s.read(allowRoot: false)).status, FileReadStatus.absent);
+        expect(rootCalls, 0);
+        expect((await s.read()).status, FileReadStatus.absent);
+        expect(rootCalls, 1); // на старте запасной путь вызывается
+      } finally {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(const MethodChannel('com.carfog.dryfog/system'), null);
+        await tmp.delete(recursive: true);
+      }
+    });
+
     test('секреты из файла маскируются в журнале после применения', () async {
       store.text = file();
       await FactoryConfigService.applyOnStartup(base());
@@ -359,13 +411,16 @@ void main() {
 }
 
 class _FakeStore implements FactoryConfigStore {
+  // Как вызывали read: allowRoot на каждом обращении.
+  final List<bool> readCalls = [];
   String? text;
   bool unreadable = false;
   bool throwOnRead = false;
   String? failDelete;
 
   @override
-  Future<FileReadResult> read() async {
+  Future<FileReadResult> read({bool allowRoot = true}) async {
+    readCalls.add(allowRoot);
     if (throwOnRead) throw StateError('io');
     if (unreadable) return const FileReadResult(FileReadStatus.unreadable);
     if (text == null) return const FileReadResult(FileReadStatus.absent);

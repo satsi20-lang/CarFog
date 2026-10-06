@@ -15,6 +15,10 @@ REMOTE="$REMOTE_DIR/device_config.json"
 
 die() { echo "ОШИБКА: $*" >&2; exit 1; }
 
+for c in adb awk grep tr; do
+  command -v "$c" >/dev/null 2>&1 || die "не найдена утилита $c"
+done
+
 [ -n "$ID" ] || die "использование: tool/provision_finish.sh <ID> [adb-серийник]"
 [[ "$ID" =~ ^[A-Za-z0-9._-]{1,64}$ ]] || die "недопустимый номер аппарата"
 

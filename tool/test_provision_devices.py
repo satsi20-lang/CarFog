@@ -194,7 +194,7 @@ class ProvisionTest(unittest.TestCase):
             self.assertEqual(res["count"], 2)
 
 
-FAKE_ADB = r"""#!/usr/bin/env python3
+FAKE_ADB = r"""#!__PYTHON__
 import hashlib, os, shutil, sys
 dev = os.environ["FAKE_DEV"]
 log = os.environ["FAKE_LOG"]
@@ -267,7 +267,7 @@ class ScriptsTest(unittest.TestCase):
         self.log = os.path.join(self.tmp, "adb.log")
         adb = os.path.join(self.bin, "adb")
         with open(adb, "w") as f:
-            f.write(FAKE_ADB)
+            f.write(FAKE_ADB.replace("__PYTHON__", sys.executable))
         os.chmod(adb, 0o755)
         self.out = os.path.join(self.tmp, "out")
         self.res = pd.run(["--org-id", ORG, "--cloud-url", URL, "--anon-key", KEY, "--out", self.out,
@@ -286,6 +286,58 @@ class ScriptsTest(unittest.TestCase):
                  FAKE_LOG=self.log, PROVISION_DIR=self.out)
         e.update({k: str(v) for k, v in env.items()})
         return subprocess.run([os.path.join(self.root, name), *args], capture_output=True, text=True, env=e)
+
+    def restricted_path(self, with_sha256sum=False, with_shasum=False):
+        """PATH из одних нужных утилит: проверка вариантов хэш-утилиты."""
+        import shutil
+        d = os.path.join(self.tmp, "rbin")
+        os.makedirs(d, exist_ok=True)
+        for name in ("awk", "grep", "tr", "wc", "adb"):
+            src = os.path.join(self.bin, "adb") if name == "adb" else shutil.which(name)
+            dst = os.path.join(d, name)
+            if not os.path.exists(dst):
+                os.symlink(src, dst)
+        if with_sha256sum:
+            dst = os.path.join(d, "sha256sum")
+            if not os.path.exists(dst):
+                with open(dst, "w") as f:
+                    f.write("#!" + sys.executable + "\nimport hashlib, sys\n"
+                            "print(hashlib.sha256(open(sys.argv[1], 'rb').read()).hexdigest() + '  ' + sys.argv[1])\n")
+                os.chmod(dst, 0o755)
+        if with_shasum:
+            os.symlink(shutil.which("shasum"), os.path.join(d, "shasum"))
+        return d
+
+    def run_with_path(self, name, path, *args):
+        import subprocess, shutil
+        e = dict(os.environ, PATH=path, FAKE_DEV=self.dev, FAKE_LOG=self.log, PROVISION_DIR=self.out)
+        return subprocess.run([shutil.which("bash"), os.path.join(self.root, name), *args],
+                              capture_output=True, text=True, env=e)
+
+    def test_push_falls_back_to_sha256sum_when_no_shasum(self):
+        r = self.run_with_path("provision_push.sh", self.restricted_path(with_sha256sum=True), "CARFOG-7")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("sha256 совпал", r.stdout)
+
+    def test_push_uses_shasum_when_present(self):
+        r = self.run_with_path("provision_push.sh", self.restricted_path(with_shasum=True), "CARFOG-7")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_push_clear_error_when_no_hash_tool(self):
+        r = self.run_with_path("provision_push.sh", self.restricted_path(), "CARFOG-7")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("нет ни shasum, ни sha256sum", r.stderr)
+
+    def test_scripts_report_missing_adb(self):
+        import subprocess, shutil
+        d = os.path.join(self.tmp, "noadb")
+        os.makedirs(d)
+        for name in ("awk", "grep", "tr", "wc"):
+            os.symlink(shutil.which(name), os.path.join(d, name))
+        for script in ("provision_push.sh", "provision_finish.sh"):
+            r = self.run_with_path(script, d, "CARFOG-7")
+            self.assertNotEqual(r.returncode, 0, script)
+            self.assertIn("не найдена утилита adb", r.stderr, script)
 
     def test_push_ok_verifies_size_and_sha_and_never_prints_token(self):
         r = self.run_script("provision_push.sh", "CARFOG-7")
