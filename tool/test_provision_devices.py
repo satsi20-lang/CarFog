@@ -60,15 +60,23 @@ class ProvisionTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             res = run(tmp, "--prefix", "CARFOG-", "--start", "100", "--count", "20")
             self.assertEqual(res["count"], 20)
-            sql_path, csv_path, cfg_path = res["files"]
-            for p in res["files"]:
+            sql_path, csv_path, list_path = res["files"]
+            self.assertEqual(len(res["configs"]), 20)
+            for p in res["files"] + res["configs"]:
                 self.assertEqual(stat.S_IMODE(os.stat(p).st_mode), 0o600, p)
+            self.assertEqual(stat.S_IMODE(os.stat(res["batch_dir"]).st_mode), 0o700)
+            self.assertEqual(stat.S_IMODE(os.stat(os.path.dirname(res["configs"][0])).st_mode), 0o700)
+            self.assertEqual(os.path.basename(res["batch_dir"]), "batch_2026-10-07")
             with open(sql_path, encoding="utf-8") as f1:
                 sql = f1.read()
             with open(csv_path, encoding="utf-8") as f2:
                 rows = list(csv.DictReader(f2))
-            with open(cfg_path, encoding="utf-8") as f3:
-                cfg = json.load(f3)
+            cfg = {}
+            for cp in res["configs"]:
+                with open(cp, encoding="utf-8") as f3:
+                    j = json.load(f3)
+                self.assertEqual(os.path.basename(cp), j["device_id"] + ".json")
+                cfg[j["device_id"]] = j
             self.assertEqual(len(rows), 20)
             self.assertEqual(len(cfg), 20)
             self.assertEqual(sql.count("insert into public.devices"), 20)
@@ -83,15 +91,37 @@ class ProvisionTest(unittest.TestCase):
                 self.assertNotIn(plain, sql)               # открытого кода в SQL нет
                 self.assertNotIn(r["claim_code"], sql)
             self.assertEqual(len(codes), 20)               # коды различаются
-            # токены в config совпадают с SQL и уникальны; хэши совпадают с csv
-            self.assertEqual(len({c["token"] for c in cfg}), 20)
-            for c in cfg:
-                self.assertIn(c["token"], sql)
+            # формат 1: поля, config_id, уникальность токенов и config_id
+            self.assertEqual(len({c["token"] for c in cfg.values()}), 20)
+            self.assertEqual(len({c["config_id"] for c in cfg.values()}), 20)
+            for c in cfg.values():
+                self.assertEqual(set(c), {"format", "config_id", "device_id", "cloud_url", "anon_key", "token"})
+                self.assertEqual(c["format"], 1)
+                self.assertRegex(c["config_id"], r"^\d{4}-\d{2}-\d{2}-[0-9a-f]{8}$")
+                self.assertTrue(c["config_id"].startswith("2026-10-07-"))
                 self.assertEqual(c["cloud_url"], URL)
+                self.assertEqual(c["anon_key"], KEY)
+                self.assertIn(c["token"], sql)             # токен в SQL = токен в файле
             by_id = {r["device_id"]: r["claim_code"] for r in rows}
             for m in re.finditer(r"insert into public\.device_claims .* values \('([^']+)', '([0-9a-f]{32})', '([0-9a-f]{64})'\);", sql):
                 dev, salt, h = m.groups()
                 self.assertEqual(h, pd.code_hash(salt, by_id[dev]))
+            # общего файла с токенами больше нет; список номеров без секретов
+            self.assertFalse([f for f in os.listdir(res["batch_dir"]) if "device_config" in f])
+            with open(list_path, encoding="utf-8") as f4:
+                listing = f4.read()
+            self.assertEqual(listing.split(), [f"CARFOG-{n}" for n in range(100, 120)])
+            for c in cfg.values():
+                self.assertNotIn(c["token"], listing)
+                self.assertNotIn(KEY, listing)
+
+    def test_second_batch_same_day_needs_own_name(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run(tmp, "--prefix", "A-", "--start", "1", "--count", "1")
+            with self.assertRaises(pd.ProvisionError):
+                run(tmp, "--prefix", "B-", "--start", "1", "--count", "1")
+            res = run(tmp, "--prefix", "B-", "--start", "1", "--count", "1", "--batch", "second")
+            self.assertEqual(os.path.basename(res["batch_dir"]), "second")
 
     def test_repeat_refused_and_registry_has_no_secrets(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -162,6 +192,156 @@ class ProvisionTest(unittest.TestCase):
             out = os.path.join(tmp, "out")
             res = run(out, "--list", lst)
             self.assertEqual(res["count"], 2)
+
+
+FAKE_ADB = r"""#!/usr/bin/env python3
+import hashlib, os, shutil, sys
+dev = os.environ["FAKE_DEV"]
+log = os.environ["FAKE_LOG"]
+args = sys.argv[1:]
+with open(log, "a") as f:
+    f.write(" ".join(args) + "\n")
+if args[:2] == ["-s", os.environ.get("FAKE_SERIAL", "SER1")]:
+    args = args[2:]
+def real(p):
+    return os.path.join(dev, p.lstrip("/"))
+cmd = args[0]
+if cmd == "devices":
+    print("List of devices attached")
+    for s in os.environ.get("FAKE_SERIALS", "SER1").split(","):
+        if s: print(s + "\tdevice")
+    sys.exit(0)
+if cmd == "push":
+    dst = real(args[2]); os.makedirs(os.path.dirname(dst), exist_ok=True)
+    if os.environ.get("FAKE_PUSH_FAIL"): sys.exit(1)
+    shutil.copy(args[1], dst)
+    if os.environ.get("FAKE_CORRUPT"):
+        open(dst, "ab").write(b"x")
+    print(args[1] + ": 1 file pushed")  # имя файла, не содержимое
+    sys.exit(0)
+if cmd == "shell":
+    c = args[1]
+    if c.startswith("mkdir -p "):
+        os.makedirs(real(c.split()[-1]), exist_ok=True); sys.exit(0)
+    if c.startswith("pm list packages"):
+        if os.environ.get("FAKE_NO_APP"): sys.exit(0)
+        print("package:ee.carfog.dryfog"); sys.exit(0)
+    if c.startswith("appops set"):
+        open(os.path.join(dev, "appops"), "w").write("allow"); sys.exit(0)
+    if c.startswith("appops get"):
+        print("MANAGE_EXTERNAL_STORAGE: allow" if os.path.exists(os.path.join(dev, "appops")) else "MANAGE_EXTERNAL_STORAGE: default"); sys.exit(0)
+    if c.startswith("am force-stop") or c.startswith("monkey"):
+        sys.exit(0)
+    if c.startswith("stat -c %s "):
+        p = real(c.split()[-1])
+        if os.path.exists(p): print(os.path.getsize(p))
+        sys.exit(0)
+    if c.startswith("sha256sum "):
+        p = real(c.split()[-1])
+        if os.path.exists(p): print(hashlib.sha256(open(p, "rb").read()).hexdigest() + "  " + c.split()[-1])
+        sys.exit(0)
+    if c.startswith("[ -e "):
+        p = real(c.split()[2]); print("yes" if os.path.exists(p) else "no"); sys.exit(0)
+    if c.startswith("rm -f "):
+        if os.environ.get("FAKE_RM_FAIL"): sys.exit(0)
+        p = real(c.split()[-1])
+        if os.path.exists(p): os.remove(p)
+        sys.exit(0)
+    if c.startswith("rmdir "):
+        try: os.rmdir(real(c.split()[-1]))
+        except OSError: pass
+        sys.exit(0)
+sys.exit(0)
+"""
+
+
+class ScriptsTest(unittest.TestCase):
+    """provision_push.sh / provision_finish.sh с поддельным adb (без устройства)."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.bin = os.path.join(self.tmp, "bin")
+        os.makedirs(self.bin)
+        self.dev = os.path.join(self.tmp, "dev")
+        os.makedirs(self.dev)
+        self.log = os.path.join(self.tmp, "adb.log")
+        adb = os.path.join(self.bin, "adb")
+        with open(adb, "w") as f:
+            f.write(FAKE_ADB)
+        os.chmod(adb, 0o755)
+        self.out = os.path.join(self.tmp, "out")
+        self.res = pd.run(["--org-id", ORG, "--cloud-url", URL, "--anon-key", KEY, "--out", self.out,
+                           "--prefix", "CARFOG-", "--start", "7", "--count", "2"], today=DAY)
+        with open(self.res["configs"][0], encoding="utf-8") as f:
+            self.token = json.load(f)["token"]
+        self.root = os.path.dirname(os.path.abspath(__file__))
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def run_script(self, name, *args, **env):
+        import subprocess
+        e = dict(os.environ, PATH=self.bin + os.pathsep + os.environ["PATH"], FAKE_DEV=self.dev,
+                 FAKE_LOG=self.log, PROVISION_DIR=self.out)
+        e.update({k: str(v) for k, v in env.items()})
+        return subprocess.run([os.path.join(self.root, name), *args], capture_output=True, text=True, env=e)
+
+    def test_push_ok_verifies_size_and_sha_and_never_prints_token(self):
+        r = self.run_script("provision_push.sh", "CARFOG-7")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("ок: CARFOG-7", r.stdout)
+        self.assertIn("sha256 совпал", r.stdout)
+        remote = os.path.join(self.dev, "sdcard/CarFog/device_config.json")
+        with open(remote, "rb") as a, open(self.res["configs"][0], "rb") as b:
+            self.assertEqual(a.read(), b.read())
+        with open(self.log) as f:
+            calls = f.read()
+        self.assertIn("appops set ee.carfog.dryfog MANAGE_EXTERNAL_STORAGE allow", calls)
+        self.assertIn("am force-stop ee.carfog.dryfog", calls)
+        self.assertNotIn(self.token, r.stdout + r.stderr + calls)   # токен нигде не печатается
+
+    def test_push_refuses_unknown_id_and_bad_id(self):
+        r = self.run_script("provision_push.sh", "CARFOG-999")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("нет файла", r.stderr)
+        r = self.run_script("provision_push.sh", "A B; rm")
+        self.assertNotEqual(r.returncode, 0)
+
+    def test_push_one_device_at_a_time(self):
+        r = self.run_script("provision_push.sh", "CARFOG-7", FAKE_SERIALS="SER1,SER2")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("укажите серийник", r.stderr)
+        r = self.run_script("provision_push.sh", "CARFOG-7", "SER2", FAKE_SERIALS="SER1,SER2", FAKE_SERIAL="SER2")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        r = self.run_script("provision_push.sh", "CARFOG-7", "NOPE", FAKE_SERIALS="SER1")
+        self.assertNotEqual(r.returncode, 0)
+
+    def test_push_detects_corrupted_copy(self):
+        r = self.run_script("provision_push.sh", "CARFOG-7", FAKE_CORRUPT="1")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("не равен", r.stderr + r.stdout)
+
+    def test_push_without_app_warns_but_writes_file(self):
+        r = self.run_script("provision_push.sh", "CARFOG-7", FAKE_NO_APP="1")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("не установлено", r.stdout)
+
+    def test_finish_removes_file_and_reports(self):
+        self.run_script("provision_push.sh", "CARFOG-7")
+        r = self.run_script("provision_finish.sh", "CARFOG-7")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("файл конфигурации удалён", r.stdout)
+        self.assertFalse(os.path.exists(os.path.join(self.dev, "sdcard/CarFog/device_config.json")))
+        r = self.run_script("provision_finish.sh", "CARFOG-7")
+        self.assertEqual(r.returncode, 0)
+        self.assertIn("файла не было", r.stdout)
+
+    def test_finish_fails_loudly_if_not_deleted(self):
+        self.run_script("provision_push.sh", "CARFOG-7")
+        r = self.run_script("provision_finish.sh", "CARFOG-7", FAKE_RM_FAIL="1")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("не удалён", r.stderr)
 
 
 if __name__ == "__main__":

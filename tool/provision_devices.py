@@ -8,14 +8,19 @@
   * соль и хэш кода (sha256(соль + КОД_ЗАГЛАВНЫМИ_БЕЗ_ДЕФИСОВ), hex) — так же,
     как проверяет БД (supabase/migrations/20261007000000_r4_tenancy.sql).
 
-Выход (каталог provisioning_out/, он в .gitignore, в git не попадает):
-  batch_<дата>.sql                 вставки в devices (с явным кольцом --ring,
-                                   по умолчанию test) и device_claims (токены и
-                                   ХЭШИ кодов; открытых кодов нет);
-  batch_<дата>_labels.csv          device_id и ОТКРЫТЫЙ код — для наклеек;
-  batch_<дата>_device_config.json  URL облака, публичный ключ, токен и id для
-                                   записи в аппарат.
-Файлы с кодами и токенами — ЧУВСТВИТЕЛЬНЫЕ: права 600, хранить оффлайн.
+Выход (каталог provisioning_out/<партия>/, он в .gitignore, в git не попадает;
+по умолчанию партия называется batch_<дата>):
+  batch.sql           вставки в devices (с явным кольцом --ring, по умолчанию
+                      test) и device_claims (токены и ХЭШИ кодов; открытых кодов
+                      нет);
+  labels.csv          device_id и ОТКРЫТЫЙ код — для наклеек;
+  configs/<ID>.json   по ОДНОМУ файлу на аппарат (формат 1: config_id, device_id,
+                      cloud_url, anon_key, token) — для заводской записи
+                      (tool/provision_push.sh); config_id у каждого свой
+                      (<дата>-<8 hex>), при смене токена выдаётся новый;
+  devices.txt         список номеров партии (без секретов).
+Файлы с кодами и токенами — ЧУВСТВИТЕЛЬНЫЕ: права 600 (каталоги 700), хранить
+оффлайн.
 
 Повторный запуск с теми же номерами отказывает: выданные id записываются в
 provisioning_out/issued_ids.txt (только id, без секретов).
@@ -81,6 +86,24 @@ def new_token() -> str:
     return base64.urlsafe_b64encode(secrets.token_bytes(TOKEN_BYTES)).decode("ascii").rstrip("=")
 
 
+def new_config_id(today=None) -> str:
+    """Идентификатор файла конфигурации: <дата>-<8 hex>. Новый при каждой смене токена."""
+    d = (today or datetime.date.today()).isoformat()
+    return f"{d}-{secrets.token_hex(4)}"
+
+
+def render_config(item, cloud_url: str, anon_key: str) -> str:
+    """JSON одного аппарата (формат 1) для приложения."""
+    return json.dumps({
+        "format": 1,
+        "config_id": item["config_id"],
+        "device_id": item["id"],
+        "cloud_url": cloud_url,
+        "anon_key": anon_key,
+        "token": item["token"],
+    }, ensure_ascii=False, indent=2) + "\n"
+
+
 def sql_str(s: str) -> str:
     return "'" + s.replace("'", "''") + "'"
 
@@ -128,6 +151,7 @@ def generate(ids, org_id: str, cloud_url: str, anon_key: str):
         salt = new_salt()
         items.append({
             "id": i,
+            "config_id": new_config_id(),
             "token": new_token(),
             "code": code,
             "salt": salt,
@@ -173,6 +197,8 @@ def run(argv=None, today=None) -> dict:
     p.add_argument("--ring", default=DEFAULT_RING, choices=RINGS,
                    help="кольцо раскатки, записывается в devices.ring явно "
                         "(по умолчанию test: новые аппараты не попадают под боевую раскатку)")
+    p.add_argument("--batch", default=None,
+                   help="имя партии (каталог provisioning_out/<партия>/); по умолчанию batch_<дата>")
     p.add_argument("--out", default=OUT_DIR)
     args = p.parse_args(argv)
 
@@ -193,15 +219,26 @@ def run(argv=None, today=None) -> dict:
             "Перевыпуск — по docs/provisioning.md."
         )
 
-    stamp = (today or datetime.date.today()).isoformat()
-    sql_path = os.path.join(args.out, f"batch_{stamp}.sql")
-    csv_path = os.path.join(args.out, f"batch_{stamp}_labels.csv")
-    cfg_path = os.path.join(args.out, f"batch_{stamp}_device_config.json")
-    for path in (sql_path, csv_path, cfg_path):
-        if os.path.exists(path):
-            raise ProvisionError(f"{path} уже существует; не перезаписываю (выберите другой день или каталог)")
+    day = today or datetime.date.today()
+    stamp = day.isoformat()
+    batch = args.batch or f"batch_{stamp}"
+    if not ID_RE.match(batch):
+        raise ProvisionError("--batch: буквы, цифры, . _ - (до 64)")
+    batch_dir = os.path.join(args.out, batch)
+    if os.path.exists(batch_dir):
+        raise ProvisionError(f"{batch_dir} уже существует; не перезаписываю (выберите другое имя --batch)")
+    sql_path = os.path.join(batch_dir, "batch.sql")
+    csv_path = os.path.join(batch_dir, "labels.csv")
+    list_path = os.path.join(batch_dir, "devices.txt")
+    cfg_dir = os.path.join(batch_dir, "configs")
 
     items = generate(ids, args.org_id, args.cloud_url, args.anon_key)
+    for it in items:
+        it["config_id"] = new_config_id(day)
+
+    os.makedirs(cfg_dir, mode=0o700)
+    os.chmod(batch_dir, 0o700)
+    os.chmod(cfg_dir, 0o700)
 
     write_private(sql_path, render_sql(items, args.org_id, stamp, args.ring))
     import io
@@ -211,15 +248,19 @@ def run(argv=None, today=None) -> dict:
     for it in items:
         w.writerow([it["id"], format_code(it["code"])])
     write_private(csv_path, buf.getvalue())
-    cfg = [{"device_id": it["id"], "cloud_url": args.cloud_url,
-            "anon_key": args.anon_key, "token": it["token"]} for it in items]
-    write_private(cfg_path, json.dumps(cfg, ensure_ascii=False, indent=2) + "\n")
+    cfg_paths = []
+    for it in items:
+        cp = os.path.join(cfg_dir, f"{it['id']}.json")
+        write_private(cp, render_config(it, args.cloud_url, args.anon_key))
+        cfg_paths.append(cp)
+    write_private(list_path, "\n".join(ids) + "\n")
 
     with open(os.path.join(args.out, REGISTRY), "a", encoding="utf-8") as f:
         for i in ids:
             f.write(i + "\n")
 
-    return {"count": len(items), "files": [sql_path, csv_path, cfg_path]}
+    return {"count": len(items), "files": [sql_path, csv_path, list_path],
+            "configs": cfg_paths, "batch_dir": batch_dir}
 
 
 def main(argv=None) -> int:
@@ -229,9 +270,11 @@ def main(argv=None) -> int:
         print(f"ОШИБКА: {e}", file=sys.stderr)
         return 2
     print(f"Готово: {res['count']} аппаратов.")
+    print(f"  партия: {res['batch_dir']}")
     for f in res["files"]:
         print(f"  {f}")
-    print("ВНИМАНИЕ: файлы _labels.csv, _device_config.json и .sql содержат коды и токены "
+    print(f"  configs/<ID>.json: {len(res['configs'])} файлов")
+    print("ВНИМАНИЕ: batch.sql, labels.csv и configs/*.json содержат коды и токены "
           "(права 600). Храните оффлайн, в git и в чаты не отправляйте.")
     return 0
 

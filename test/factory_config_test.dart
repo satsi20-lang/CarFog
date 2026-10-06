@@ -291,6 +291,38 @@ void main() {
     });
   });
 
+  // ===================== файл генератора читается приложением
+  test('файл, созданный tool/provision_devices.py, принимается разбором приложения', () async {
+    final py = await Process.run('python3', ['--version']).catchError((_) => ProcessResult(0, 127, '', ''));
+    if (py.exitCode != 0) {
+      markTestSkipped('python3 недоступен');
+      return;
+    }
+    final out = await Directory.systemTemp.createTemp('provcheck');
+    try {
+      final r = await Process.run('python3', [
+        'tool/provision_devices.py',
+        '--org-id', '123e4567-e89b-12d3-a456-426614174000',
+        '--cloud-url', 'https://example.supabase.co',
+        '--anon-key', key,
+        '--prefix', 'CARFOG-', '--start', '501', '--count', '2',
+        '--out', out.path,
+      ]);
+      expect(r.exitCode, 0, reason: '${r.stderr}');
+      expect(r.stdout.toString(), isNot(contains('"token"')));
+      final cfgDir = Directory('${out.path}').listSync().whereType<Directory>().single;
+      final f = File('${cfgDir.path}/configs/CARFOG-501.json');
+      final parsed = parseFactoryConfig(await f.readAsString());
+      expect(parsed.ok, isTrue, reason: '${parsed.error}');
+      expect(parsed.config!.deviceId, 'CARFOG-501');
+      expect(parsed.config!.cloudUrl, 'https://example.supabase.co');
+      expect(parsed.config!.anonKey, key);
+      expect(parsed.config!.token.length, greaterThanOrEqualTo(43));
+    } finally {
+      await out.delete(recursive: true);
+    }
+  });
+
   // ============================ реальный файл (прямой доступ, без root)
   group('SharedStorageConfigStore на реальном файле', () {
     late Directory tmp;
