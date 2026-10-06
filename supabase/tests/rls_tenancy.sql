@@ -503,6 +503,54 @@ begin
   else raise notice 'ОШИБКА: права:%', bad; end if;
 end $$;
 
+-- дополнительная жёсткость прав (раздел 9 миграции)
+do $$
+declare
+  t    text;
+  p    text;
+  bad  text := '';
+begin
+  -- anon: никаких прав (ни на таблицу, ни на столбцы)
+  foreach t in array array['organizations','org_members','devices','events','commands',
+                           'device_diagnostics','app_releases','rollouts','rollout_log',
+                           'rollout_progress','release_url_requests'] loop
+    foreach p in array array['SELECT','INSERT','UPDATE','REFERENCES'] loop
+      if has_any_column_privilege('anon', 'public.' || t, p) then bad := bad || ' anon.' || t || '.' || p; end if;
+    end loop;
+    foreach p in array array['DELETE','TRUNCATE','TRIGGER'] loop
+      if has_table_privilege('anon', 'public.' || t, p) then bad := bad || ' anon.' || t || '.' || p; end if;
+    end loop;
+  end loop;
+  if bad = '' then raise notice 'ok: у anon нет никаких прав на organizations, org_members, devices, events, commands, device_diagnostics и прочие таблицы R1–R4';
+  else raise notice 'ОШИБКА: у anon остались права:%', bad; bad := ''; end if;
+
+  -- authenticated: нет записи на organizations и org_members
+  foreach t in array array['organizations','org_members'] loop
+    foreach p in array array['INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER'] loop
+      if has_table_privilege('authenticated', 'public.' || t, p) then bad := bad || ' authenticated.' || t || '.' || p; end if;
+    end loop;
+  end loop;
+  if bad = '' then raise notice 'ok: у authenticated нет записи на organizations и org_members (чтение остаётся)';
+  else raise notice 'ОШИБКА: права authenticated:%', bad; bad := ''; end if;
+
+  -- authenticated: rollout_progress, app_releases, rollouts, rollout_log — только SELECT
+  foreach t in array array['rollout_progress','app_releases','rollouts','rollout_log'] loop
+    if not has_table_privilege('authenticated', 'public.' || t, 'SELECT') then bad := bad || ' нет SELECT ' || t; end if;
+    foreach p in array array['INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER'] loop
+      if has_table_privilege('authenticated', 'public.' || t, p) then bad := bad || ' authenticated.' || t || '.' || p; end if;
+    end loop;
+  end loop;
+  if bad = '' then raise notice 'ok: у authenticated на rollout_progress, app_releases, rollouts, rollout_log только SELECT';
+  else raise notice 'ОШИБКА: права authenticated:%', bad; bad := ''; end if;
+
+  -- release_url_requests: ни у anon, ни у authenticated
+  foreach p in array array['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER'] loop
+    if has_table_privilege('authenticated', 'public.release_url_requests', p) then bad := bad || ' authenticated.' || p; end if;
+  end loop;
+  if bad = '' then raise notice 'ok: у authenticated нет прав на release_url_requests';
+  else raise notice 'ОШИБКА: права на release_url_requests:%', bad; end if;
+end $$;
+
 -- ====================== 12. просрочка: доступ пропадает, после продления возвращается ======================
 update public.device_access set valid_until = now() - interval '1 day'
  where device_id = '<DEVICE_ID>' and ended_at is null;

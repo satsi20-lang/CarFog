@@ -91,8 +91,18 @@ last_update_result, skip_health_signal_build, rollout_*, ring, timezone, org_id.
   отозваны на уровне таблицы (как для `app_releases`, `rollouts`). Аналогично
   закрыты запись и лишние права на `commands` (UPDATE/DELETE), `events`,
   `device_diagnostics`; у `anon` на эти таблицы права отозваны.
+* **C.** `anon` имел все права на `devices`, `events`, `commands`, `organizations`,
+  `org_members` (в том числе чтение `token`), защита держалась только на отсутствии
+  политик RLS; права отозваны. У `authenticated` на `organizations`, `org_members`,
+  `rollout_progress`, `app_releases`, `rollouts`, `rollout_log` оставлен только SELECT.
 * Новый столбец `devices` требует явного `grant select (<столбец>) … to
   authenticated`.
+* **Правило для новых таблиц.** В Supabase новые таблицы в `public` по умолчанию
+  получают все права для `anon` и `authenticated`. Миграция R4 меняет права по
+  умолчанию (`alter default privileges … revoke all`) для объектов, которые создаёт
+  роль, выполняющая миграцию (в SQL Editor — `postgres`); поэтому **каждая новая
+  таблица получает явный `grant` (и RLS)**, иначе она недоступна. Объекты, созданные
+  другими ролями, и уже существующие этим не затрагиваются.
 
 ## MFA для изготовителя (не реализовано, как включить)
 

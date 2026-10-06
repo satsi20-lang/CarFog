@@ -881,5 +881,44 @@ grant select on public.customer_devices, public.customer_events,
                 public.customer_commands, public.staff_device_access
   to authenticated;
 
+-- ============================================================
+-- 9. ДОПОЛНИТЕЛЬНАЯ ЖЁСТКОСТЬ ПРАВ
+-- ============================================================
+-- Проверено запросами к реальной базе: RLS включена на всех таблицах public, но
+-- у ролей остались избыточные права по умолчанию Supabase (все права на каждую
+-- новую таблицу получают anon и authenticated). Запись была защищена только
+-- отсутствием политик RLS. Здесь — второй рубеж. Все revoke идемпотентны.
+
+-- organizations, org_members: anon имел ВСЕ права, authenticated — тоже. Остаётся
+-- только SELECT для authenticated (политики чтения прежние).
+revoke all on public.organizations, public.org_members from anon;
+revoke insert, update, delete, truncate, references, trigger
+  on public.organizations, public.org_members from authenticated;
+
+-- rollout_progress (представление): только SELECT для authenticated, anon — ничего.
+revoke insert, update, delete, truncate, references, trigger
+  on public.rollout_progress from authenticated;
+revoke all on public.rollout_progress from anon;
+
+-- app_releases, rollouts, rollout_log: authenticated — только SELECT, anon — ничего.
+revoke insert, update, delete, truncate, references, trigger
+  on public.app_releases, public.rollouts, public.rollout_log from authenticated;
+revoke all on public.app_releases, public.rollouts, public.rollout_log from anon;
+
+-- release_url_requests: пишет только Edge Function под сервисным ключом;
+-- у anon и authenticated прав быть не должно.
+revoke all on public.release_url_requests from anon, authenticated;
+
+-- ПРАВА ПО УМОЛЧАНИЮ ДЛЯ БУДУЩИХ ОБЪЕКТОВ. В Supabase новые таблицы и
+-- последовательности в public автоматически получают все права для anon и
+-- authenticated. «Безопасно по умолчанию»: новый объект без явного grant
+-- недоступен. ВАЖНО: команда действует только на объекты, которые создаёт ТЕКУЩАЯ
+-- роль (та, что выполняет миграцию, в SQL Editor — postgres); объекты, созданные
+-- другими ролями (например supabase_admin), и уже существующие объекты она не
+-- меняет (для существующих — revoke выше). После этого каждая новая таблица
+-- требует явного grant (и RLS) — см. docs/tenancy.md.
+alter default privileges in schema public revoke all on tables from anon, authenticated;
+alter default privileges in schema public revoke all on sequences from anon, authenticated;
+
 -- PostgREST кэширует схему — после применения отдельной командой:
 --   notify pgrst, 'reload schema';
