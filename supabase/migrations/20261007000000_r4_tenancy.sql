@@ -38,6 +38,23 @@
 -- ============================================================
 
 -- ============================================================
+-- ПРАВА ПО УМОЛЧАНИЮ ДЛЯ ВСЕХ ОБЪЕКТОВ R4 (выполняется ПЕРВЫМ)
+-- ============================================================
+-- В Supabase новые таблицы, представления и последовательности в public
+-- автоматически получают все права для anon и authenticated (в том числе
+-- INSERT/UPDATE/DELETE/TRUNCATE на представления). Команда ниже действует
+-- только на объекты, созданные ПОСЛЕ неё, поэтому стоит в начале: таблицы,
+-- представления и последовательности R4 вообще не получают лишних прав
+-- («безопасно по умолчанию»: без явного grant объект недоступен).
+-- ВАЖНО: она действует только на объекты, которые создаёт ТЕКУЩАЯ роль (та, что
+-- выполняет миграцию; в SQL Editor — postgres); объекты, созданные другими
+-- ролями (например supabase_admin), и уже существующие объекты она не меняет
+-- (для существующих — явные revoke ниже). Каждая новая таблица или
+-- представление требует явного grant (и RLS) — см. docs/tenancy.md.
+alter default privileges in schema public revoke all on tables from anon, authenticated;
+alter default privileges in schema public revoke all on sequences from anon, authenticated;
+
+-- ============================================================
 -- 0. ДЕФЕКТЫ ТЕКУЩИХ ПРАВ (найдены аудитом, исправляются здесь)
 -- ============================================================
 
@@ -881,6 +898,13 @@ revoke all on public.customer_devices, public.customer_events,
 grant select on public.customer_devices, public.customer_events,
                 public.customer_commands, public.staff_device_access
   to authenticated;
+-- Лишнее, выданное Supabase автоматически при создании представлений, отзываем
+-- явно (идемпотентно): только SELECT у authenticated, anon — ничего.
+revoke insert, update, delete, truncate, references, trigger
+  on public.customer_commands, public.customer_devices,
+     public.customer_events, public.staff_device_access from authenticated;
+revoke all on public.customer_commands, public.customer_devices,
+              public.customer_events, public.staff_device_access from anon;
 
 -- ============================================================
 -- 9. ДОПОЛНИТЕЛЬНАЯ ЖЁСТКОСТЬ ПРАВ
@@ -910,16 +934,8 @@ revoke all on public.app_releases, public.rollouts, public.rollout_log from anon
 -- у anon и authenticated прав быть не должно.
 revoke all on public.release_url_requests from anon, authenticated;
 
--- ПРАВА ПО УМОЛЧАНИЮ ДЛЯ БУДУЩИХ ОБЪЕКТОВ. В Supabase новые таблицы и
--- последовательности в public автоматически получают все права для anon и
--- authenticated. «Безопасно по умолчанию»: новый объект без явного grant
--- недоступен. ВАЖНО: команда действует только на объекты, которые создаёт ТЕКУЩАЯ
--- роль (та, что выполняет миграцию, в SQL Editor — postgres); объекты, созданные
--- другими ролями (например supabase_admin), и уже существующие объекты она не
--- меняет (для существующих — revoke выше). После этого каждая новая таблица
--- требует явного grant (и RLS) — см. docs/tenancy.md.
-alter default privileges in schema public revoke all on tables from anon, authenticated;
-alter default privileges in schema public revoke all on sequences from anon, authenticated;
+-- (Права по умолчанию для будущих объектов — alter default privileges — вынесены
+-- в НАЧАЛО миграции, до создания первых объектов R4.)
 
 -- PostgREST кэширует схему — после применения отдельной командой:
 --   notify pgrst, 'reload schema';

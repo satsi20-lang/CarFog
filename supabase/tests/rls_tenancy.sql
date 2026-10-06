@@ -551,6 +551,56 @@ begin
   else raise notice 'ОШИБКА: права на release_url_requests:%', bad; end if;
 end $$;
 
+-- представления R4: у authenticated только SELECT, у anon ничего; общий цикл
+-- по ВСЕМ таблицам и представлениям public (ловит и будущие объекты)
+do $$
+declare
+  t    text;
+  p    text;
+  r    record;
+  bad  text := '';
+begin
+  foreach t in array array['customer_commands','customer_devices','customer_events','staff_device_access'] loop
+    if not has_table_privilege('authenticated', 'public.' || t, 'SELECT') then bad := bad || ' нет SELECT ' || t; end if;
+    foreach p in array array['INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER'] loop
+      if has_table_privilege('authenticated', 'public.' || t, p) then bad := bad || ' authenticated.' || t || '.' || p; end if;
+    end loop;
+    foreach p in array array['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER'] loop
+      if has_table_privilege('anon', 'public.' || t, p) then bad := bad || ' anon.' || t || '.' || p; end if;
+    end loop;
+  end loop;
+  if bad = '' then raise notice 'ok: представления R4: у authenticated только SELECT, у anon прав нет';
+  else raise notice 'ОШИБКА: права на представления R4:%', bad; end if;
+
+  bad := '';
+  for r in
+    select c.relname as obj
+      from pg_class c join pg_namespace n on n.oid = c.relnamespace
+     where n.nspname = 'public' and c.relkind in ('r', 'p', 'v', 'm', 'f')
+     order by c.relname
+  loop
+    foreach p in array array['INSERT','UPDATE','DELETE','TRUNCATE'] loop
+      if has_table_privilege('anon', format('public.%I', r.obj), p)
+         or (p in ('INSERT', 'UPDATE') and has_any_column_privilege('anon', format('public.%I', r.obj), p)) then
+        bad := bad || ' anon.' || r.obj || '.' || p;
+      end if;
+      if has_table_privilege('authenticated', format('public.%I', r.obj), p)
+         and not (r.obj = 'commands' and p = 'INSERT') then
+        bad := bad || ' authenticated.' || r.obj || '.' || p;
+      end if;
+    end loop;
+    -- столбцовые INSERT/UPDATE (devices и т.п.)
+    foreach p in array array['INSERT','UPDATE'] loop
+      if has_any_column_privilege('authenticated', format('public.%I', r.obj), p)
+         and not (r.obj = 'commands' and p = 'INSERT') then
+        bad := bad || ' authenticated.' || r.obj || '.' || p || '(столбец)';
+      end if;
+    end loop;
+  end loop;
+  if bad = '' then raise notice 'ok: ни у anon, ни у authenticated нет лишних INSERT/UPDATE/DELETE/TRUNCATE ни на одной таблице и представлении public (кроме commands.INSERT у authenticated)';
+  else raise notice 'ОШИБКА: лишние права на объекты public:%', bad; end if;
+end $$;
+
 -- ====================== 12. просрочка: доступ пропадает, после продления возвращается ======================
 update public.device_access set valid_until = now() - interval '1 day'
  where device_id = '<DEVICE_ID>' and ended_at is null;
