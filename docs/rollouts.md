@@ -1,8 +1,22 @@
 # Раскатка обновления по кольцам (R3)
 
-Миграция: `supabase/migrations/20261006000000_r3_rollouts.sql` (выполняет только
-владелец, в SQL Editor). Проверка прав: `supabase/tests/rls_rollouts.sql`
-(запускать на копии базы, в конце откат).
+Миграции (выполняет только владелец, в SQL Editor) — строго по порядку:
+
+1. `supabase/migrations/20261006000000_r3_rollouts.sql` — столбцы, таблицы,
+   функции, триггер, `device_poll` с полем `target`.
+2. `supabase/migrations/20261006000100_r3_devices_grants.sql` — `grant select
+   (ring, timezone) on public.devices to authenticated`.
+3. Отдельной командой: `notify pgrst, 'reload schema';` — PostgREST кэширует
+   схему, без этого API не увидит новые столбцы и функции.
+
+Проверка прав: `supabase/tests/rls_rollouts.sql` (запускать на копии базы, в
+конце откат).
+
+**Правило: каждый новый столбец `devices` требует явного `grant select` для
+`authenticated`.** Права на `devices` выданы по столбцам (столбец `token`
+закрыт для чтения намеренно), поэтому новый столбец сам по себе читаемым не
+становится, а `rollout_progress` и панель его не увидят. Токен в grant
+не добавлять никогда.
 
 ## Как устроено
 
