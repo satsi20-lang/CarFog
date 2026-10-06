@@ -10,6 +10,7 @@ import 'pin_policy.dart';
 import 'modbus_service.dart';
 import 'remote_command_guard.dart';
 import 'remote_commands.dart';
+import 'rollout_service.dart';
 import 'update_service.dart';
 
 // Периодический обмен с облаком: отправка накопленных событий,
@@ -168,6 +169,9 @@ class SyncService {
       for (final command in result.commands) {
         await _execute(command, serverTime: result.serverTime);
       }
+      // Раскатка по целевой версии (R3): только после штатного ответа; команды
+      // облака обработаны раньше и имеют приоритет.
+      if (result.ok) await RolloutService.onPoll(notifier, result.target);
     } catch (e) {
       debugPrint('SyncService._tick error: $e');
     } finally {
@@ -207,6 +211,7 @@ class SyncService {
     snapshot['rollback_available'] = upd['rollback_available'];
     snapshot['last_update_result'] = (upd['last'] as Map?)?['result'];
     snapshot['adb_network'] = UpdateService.adbNetwork;
+    snapshot['rollout_target_code'] = RolloutService.targetCode;
     // Тестовая сборка без сигнала здоровья (только для проверки отката): в
     // панели должна быть видна, в боевых аппаратах всегда false.
     snapshot['skip_health_signal_build'] = UpdateLimits.skipHealthSignalBuild;
