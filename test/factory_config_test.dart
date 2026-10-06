@@ -310,7 +310,7 @@ void main() {
       ]);
       expect(r.exitCode, 0, reason: '${r.stderr}');
       expect(r.stdout.toString(), isNot(contains('"token"')));
-      final cfgDir = Directory('${out.path}').listSync().whereType<Directory>().single;
+      final cfgDir = Directory(out.path).listSync().whereType<Directory>().single;
       final f = File('${cfgDir.path}/configs/CARFOG-501.json');
       final parsed = parseFactoryConfig(await f.readAsString());
       expect(parsed.ok, isTrue, reason: '${parsed.error}');
