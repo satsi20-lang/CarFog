@@ -35,3 +35,7 @@ android/key.properties
 key.properties
 *.jks
 *.keystore
+
+# Заводской генератор: коды привязки и токены — только оффлайн
+provisioning_out/
+__pycache__/
