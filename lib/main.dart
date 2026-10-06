@@ -18,6 +18,7 @@ import 'screens/service/service_pin.dart';
 import 'screens/service/service_menu.dart';
 import 'services/cloud_service.dart';
 import 'services/config_service.dart';
+import 'services/factory_config_service.dart';
 import 'services/level_service.dart';
 import 'services/modbus_service.dart';
 import 'services/out_of_service_service.dart';
@@ -53,7 +54,9 @@ void main() async {
     DeviceOrientation.landscapeLeft,
     DeviceOrientation.landscapeRight,
   ]);
-  final config = await ConfigService.load();
+  // Заводская конфигурация облака (файл на общем каталоге): применяется до
+  // настройки облачного слоя; остальные настройки не трогаются.
+  final config = await FactoryConfigService.applyOnStartup(await ConfigService.load());
   // Секреты из настроек не должны попасть в журнал и пакет диагностики.
   AppLog.setSecrets([config.servicePin, config.cloudToken, config.cloudAnonKey]);
 
@@ -153,6 +156,9 @@ void main() async {
   // что-то сам.
   OutputWatchdogService.start(notifier);
 
+  // Возврат на передний план: заводской файл мог появиться/смениться уже при
+  // работающем приложении (запись adb во время наладки).
+  WidgetsBinding.instance.addObserver(_FactoryConfigResume(notifier));
   runApp(
     ChangeNotifierProvider.value(value: notifier, child: const DryFogApp()),
   );
@@ -252,6 +258,19 @@ class AppRouter extends StatelessWidget {
         return const ServiceMenuScreen();
       case AppState.outOfService:
         return const OutOfServiceScreen();
+    }
+  }
+}
+
+// Сверка заводского файла конфигурации при возврате на передний план.
+class _FactoryConfigResume with WidgetsBindingObserver {
+  _FactoryConfigResume(this.notifier);
+  final AppNotifier notifier;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(FactoryConfigService.applyIfNeeded(notifier));
     }
   }
 }
