@@ -135,8 +135,46 @@ class CloudCommand {
 // ли считать слепок отправленным (и не слать его снова, пока настройки
 // не изменятся) — если запрос не удался, флаг остаётся false, и попытка
 // естественным образом повторится на следующем опросе.
+// Целевая версия раскатки из ответа device_poll (поле target). Сервер отдаёт
+// её, только когда для этого аппарата «пора» (кольцо, окно, задержка).
+class RolloutTarget {
+  final String rolloutId;
+  final String releaseId;
+  final String versionName;
+  final int versionCode;
+  const RolloutTarget({
+    required this.rolloutId,
+    required this.releaseId,
+    required this.versionName,
+    required this.versionCode,
+  });
+
+  // null — поле отсутствует, не Map или неполное: как «цели нет» (старые
+  // серверы и неожиданные ответы приложение не ломают).
+  static RolloutTarget? tryParse(Object? raw) {
+    if (raw is! Map) return null;
+    final rollout = raw['rollout_id'];
+    final release = raw['release_id'];
+    final name = raw['version_name'];
+    final code = raw['version_code'];
+    final uuid = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
+    if (rollout is! String || release is! String || name is! String || code is! num) {
+      return null;
+    }
+    if (!uuid.hasMatch(rollout) || !uuid.hasMatch(release) || code <= 0) return null;
+    return RolloutTarget(
+      rolloutId: rollout,
+      releaseId: release,
+      versionName: name,
+      versionCode: code.toInt(),
+    );
+  }
+}
+
 class CloudPollResult {
   final List<CloudCommand> commands;
+  // Целевая версия раскатки (null — цели нет или сервер старый).
+  final RolloutTarget? target;
   final bool configReported;
   // Время СЕРВЕРА на момент ответа (поле server_time device_poll). Срок
   // действия команд считается как server_time − created_at, а не по часам
@@ -148,6 +186,7 @@ class CloudPollResult {
 
   CloudPollResult({
     required this.commands,
+    this.target,
     this.configReported = false,
     this.serverTime,
     this.ok = false,
@@ -351,6 +390,7 @@ class SupabaseTransport implements CloudTransport {
 
       return CloudPollResult(
         commands: commands,
+        target: RolloutTarget.tryParse(body['target']),
         configReported: config != null,
         serverTime: DateTime.tryParse(body['server_time'] as String? ?? ''),
         ok: true,

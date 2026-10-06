@@ -14,6 +14,7 @@ import 'heater_shutdown_service.dart';
 import 'modbus_service.dart';
 import 'privileged_installer.dart';
 import 'remote_command_guard.dart';
+import 'rollout_service.dart';
 import 'sync_service.dart';
 import 'update_script.dart';
 
@@ -212,13 +213,29 @@ class UpdateService {
     );
   }
 
+  // source — откуда запущено обновление ('command' — команда облака,
+  // 'rollout' — раскатка по целевой версии); rolloutId — если известен.
   static Future<UpdateResult> startUpdate(
     AppNotifier n,
     String releaseId, {
     bool countQuota = true,
-  }) => _withQuota('update_app', countQuota, () => _startUpdate(n, releaseId));
+    String source = 'command',
+    String? rolloutId,
+  }) => _withQuota(
+    'update_app',
+    countQuota,
+    () => _startUpdate(n, releaseId, source, rolloutId),
+  );
 
-  static Future<UpdateResult> _startUpdate(AppNotifier n, String releaseId) async {
+  // Скрипт запущен в последнем _launch* (для учёта запуска раскаткой).
+  static bool get lastLaunchStarted => _lastLaunchStarted;
+
+  static Future<UpdateResult> _startUpdate(
+    AppNotifier n,
+    String releaseId,
+    String source,
+    String? rolloutId,
+  ) async {
     if (inProgress) return const UpdateResult(false, 'update_in_progress');
     inProgress = true;
     n.setMaintenance(true);
@@ -268,6 +285,8 @@ class UpdateService {
         'to_version': ticket.versionName,
         'to_code': ticket.versionCode,
         'size_bytes': ticket.sizeBytes,
+        'source': source,
+        'rollout_id': ?rolloutId,
       });
 
       // 5. скачивание
@@ -346,6 +365,7 @@ class UpdateService {
         'from_code': current.versionCode,
         'to_version': backup['version_name'],
         'to_code': toCode,
+        'source': 'command',
       });
       return UpdateResult(
         true,
@@ -660,12 +680,22 @@ class UpdateService {
       'protocol': summary.events,
     };
     if (summary.outcome == UpdateOutcome.rolledBack) {
+      // Автоматический откат этого релиза: больше не пытаться его ставить
+      // (раскатка), пока не появится цель с БОЛЬШИМ versionCode.
+      if (mode == 'install' && pending['to_code'] is num) {
+        await RolloutService.markBlocked((pending['to_code'] as num).toInt());
+      }
       await _event(CloudEventType.updateRolledBack, {...data, 'automatic': mode == 'install'});
       await _record('rolled_back', pending['from_name'] as String?, pending['to_name'] as String?);
     } else {
       final reason = timedOut
           ? 'script_no_result'
           : (summary.detail ?? (summary.events.isEmpty ? 'no_protocol' : 'failed'));
+      // Сбой установки после запуска скрипта: раскатка не бьёт тот же релиз
+      // каждые 30 секунд (локальный бэкофф на этот релиз).
+      if (mode == 'install' && pending['release_id'] is String) {
+        await RolloutService.noteFailure(pending['release_id'] as String);
+      }
       await _event(CloudEventType.updateFailed, {...data, 'reason': reason});
       await _record(reason, pending['from_name'] as String?, pending['to_name'] as String?, failed: true);
     }
