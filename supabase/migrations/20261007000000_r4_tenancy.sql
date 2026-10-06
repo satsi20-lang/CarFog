@@ -35,9 +35,6 @@
 --      and grantee in ('anon','authenticated') order by 3,4;
 --   select schemaname, tablename, policyname, cmd, roles, qual, with_check
 --     from pg_policies where schemaname='public' order by tablename, policyname;
---   -- индексы events (customer_events фильтрует по device_id и received_at;
---   -- индекс ниже создаётся if not exists, но проверьте, нет ли аналога):
---   select indexname, indexdef from pg_indexes where tablename = 'events';
 -- ============================================================
 
 -- ============================================================
@@ -193,9 +190,6 @@ create table if not exists public.device_access (
 );
 create unique index if not exists device_access_one_open_per_device
   on public.device_access (device_id) where ended_at is null;
--- customer_events / customer_devices фильтруют events по device_id и received_at.
-create index if not exists events_device_received_idx
-  on public.events (device_id, received_at desc);
 create index if not exists device_access_customer_idx
   on public.device_access (customer_id) where ended_at is null;
 alter table public.device_access enable row level security;
