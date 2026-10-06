@@ -135,23 +135,6 @@ as $$
 $$;
 revoke all on function public.is_staff_or_service(uuid) from public, anon, authenticated;
 
--- У текущего клиента есть АКТИВНЫЙ доступ к аппарату (связь не закрыта и срок
--- подписки не истёк).
-create or replace function public.customer_has_access(p_device text) returns boolean
-language sql
-security definer
-stable
-set search_path = public
-as $$
-  select exists (
-    select 1 from public.device_access da
-     where da.device_id = p_device
-       and da.customer_id = auth.uid()
-       and da.ended_at is null
-       and da.valid_until > now()
-  );
-$$;
-revoke all on function public.customer_has_access(text) from public, anon, authenticated;
 
 -- ============================================================
 -- 2. ТАБЛИЦЫ
@@ -302,6 +285,24 @@ create trigger commands_audit_trg
 -- ============================================================
 -- 3. КОДЫ ПРИВЯЗКИ
 -- ============================================================
+
+-- У текущего клиента есть АКТИВНЫЙ доступ к аппарату (связь не закрыта и срок
+-- подписки не истёк).
+create or replace function public.customer_has_access(p_device text) returns boolean
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.device_access da
+     where da.device_id = p_device
+       and da.customer_id = auth.uid()
+       and da.ended_at is null
+       and da.valid_until > now()
+  );
+$$;
+revoke all on function public.customer_has_access(text) from public, anon, authenticated;
 
 -- Новый код: 12 знаков из 31, равномерно (отбраковка байтов ≥ 248 убирает
 -- смещение по модулю). Случайность — gen_random_uuid() (криптостойкая);
