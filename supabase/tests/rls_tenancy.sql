@@ -11,6 +11,9 @@
 --   <ORG_ID>           организация-изготовитель
 --   <DEVICE_ID>        устройство организации <ORG_ID>
 --   <OTHER_DEVICE_ID>  устройство ДРУГОЙ организации (для проверки дефекта A)
+--   <RELEASE_ID>       id СУЩЕСТВУЮЩЕЙ строки app_releases (для rollout_create);
+--                      изготовитель должен состоять ровно в одной организации
+--                      (rollout_my_org), иначе rollout_create ответит no_org/ambiguous_org
 -- Каждая проверка пишет в «Messages» строку ok или ОШИБКА.
 -- Пока клиенты не привязаны, статусы связи/срока меняются прямо тут.
 -- ============================================================
@@ -81,6 +84,30 @@ begin
     raise notice 'ОШИБКА: блокировки нет: %', r3;
   end if;
 end $$;
+
+-- блокировка по АППАРАТУ: порог 50 неудач в сутки (подбор кода невозможен,
+-- низкий порог позволял бы блокировать привязку честному клиенту — DoS).
+-- 49 чужих неудач ещё не блокируют, 50-я блокирует даже верный код.
+reset role;
+delete from public.claim_attempts where device_id = '<DEVICE_ID>';
+insert into public.claim_attempts(user_id, device_id, ok)
+select gen_random_uuid(), '<DEVICE_ID>', false from generate_series(1, 49);
+select set_config('request.jwt.claims', '{"sub":"<CUSTOMER_A_UUID>","role":"authenticated"}', true);
+set local role authenticated;
+do $$
+declare r jsonb;
+begin
+  r := public.device_claim('<DEVICE_ID>', 'ZZZZ-ZZZZ-ZZZZ', 'х');   -- 50-я неудача
+  if r->>'error' = 'invalid_claim' then raise notice 'ok: при 49 неудачах на аппарат привязка ещё не заблокирована';
+  else raise notice 'ОШИБКА: преждевременная блокировка по аппарату: %', r; end if;
+  r := public.device_claim('<DEVICE_ID>', current_setting('rt.code'), 'х');
+  if r->>'error' = 'too_many_attempts' then raise notice 'ok: после 50 неудач на аппарат верный код отказывает (too_many_attempts)';
+  else raise notice 'ОШИБКА: блокировки по аппарату нет: %', r; end if;
+end $$;
+reset role;
+delete from public.claim_attempts where device_id = '<DEVICE_ID>';
+select set_config('request.jwt.claims', '{"sub":"<CUSTOMER_A_UUID>","role":"authenticated"}', true);
+set local role authenticated;
 
 -- окно блокировки «прошло» (под полными правами сдвигаем метки)
 reset role;
@@ -168,6 +195,49 @@ begin
   r := public.access_set_valid_until('<DEVICE_ID>', now() + interval '10 years', 'manual', null);
   if r->>'error' = 'bad_request' then raise notice 'ok: срок дальше 3 лет отклонён';
   else raise notice 'ОШИБКА: %', r; end if;
+end $$;
+
+-- ====================== 6а. изготовитель: раскатка и журнал ======================
+reset role;
+select set_config('request.jwt.claims', '{"sub":"<STAFF_UUID>","role":"authenticated"}', true);
+set local role authenticated;
+
+do $$
+declare r jsonb; n int; v uuid;
+begin
+  r := public.rollout_create('<RELEASE_ID>', 'test');
+  if (r->>'ok')::boolean then
+    v := (r->>'id')::uuid;
+    perform set_config('rt.rollout', v::text, true);
+    raise notice 'ok: изготовитель создал раскатку (rollout_create)';
+  else
+    raise notice 'ОШИБКА: rollout_create изготовителя: % (нужен <RELEASE_ID> и ровно одна организация)', r;
+    return;
+  end if;
+
+  select count(*) into n from public.staff_audit
+   where action = 'rollout_create' and details ->> 'rollout' = v::text;
+  if n = 1 then raise notice 'ok: rollout_create записан в staff_audit';
+  else raise notice 'ОШИБКА: записей rollout_create в staff_audit: %', n; end if;
+
+  r := public.rollout_create('<RELEASE_ID>', 'test', '03:00', '03:00');
+  if r->>'error' = 'bad_request' then raise notice 'ok: rollout_create с p_start = p_end отклонён (bad_request)';
+  else raise notice 'ОШИБКА: %', r; end if;
+
+  r := public.rollout_set_status(v, 'active');
+  if (r->>'ok')::boolean then
+    select count(*) into n from public.rollout_log where rollout_id = v and kind = 'status';
+    if n >= 1 then raise notice 'ok: rollout_set_status пишет в rollout_log'; else raise notice 'ОШИБКА: нет записи в rollout_log'; end if;
+    select count(*) into n from public.staff_audit
+     where action = 'rollout_status' and details ->> 'rollout' = v::text;
+    if n >= 1 then raise notice 'ok: rollout_set_status пишет в staff_audit'; else raise notice 'ОШИБКА: нет записи в staff_audit'; end if;
+    -- чтобы не оставлять активную раскатку
+    perform public.rollout_set_status(v, 'cancelled');
+  elsif r->>'error' = 'active_exists' then
+    raise notice 'пропуск: в кольце test уже есть активная раскатка (active_exists) — проверка журнала смены статуса не выполнена';
+  else
+    raise notice 'ОШИБКА: rollout_set_status: %', r;
+  end if;
 end $$;
 
 -- тестовые события (под полными правами): разрешённое с лишними ключами и неразрешённое

@@ -127,6 +127,33 @@ class ProvisionTest(unittest.TestCase):
             with self.assertRaises(pd.ProvisionError):
                 run(tmp, "--prefix", "A'; drop table x;--", "--start", "1", "--count", "1")
 
+    def test_ring_default_test_and_explicit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            res = run(tmp, "--prefix", "A-", "--start", "1", "--count", "3")
+            with open(res["files"][0], encoding="utf-8") as f:
+                sql = f.read()
+            devs = [ln for ln in sql.splitlines() if ln.startswith("insert into public.devices")]
+            self.assertEqual(len(devs), 3)
+            for ln in devs:
+                self.assertIn("(id, org_id, token, name, ring)", ln)
+                self.assertTrue(ln.rstrip().endswith("'test');"), ln)  # по умолчанию test
+        with tempfile.TemporaryDirectory() as tmp:
+            res = run(tmp, "--prefix", "B-", "--start", "1", "--count", "2", "--ring", "early")
+            with open(res["files"][0], encoding="utf-8") as f:
+                sql = f.read()
+            self.assertEqual(sql.count("'early');"), 2)
+            self.assertNotIn("'all');", sql)
+
+    def test_ring_invalid_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for bad in ("prod", "ALL", "", "test'; drop table x;--"):
+                with self.assertRaises(SystemExit):   # argparse: недопустимое значение
+                    run(tmp, "--prefix", "A-", "--start", "1", "--count", "1", "--ring", bad)
+            self.assertFalse(os.path.exists(os.path.join(tmp, pd.REGISTRY)))  # ничего не выдано
+        # и прямой вызов генерации SQL не принимает неверное кольцо
+        with self.assertRaises(pd.ProvisionError):
+            pd.render_sql([], ORG, "x", "prod")
+
     def test_list_file(self):
         with tempfile.TemporaryDirectory() as tmp:
             lst = os.path.join(tmp, "ids.txt")

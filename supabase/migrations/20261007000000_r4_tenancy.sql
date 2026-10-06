@@ -35,6 +35,9 @@
 --      and grantee in ('anon','authenticated') order by 3,4;
 --   select schemaname, tablename, policyname, cmd, roles, qual, with_check
 --     from pg_policies where schemaname='public' order by tablename, policyname;
+--   -- индексы events (customer_events фильтрует по device_id и received_at;
+--   -- индекс ниже создаётся if not exists, но проверьте, нет ли аналога):
+--   select indexname, indexdef from pg_indexes where tablename = 'events';
 -- ============================================================
 
 -- ============================================================
@@ -161,7 +164,7 @@ revoke all on function public.customer_has_access(text) from public, anon, authe
 -- не хранится. Формат кода: 12 знаков алфавита без похожих символов
 -- (без 0/O, 1/I/L), регистр не важен, на наклейке XXXX-XXXX-XXXX. При 31
 -- символе это ≈ 59 бит; перебор ограничен claim_attempts (5 неудач в час на
--- пользователя, 10 в сутки на аппарат). Хэш считается так же заводским
+-- пользователя, 50 в сутки на аппарат). Хэш считается так же заводским
 -- генератором (tool/provision_devices.py): sha256(utf8(соль + КОД_ЗАГЛАВНЫМИ
 -- _БЕЗ_ДЕФИСОВ)), hex.
 create table if not exists public.device_claims (
@@ -190,6 +193,9 @@ create table if not exists public.device_access (
 );
 create unique index if not exists device_access_one_open_per_device
   on public.device_access (device_id) where ended_at is null;
+-- customer_events / customer_devices фильтруют events по device_id и received_at.
+create index if not exists events_device_received_idx
+  on public.events (device_id, received_at desc);
 create index if not exists device_access_customer_idx
   on public.device_access (customer_id) where ended_at is null;
 alter table public.device_access enable row level security;
@@ -343,8 +349,11 @@ revoke all on function public._claim_hash(text, text) from public, anon, authent
 
 -- Привязка аппарата клиентом по коду. Неверный номер, неверный код и «уже
 -- привязан» отвечают ОДНИМ сообщением invalid_claim (не раскрываем, существует
--- ли аппарат). Блокировка: 5 неудач за час на пользователя и 10 за сутки на
+-- ли аппарат). Блокировка: 5 неудач за час на пользователя и 50 за сутки на
 -- аппарат; во время блокировки даже верный код отказывает.
+-- Порог на аппарат намеренно высокий (50): подбор кода невозможен (31^12 ≈ 2^59),
+-- а номер аппарата угадывается (CARFOG-001), и низкий порог позволял бы любому
+-- зарегистрированному пользователю блокировать привязку честному клиенту (DoS).
 create or replace function public.device_claim(
   p_device text,
   p_code   text,
@@ -371,7 +380,7 @@ begin
   if (select count(*) from public.claim_attempts
        where user_id = v_uid and not ok and at > now() - interval '1 hour') >= 5
      or (select count(*) from public.claim_attempts
-          where device_id = v_dev and not ok and at > now() - interval '1 day') >= 10 then
+          where device_id = v_dev and not ok and at > now() - interval '1 day') >= 50 then
     return jsonb_build_object('ok', false, 'error', 'too_many_attempts');
   end if;
 
@@ -714,8 +723,54 @@ join public.devices d on d.id = da.device_id
 where public.is_staff(d.org_id);
 
 -- ============================================================
--- 7. ПЕРЕОПРЕДЕЛЕНИЕ ФУНКЦИЙ R3 (журнал действий изготовителя, is_staff)
+-- 7. ПЕРЕОПРЕДЕЛЕНИЕ ФУНКЦИЙ R3 (журнал действий изготовителя, is_staff):
+--    rollout_create, rollout_set_status, device_set_ring_tz
 -- ============================================================
+
+-- rollout_create (из R3) + запись в staff_audit; логика и ответы прежние.
+create or replace function public.rollout_create(
+  p_release uuid,
+  p_ring    text,
+  p_start   time default '02:00',
+  p_end     time default '05:00',
+  p_jitter  int  default 30
+) returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_org uuid := public.rollout_my_org();
+  v_n   int;
+  v_id  uuid;
+begin
+  if v_org is null then
+    select count(*) into v_n from public.org_members where user_id = auth.uid();
+    return jsonb_build_object('ok', false, 'error',
+             case when v_n = 0 then 'no_org' else 'ambiguous_org' end);
+  end if;
+  if p_ring not in ('test', 'early', 'all')
+     or p_jitter is null or p_jitter not between 0 and 120
+     or p_start is null or p_end is null
+     or p_start = p_end then          -- пустое окно: цель не выдавалась бы никому
+    return jsonb_build_object('ok', false, 'error', 'bad_request');
+  end if;
+  if not exists (select 1 from public.app_releases where id = p_release) then
+    return jsonb_build_object('ok', false, 'error', 'release_not_found');
+  end if;
+
+  insert into public.rollouts(org_id, release_id, ring, window_start, window_end, jitter_minutes)
+  values (v_org, p_release, p_ring, p_start, p_end, p_jitter)
+  returning id into v_id;
+
+  insert into public.rollout_log(org_id, rollout_id, kind, detail)
+  values (v_org, v_id, 'created', jsonb_build_object('by', auth.uid(), 'ring', p_ring));
+  perform public.staff_audit_add(v_org, 'rollout_create', null,
+    jsonb_build_object('rollout', v_id, 'release', p_release, 'ring', p_ring));
+
+  return jsonb_build_object('ok', true, 'id', v_id, 'status', 'paused');
+end;
+$$;
 
 create or replace function public.rollout_set_status(p_id uuid, p_status text)
 returns jsonb
@@ -814,11 +869,13 @@ grant execute on function public.customer_send_command(text, text, jsonb) to aut
 revoke all on function public.claim_regenerate(text) from public, anon;
 revoke all on function public.access_end(text) from public, anon;
 revoke all on function public.access_set_valid_until(text, timestamptz, text, text) from public, anon;
+revoke all on function public.rollout_create(uuid, text, time, time, int) from public, anon;
 revoke all on function public.rollout_set_status(uuid, text) from public, anon;
 revoke all on function public.device_set_ring_tz(text, text, text) from public, anon;
 grant execute on function public.claim_regenerate(text) to authenticated;
 grant execute on function public.access_end(text) to authenticated;
 grant execute on function public.access_set_valid_until(text, timestamptz, text, text) to authenticated, service_role;
+grant execute on function public.rollout_create(uuid, text, time, time, int) to authenticated;
 grant execute on function public.rollout_set_status(uuid, text) to authenticated;
 grant execute on function public.device_set_ring_tz(text, text, text) to authenticated;
 

@@ -9,7 +9,8 @@
     как проверяет БД (supabase/migrations/20261007000000_r4_tenancy.sql).
 
 Выход (каталог provisioning_out/, он в .gitignore, в git не попадает):
-  batch_<дата>.sql                 вставки в devices и device_claims (токены и
+  batch_<дата>.sql                 вставки в devices (с явным кольцом --ring,
+                                   по умолчанию test) и device_claims (токены и
                                    ХЭШИ кодов; открытых кодов нет);
   batch_<дата>_labels.csv          device_id и ОТКРЫТЫЙ код — для наклеек;
   batch_<дата>_device_config.json  URL облака, публичный ключ, токен и id для
@@ -40,6 +41,9 @@ import uuid
 ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 CODE_LEN = 12
 TOKEN_BYTES = 32
+# Допустимые кольца раскатки — те же, что в check devices.ring (миграция R3).
+RINGS = ("test", "early", "all")
+DEFAULT_RING = "test"
 ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 OUT_DIR = "provisioning_out"
@@ -132,7 +136,9 @@ def generate(ids, org_id: str, cloud_url: str, anon_key: str):
     return items
 
 
-def render_sql(items, org_id: str, stamp: str) -> str:
+def render_sql(items, org_id: str, stamp: str, ring: str = DEFAULT_RING) -> str:
+    if ring not in RINGS:
+        raise ProvisionError(f"--ring: допустимо {', '.join(RINGS)}")
     lines = [
         f"-- Партия аппаратов {stamp}. Токены и ХЭШИ кодов; открытых кодов здесь нет.",
         "-- Файл чувствителен (токены): хранить оффлайн, в git не добавлять.",
@@ -141,8 +147,9 @@ def render_sql(items, org_id: str, stamp: str) -> str:
     ]
     for it in items:
         lines.append(
-            "insert into public.devices (id, org_id, token, name) values "
-            f"({sql_str(it['id'])}, {sql_str(org_id)}, {sql_str(it['token'])}, {sql_str(it['id'])});"
+            "insert into public.devices (id, org_id, token, name, ring) values "
+            f"({sql_str(it['id'])}, {sql_str(org_id)}, {sql_str(it['token'])}, "
+            f"{sql_str(it['id'])}, {sql_str(ring)});"
         )
     for it in items:
         lines.append(
@@ -163,6 +170,9 @@ def run(argv=None, today=None) -> dict:
     p.add_argument("--cloud-url", required=True)
     p.add_argument("--anon-key", default=os.environ.get("PROVISION_ANON_KEY", ""),
                    help="публичный ключ (publishable); лучше через PROVISION_ANON_KEY")
+    p.add_argument("--ring", default=DEFAULT_RING, choices=RINGS,
+                   help="кольцо раскатки, записывается в devices.ring явно "
+                        "(по умолчанию test: новые аппараты не попадают под боевую раскатку)")
     p.add_argument("--out", default=OUT_DIR)
     args = p.parse_args(argv)
 
@@ -193,7 +203,7 @@ def run(argv=None, today=None) -> dict:
 
     items = generate(ids, args.org_id, args.cloud_url, args.anon_key)
 
-    write_private(sql_path, render_sql(items, args.org_id, stamp))
+    write_private(sql_path, render_sql(items, args.org_id, stamp, args.ring))
     import io
     buf = io.StringIO()
     w = csv.writer(buf, lineterminator="\n")

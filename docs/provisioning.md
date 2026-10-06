@@ -10,13 +10,20 @@ export PROVISION_ANON_KEY='<публичный ключ sb_publishable_…>'
 tool/provision_devices.py --org-id <uuid организации-изготовителя> \
     --prefix CARFOG- --start 100 --count 20 --cloud-url https://<проект>.supabase.co
 # или список:  --list ids.txt   (по одному номеру в строке, # — комментарий)
+# кольцо раскатки (по умолчанию test):  --ring test | early | all
 ```
+
+**Кольцо.** Генератор записывает `devices.ring` явно в каждом `insert` (по умолчанию
+`test`). Иначе новые аппараты получили бы значение по умолчанию столбца (`all`) и
+сразу попали бы под боевую раскатку. Допустимые значения те же, что в проверке
+`devices.ring` (`test`, `early`, `all`); кольцо серийных аппаратов переводит
+владелец вручную (`device_set_ring_tz`), когда придёт их очередь.
 
 Результат в `provisioning_out/` (в `.gitignore`, права файлов 600):
 
 | Файл | Содержимое | Куда |
 |---|---|---|
-| `batch_<дата>.sql` | `insert` в `devices` (id, org_id, токен, name = id) и `device_claims` (соль и хэш кода) | владелец выполняет в SQL Editor |
+| `batch_<дата>.sql` | `insert` в `devices` (id, org_id, токен, name = id, ring) и `device_claims` (соль и хэш кода) | владелец выполняет в SQL Editor |
 | `batch_<дата>_labels.csv` | номер аппарата и ОТКРЫТЫЙ код XXXX-XXXX-XXXX | печать наклеек |
 | `batch_<дата>_device_config.json` | URL облака, публичный ключ, токен, номер аппарата | запись в аппарат (см. ниже) |
 | `issued_ids.txt` | только выданные номера (секретов нет) | защита от повтора |
