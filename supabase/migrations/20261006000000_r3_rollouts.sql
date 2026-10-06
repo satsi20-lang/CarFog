@@ -20,15 +20,20 @@
 --     not_newer, rate_limited*, url_failed*, download_failed, no_space не
 --     считаются. Продолжить — только кнопкой владельца.
 --
--- ЧЕГО В РЕПОЗИТОРИИ НЕТ (сверить до применения):
---  * таблиц devices / events / orgs и их RLS-политик (членство в
---    организации); см. функцию rollout_my_org() ниже — единственное место,
---    где нужно подставить способ определения организации вошедшего
---    пользователя; до этого она «закрыта» (возвращает null → forbidden);
---  * точных имён столбцов events (здесь: device_id, type, data jsonb) —
---    триггер написан так, что любая ошибка в нём НЕ ломает вставку события;
---  * столбца devices.name (представление берёт его через to_jsonb, без
---    него подставляется id).
+-- Схема (проверено запросом в рабочей базе, 06.10.2026):
+--  * членство: org_members(user_id, org_id); public.is_org_member(p_org uuid)
+--    (security definer, stable) = exists(select 1 from org_members where
+--    user_id = auth.uid() and org_id = p_org) — на ней построены все политики;
+--  * devices: id text, org_id, token, name, app_version, last_seen_at, ...;
+--  * events: device_id, org_id, type, ts (время по часам АППАРАТА, ненадёжно),
+--    received_at (время СЕРВЕРА), data jsonb; столбца created_at НЕТ —
+--    всё сравнение времени событий здесь только по received_at;
+--  * device_poll в рабочей базе совпадает с версией в r1 (ниже — она же +target).
+--
+-- ПРАВА. В PostgreSQL execute на новую функцию по умолчанию у PUBLIC, поэтому
+-- у каждой функции ниже явный revoke from public, anon и выдача только нужным
+-- ролям: функции панели — authenticated; rollout_target, rollout_my_org и
+-- триггерная функция — никому (их вызывает только security definer-код).
 -- ============================================================
 
 -- ---------- devices: кольцо и часовой пояс ----------
@@ -39,25 +44,25 @@ alter table public.devices
 alter table public.devices
   add column if not exists timezone text not null default 'UTC';
 
--- ---------- Организация вошедшего пользователя ----------
--- ЕДИНСТВЕННОЕ место, зависящее от схемы членства проекта. Проект
--- определяет членство политиками RLS таблицы devices; из definer-функции
--- политику не вызвать, поэтому здесь нужен явный запрос. Ниже — ПРИМЕР
--- (таблица org_members(org_id, user_id)); СВЕРИТЬ и заменить тело на
--- настоящее. Ошибка/пусто → null → все функции панели отказывают
--- ('forbidden'): безопасный отказ.
+-- ---------- Организация вошедшего пользователя (только для rollout_create) ----------
+-- Если у пользователя РОВНО одна строка в org_members — её org_id, иначе
+-- (ноль или несколько) — null; rollout_create различает случаи кодами
+-- no_org / ambiguous_org. Ошибки не глотаются. Остальные функции организацию
+-- пользователя НЕ угадывают: берут org из самого объекта (раскатка, аппарат)
+-- и проверяют public.is_org_member(org).
 create or replace function public.rollout_my_org() returns uuid
 language plpgsql
 security definer
 stable
 set search_path = public
 as $$
-declare v uuid;
+declare
+  v_n   int;
+  v_org uuid;
 begin
-  execute 'select org_id from public.org_members where user_id = auth.uid() limit 1'
-    into v;
-  return v;
-exception when others then
+  select count(*), (array_agg(org_id))[1] into v_n, v_org
+    from public.org_members where user_id = auth.uid();
+  if v_n = 1 then return v_org; end if;
   return null;
 end;
 $$;
@@ -89,20 +94,25 @@ alter table public.rollouts enable row level security;
 revoke all on table public.rollouts from public, anon, authenticated;
 grant select on table public.rollouts to authenticated;
 
--- Читать — участникам организации: подзапрос к devices выполняется ПОД
--- ПРАВАМИ пользователя, то есть пропускает его только если RLS devices
--- пропускает (тот же приём, что у app_releases). Писать — только через
--- функции ниже (insert/update/delete у authenticated отозваны).
+-- Читать — участникам организации (is_org_member, как во всех политиках
+-- проекта). Писать — только через функции ниже (insert/update/delete у
+-- authenticated отозваны).
+-- Индекс rollouts_one_active_per_ring (org_id, ring) where status='active'
+-- обслуживает и запрос rollout_target (where org_id = … and ring = … and
+-- status = 'active'): условие запроса совпадает с предикатом индекса, поэтому
+-- планировщик берёт его (index scan по паре org+ring, строк активных единицы);
+-- EXPLAIN без сервера не проверен.
 create policy rollouts_read on public.rollouts
   for select to authenticated
-  using (exists (select 1 from public.devices d where d.org_id = rollouts.org_id));
+  using (public.is_org_member(org_id));
 
 -- ---------- Журнал раскаток (паузы и ручные действия) ----------
 create table if not exists public.rollout_log (
   id         bigint generated always as identity primary key,
-  rollout_id uuid        not null references public.rollouts(id) on delete cascade,
+  org_id     uuid,                   -- для чтения по is_org_member
+  rollout_id uuid        references public.rollouts(id) on delete cascade,
   at         timestamptz not null default now(),
-  kind       text        not null,   -- created / status / paused_auto
+  kind       text        not null,   -- created / status / paused_auto / trigger_error
   detail     jsonb       not null default '{}'::jsonb
 );
 alter table public.rollout_log enable row level security;
@@ -110,13 +120,12 @@ revoke all on table public.rollout_log from public, anon, authenticated;
 grant select on table public.rollout_log to authenticated;
 create policy rollout_log_read on public.rollout_log
   for select to authenticated
-  using (exists (
-    select 1 from public.rollouts r
-    join public.devices d on d.org_id = r.org_id
-    where r.id = rollout_log.rollout_id
-  ));
+  using (org_id is not null and public.is_org_member(org_id));
 
 -- ---------- Функции для панели ----------
+-- Организация берётся из самого объекта и проверяется is_org_member;
+-- «нет такого» и «чужое» отвечают одним кодом forbidden (не раскрываем,
+-- существует ли чужая раскатка/аппарат).
 create or replace function public.rollout_create(
   p_release uuid,
   p_ring    text,
@@ -130,9 +139,14 @@ set search_path = public
 as $$
 declare
   v_org uuid := public.rollout_my_org();
+  v_n   int;
   v_id  uuid;
 begin
-  if v_org is null then return jsonb_build_object('ok', false, 'error', 'forbidden'); end if;
+  if v_org is null then
+    select count(*) into v_n from public.org_members where user_id = auth.uid();
+    return jsonb_build_object('ok', false, 'error',
+             case when v_n = 0 then 'no_org' else 'ambiguous_org' end);
+  end if;
   if p_ring not in ('test', 'early', 'all')
      or p_jitter is null or p_jitter not between 0 and 120
      or p_start is null or p_end is null then
@@ -146,8 +160,8 @@ begin
   values (v_org, p_release, p_ring, p_start, p_end, p_jitter)
   returning id into v_id;
 
-  insert into public.rollout_log(rollout_id, kind, detail)
-  values (v_id, 'created', jsonb_build_object('by', auth.uid(), 'ring', p_ring));
+  insert into public.rollout_log(org_id, rollout_id, kind, detail)
+  values (v_org, v_id, 'created', jsonb_build_object('by', auth.uid(), 'ring', p_ring));
 
   return jsonb_build_object('ok', true, 'id', v_id, 'status', 'paused');
 end;
@@ -163,16 +177,16 @@ security definer
 set search_path = public
 as $$
 declare
-  v_org uuid := public.rollout_my_org();
-  r     public.rollouts%rowtype;
+  r public.rollouts%rowtype;
 begin
-  if v_org is null then return jsonb_build_object('ok', false, 'error', 'forbidden'); end if;
   if p_status not in ('paused', 'active', 'done', 'cancelled') then
     return jsonb_build_object('ok', false, 'error', 'bad_request');
   end if;
 
-  select * into r from public.rollouts where id = p_id and org_id = v_org for update;
-  if not found then return jsonb_build_object('ok', false, 'error', 'not_found'); end if;
+  select * into r from public.rollouts where id = p_id for update;
+  if not found or not public.is_org_member(r.org_id) then
+    return jsonb_build_object('ok', false, 'error', 'forbidden');
+  end if;
 
   if not (
        (r.status = 'paused' and p_status = 'active')
@@ -200,8 +214,9 @@ begin
     return jsonb_build_object('ok', false, 'error', 'active_exists');
   end;
 
-  insert into public.rollout_log(rollout_id, kind, detail)
-  values (r.id, 'status', jsonb_build_object('from', r.status, 'to', p_status, 'by', auth.uid()));
+  insert into public.rollout_log(org_id, rollout_id, kind, detail)
+  values (r.org_id, r.id, 'status',
+          jsonb_build_object('from', r.status, 'to', p_status, 'by', auth.uid()));
   return jsonb_build_object('ok', true, 'status', p_status);
 end;
 $$;
@@ -212,18 +227,20 @@ language plpgsql
 security definer
 set search_path = public
 as $$
-declare v_org uuid := public.rollout_my_org();
+declare
+  v_org uuid;
 begin
-  if v_org is null then return jsonb_build_object('ok', false, 'error', 'forbidden'); end if;
   if p_ring not in ('test', 'early', 'all') then
     return jsonb_build_object('ok', false, 'error', 'bad_request');
+  end if;
+  select org_id into v_org from public.devices where id = p_device;
+  if v_org is null or not public.is_org_member(v_org) then
+    return jsonb_build_object('ok', false, 'error', 'forbidden');
   end if;
   if not exists (select 1 from pg_timezone_names where name = p_tz) then
     return jsonb_build_object('ok', false, 'error', 'bad_timezone');
   end if;
-  update public.devices set ring = p_ring, timezone = p_tz
-   where id = p_device and org_id = v_org;
-  if not found then return jsonb_build_object('ok', false, 'error', 'not_found'); end if;
+  update public.devices set ring = p_ring, timezone = p_tz where id = p_device;
   return jsonb_build_object('ok', true);
 end;
 $$;
@@ -240,7 +257,8 @@ grant execute on function public.device_set_ring_tz(text, text, text) to authent
 -- цель, если ПОРА: время сервера в поясе аппарата внутри окна, сдвинутого
 -- на детерминированную задержку 0..jitter минут от начала окна, и
 -- установленная версия (код после '+' в devices.app_version; нет кода — 0)
--- ниже целевой. Любая ошибка → null: опрос из-за раскатки не ломается.
+-- ниже целевой. Ошибки НЕ глотаются (решение владельца: глотание только в
+-- триггере автопаузы); неизвестный пояс обрабатывается явно (→ UTC).
 create or replace function public.rollout_target(p_device text) returns jsonb
 language plpgsql
 security definer
@@ -301,10 +319,9 @@ begin
     );
   end if;
   return null;
-exception when others then
-  return null;
 end;
 $$;
+-- Никому: вызывается только из device_poll (security definer).
 revoke all on function public.rollout_target(text) from public, anon, authenticated;
 
 -- ---------- device_poll: поле target ----------
@@ -371,49 +388,50 @@ end;
 $function$;
 
 -- ---------- Автопауза ----------
--- После каждой вставки в events. Любая ошибка внутри триггера глотается:
--- событие устройства важнее раскатки и не должно пропасть из-за неё.
+-- После каждой вставки в events. Время событий — ТОЛЬКО received_at
+-- (серверное; ts идёт по часам аппарата и ненадёжен, столбца created_at в
+-- events нет). Ошибки здесь глотаются (событие устройства важнее раскатки и
+-- не должно пропасть), НО причина пишется в rollout_log (kind
+-- 'trigger_error'), чтобы тихая поломка была видна.
 create or replace function public.rollout_autopause() returns trigger
 language plpgsql
 security definer
 set search_path = public
 as $$
 declare
-  v_type   text := new.type;
-  v_data   jsonb := coalesce(to_jsonb(new)->'data', '{}'::jsonb);
   v_dev    record;
   v_reason text;
   v_n      int;
   r        record;
 begin
-  if v_type not in ('update_rolled_back', 'update_failed') then
+  if new.type not in ('update_rolled_back', 'update_failed') then
     return new;
   end if;
 
   select id, org_id, ring into v_dev from public.devices where id = new.device_id;
   if not found then return new; end if;
 
-  if v_type = 'update_rolled_back' then
-    if coalesce(v_data->>'automatic', '') <> 'true' then return new; end if;
+  if new.type = 'update_rolled_back' then
+    if coalesce(new.data->>'automatic', '') <> 'true' then return new; end if;
     -- раскатки кольца этого аппарата, у которых версия релиза = to_version
     for r in
       select ro.id from public.rollouts ro
         join public.app_releases ar on ar.id = ro.release_id
        where ro.org_id = v_dev.org_id and ro.ring = v_dev.ring
-         and ro.status = 'active' and ar.version_name = v_data->>'to_version'
+         and ro.status = 'active' and ar.version_name = new.data->>'to_version'
     loop
       update public.rollouts
          set status = 'paused', pause_reason = 'auto_rollback:' || v_dev.id, updated_at = now()
        where id = r.id;
-      insert into public.rollout_log(rollout_id, kind, detail)
-      values (r.id, 'paused_auto',
+      insert into public.rollout_log(org_id, rollout_id, kind, detail)
+      values (v_dev.org_id, r.id, 'paused_auto',
               jsonb_build_object('reason', 'auto_rollback', 'device', v_dev.id));
     end loop;
     return new;
   end if;
 
-  -- update_failed: исключения (не ошибки установки)
-  v_reason := coalesce(v_data->>'reason', '');
+  -- update_failed: исключения (это не ошибки установки)
+  v_reason := coalesce(new.data->>'reason', '');
   if v_reason = 'busy' or v_reason like 'busy:%'
      or v_reason = 'not_newer'
      or v_reason like 'rate_limited%'
@@ -431,28 +449,38 @@ begin
       from public.events e
       join public.devices d on d.id = e.device_id
      where e.type = 'update_failed'
-       and e.created_at >= r.created_at
+       and e.received_at >= r.created_at
        and d.org_id = v_dev.org_id and d.ring = v_dev.ring
-       and coalesce(to_jsonb(e)->'data'->>'reason', '') not in
+       and coalesce(e.data->>'reason', '') not in
            ('busy', 'not_newer', 'download_failed', 'no_space')
-       and coalesce(to_jsonb(e)->'data'->>'reason', '') not like 'busy:%'
-       and coalesce(to_jsonb(e)->'data'->>'reason', '') not like 'rate_limited%'
-       and coalesce(to_jsonb(e)->'data'->>'reason', '') not like 'url_failed%';
+       and coalesce(e.data->>'reason', '') not like 'busy:%'
+       and coalesce(e.data->>'reason', '') not like 'rate_limited%'
+       and coalesce(e.data->>'reason', '') not like 'url_failed%';
     if v_n >= 2 then
       update public.rollouts
          set status = 'paused', pause_reason = 'update_failed:' || v_n || ' devices',
              updated_at = now()
        where id = r.id;
-      insert into public.rollout_log(rollout_id, kind, detail)
-      values (r.id, 'paused_auto',
+      insert into public.rollout_log(org_id, rollout_id, kind, detail)
+      values (v_dev.org_id, r.id, 'paused_auto',
               jsonb_build_object('reason', 'update_failed', 'devices', v_n));
     end if;
   end loop;
   return new;
 exception when others then
+  -- событие не теряем, но поломку оставляем следом
+  begin
+    insert into public.rollout_log(org_id, kind, detail)
+    values (new.org_id, 'trigger_error',
+            jsonb_build_object('error', sqlerrm, 'sqlstate', sqlstate,
+                               'event_type', new.type, 'device', new.device_id));
+  exception when others then
+    null;
+  end;
   return new;
 end;
 $$;
+-- Триггерная функция вызывается только триггером: execute никому.
 revoke all on function public.rollout_autopause() from public, anon, authenticated;
 
 drop trigger if exists rollout_autopause_trg on public.events;
@@ -469,7 +497,7 @@ select
   r.id                                  as rollout_id,
   r.status                              as rollout_status,
   d.id                                  as device_id,
-  coalesce(to_jsonb(d)->>'name', d.id)  as name,
+  d.name                                as name,
   coalesce(
     nullif(substring(d.app_version from '\+([0-9]+)$'), '')::int, 0
   )                                     as installed_code,

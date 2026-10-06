@@ -1,23 +1,23 @@
 -- ============================================================
--- Проверка прав R3 (раскатки по кольцам), по образцу rls_app_releases.sql.
+-- Проверка прав R3 (раскатки по кольцам) на РЕАЛЬНОЙ схеме
+-- (org_members + is_org_member). По образцу rls_app_releases.sql.
 -- НЕ применять к рабочей базе: запускать на копии/тестовом проекте под
 -- полными правами (SQL Editor). Всё в одной транзакции, в конце rollback.
 --
--- Перед запуском заменить:
---   <USER_A_UUID>   пользователь организации A (у неё есть устройство)
---   <USER_B_UUID>   пользователь ДРУГОЙ организации B (тоже с устройством)
---   <RELEASE_UUID>  id любой строки app_releases
---   <DEVICE_A_ID>   id устройства организации A
+-- Что подставить (UUID — из auth.users):
+--   <MEMBER_UUID>     пользователь, который состоит РОВНО в одной организации
+--                     (строка в org_members) — владелец устройства <DEVICE_ID>
+--   <NONMEMBER_UUID>  пользователь БЕЗ членства в этой организации (другая
+--                     организация или вообще без org_members)
+--   <RELEASE_UUID>    id любой строки app_releases
+--   <DEVICE_ID>       id устройства организации участника
 -- Каждая проверка пишет в «Messages» строку ok или ОШИБКА.
--- ВАЖНО: пока в rollout_my_org() не подставлен настоящий запрос членства,
--- функции панели отвечают 'forbidden' — проверки «своя организация»
--- покажут ОШИБКА, это ожидаемо (см. комментарий в миграции).
 -- ============================================================
 begin;
 
--- ---------- authenticated: прямая запись в таблицы запрещена ----------
+-- ---------- участник: прямая запись в таблицы запрещена ----------
 select set_config('request.jwt.claims',
-  '{"sub":"<USER_A_UUID>","role":"authenticated"}', true);
+  '{"sub":"<MEMBER_UUID>","role":"authenticated"}', true);
 set local role authenticated;
 
 do $$ begin
@@ -43,58 +43,96 @@ exception when insufficient_privilege then
 end $$;
 
 do $$ begin
-  insert into public.rollout_log(rollout_id, kind) values (gen_random_uuid(), 'x');
+  insert into public.rollout_log(kind) values ('x');
   raise notice 'ОШИБКА: authenticated смог писать в rollout_log';
 exception when insufficient_privilege then
   raise notice 'ok: запись в rollout_log запрещена';
 end $$;
 
--- ---------- функции: своя организация работает ----------
+-- ---------- участник: функции работают для своей организации ----------
 do $$
-declare r jsonb; v_id uuid;
+declare r jsonb;
 begin
   r := public.rollout_create('<RELEASE_UUID>', 'test');
   if (r->>'ok')::boolean then
-    v_id := (r->>'id')::uuid;
-    raise notice 'ok: rollout_create отработал, статус %', r->>'status';
-    r := public.rollout_set_status(v_id, 'active');
-    raise notice 'rollout_set_status active: %', r;
-    r := public.rollout_set_status(v_id, 'done');
-    raise notice 'rollout_set_status done: %', r;
+    perform set_config('rt.rollout', r->>'id', true);
+    raise notice 'ok: участник создал раскатку, статус %', r->>'status';
   else
-    raise notice 'ОШИБКА: rollout_create отказал: % (если forbidden — не подставлен rollout_my_org)', r;
+    raise notice 'ОШИБКА: rollout_create участника отказал: %', r;
   end if;
 end $$;
 
 do $$
-declare r jsonb;
+declare r jsonb; v uuid := nullif(current_setting('rt.rollout', true), '')::uuid;
 begin
-  r := public.device_set_ring_tz('<DEVICE_A_ID>', 'early', 'Europe/Tallinn');
-  raise notice 'device_set_ring_tz своё устройство: %', r;
-  r := public.device_set_ring_tz('<DEVICE_A_ID>', 'early', 'Nowhere/Nothing');
-  if r->>'error' = 'bad_timezone' then raise notice 'ok: неверный пояс отклонён';
-  else raise notice 'ОШИБКА: неверный пояс принят: %', r; end if;
+  r := public.rollout_set_status(v, 'active');
+  if (r->>'ok')::boolean then raise notice 'ok: paused -> active'; else raise notice 'ОШИБКА: %', r; end if;
+  r := public.rollout_set_status(v, 'paused');
+  if (r->>'ok')::boolean then raise notice 'ok: active -> paused'; else raise notice 'ОШИБКА: %', r; end if;
+  r := public.rollout_set_status(v, 'done');
+  if r->>'error' = 'bad_transition' then raise notice 'ok: paused -> done запрещён'; else raise notice 'ОШИБКА: %', r; end if;
 end $$;
-
--- ---------- чужая организация: функции отказывают ----------
-reset role;
-select set_config('request.jwt.claims',
-  '{"sub":"<USER_B_UUID>","role":"authenticated"}', true);
-set local role authenticated;
 
 do $$
 declare r jsonb;
 begin
-  r := public.device_set_ring_tz('<DEVICE_A_ID>', 'all', 'UTC');
-  if (r->>'ok')::boolean then raise notice 'ОШИБКА: B изменил устройство организации A';
-  else raise notice 'ok: B не может менять устройство A (%)', r->>'error'; end if;
+  r := public.device_set_ring_tz('<DEVICE_ID>', 'early', 'Europe/Tallinn');
+  if (r->>'ok')::boolean then raise notice 'ok: участник назначил кольцо и пояс'; else raise notice 'ОШИБКА: %', r; end if;
+  r := public.device_set_ring_tz('<DEVICE_ID>', 'early', 'Nowhere/Nothing');
+  if r->>'error' = 'bad_timezone' then raise notice 'ok: неверный пояс отклонён'; else raise notice 'ОШИБКА: %', r; end if;
 end $$;
 
 do $$
 declare n int;
 begin
-  select count(*) into n from public.rollouts;   -- RLS: только своя организация
-  raise notice 'B видит раскаток: % (раскаток A быть не должно)', n;
+  select count(*) into n from public.rollouts;
+  if n >= 1 then raise notice 'ok: участник видит свои раскатки (%)', n; else raise notice 'ОШИБКА: участник не видит свою раскатку'; end if;
+  select count(*) into n from public.rollout_log;
+  if n >= 1 then raise notice 'ok: участник видит журнал (%)', n; else raise notice 'ОШИБКА: журнал пуст для участника'; end if;
+end $$;
+
+-- ---------- НЕ участник: не видит и не меняет ничего ----------
+reset role;
+select set_config('request.jwt.claims',
+  '{"sub":"<NONMEMBER_UUID>","role":"authenticated"}', true);
+set local role authenticated;
+
+do $$
+declare n int;
+begin
+  select count(*) into n from public.rollouts;
+  if n = 0 then raise notice 'ok: не участник не видит раскатки'; else raise notice 'ОШИБКА: не участник видит раскаток: %', n; end if;
+  select count(*) into n from public.rollout_log;
+  if n = 0 then raise notice 'ok: не участник не видит журнал'; else raise notice 'ОШИБКА: не участник видит записей журнала: %', n; end if;
+  select count(*) into n from public.rollout_progress;
+  if n = 0 then raise notice 'ok: не участник не видит rollout_progress'; else raise notice 'ОШИБКА: не участник видит строк прогресса: %', n; end if;
+end $$;
+
+do $$
+declare r jsonb; v uuid := nullif(current_setting('rt.rollout', true), '')::uuid;
+begin
+  r := public.rollout_set_status(v, 'active');
+  if r->>'error' = 'forbidden' then raise notice 'ok: не участник не меняет статус (forbidden)'; else raise notice 'ОШИБКА: %', r; end if;
+  r := public.rollout_set_status(v, 'cancelled');
+  if r->>'error' = 'forbidden' then raise notice 'ok: не участник не отменяет (forbidden)'; else raise notice 'ОШИБКА: %', r; end if;
+end $$;
+
+do $$
+declare r jsonb;
+begin
+  r := public.device_set_ring_tz('<DEVICE_ID>', 'all', 'UTC');
+  if r->>'error' = 'forbidden' then raise notice 'ok: не участник не меняет устройство (forbidden)'; else raise notice 'ОШИБКА: %', r; end if;
+end $$;
+
+do $$
+declare r jsonb;
+begin
+  r := public.rollout_create('<RELEASE_UUID>', 'test');
+  if r->>'error' in ('no_org', 'ambiguous_org') then
+    raise notice 'ok: не участник не создаёт раскатку (%)', r->>'error';
+  else
+    raise notice 'ОШИБКА: не участник создал раскатку или получил другой ответ: %', r;
+  end if;
 end $$;
 
 -- ---------- anon: ничего ----------
@@ -116,17 +154,24 @@ exception when insufficient_privilege then
 end $$;
 
 do $$ begin
-  perform public.device_set_ring_tz('x', 'all', 'UTC');
+  perform public.device_set_ring_tz('<DEVICE_ID>', 'all', 'UTC');
   raise notice 'ОШИБКА: anon вызвал device_set_ring_tz';
 exception when insufficient_privilege then
   raise notice 'ok: anon не вызывает device_set_ring_tz';
 end $$;
 
 do $$ begin
-  perform public.rollout_target('<DEVICE_A_ID>');
+  perform public.rollout_target('<DEVICE_ID>');
   raise notice 'ОШИБКА: anon вызвал rollout_target';
 exception when insufficient_privilege then
   raise notice 'ok: anon не вызывает rollout_target';
+end $$;
+
+do $$ begin
+  perform public.rollout_my_org();
+  raise notice 'ОШИБКА: anon вызвал rollout_my_org';
+exception when insufficient_privilege then
+  raise notice 'ok: anon не вызывает rollout_my_org';
 end $$;
 
 do $$ begin
@@ -137,20 +182,27 @@ exception when insufficient_privilege then
 end $$;
 
 do $$ begin
+  perform 1 from public.rollout_log;
+  raise notice 'ОШИБКА: anon прочитал rollout_log';
+exception when insufficient_privilege then
+  raise notice 'ok: anon не читает rollout_log';
+end $$;
+
+do $$ begin
   perform 1 from public.rollout_progress;
   raise notice 'ОШИБКА: anon прочитал rollout_progress';
 exception when insufficient_privilege then
   raise notice 'ok: anon не читает rollout_progress';
 end $$;
 
--- ---------- authenticated: rollout_target напрямую недоступен ----------
+-- ---------- authenticated: внутренние функции напрямую недоступны ----------
 reset role;
 select set_config('request.jwt.claims',
-  '{"sub":"<USER_A_UUID>","role":"authenticated"}', true);
+  '{"sub":"<MEMBER_UUID>","role":"authenticated"}', true);
 set local role authenticated;
 
 do $$ begin
-  perform public.rollout_target('<DEVICE_A_ID>');
+  perform public.rollout_target('<DEVICE_ID>');
   raise notice 'ОШИБКА: authenticated вызвал rollout_target напрямую';
 exception when insufficient_privilege then
   raise notice 'ok: authenticated не вызывает rollout_target';
@@ -163,14 +215,35 @@ exception when insufficient_privilege then
   raise notice 'ok: authenticated не вызывает rollout_my_org';
 end $$;
 
--- ---------- триггер автопаузы и окно: логика (под полными правами) ----------
+-- ---------- общая проверка: ни одна функция R3 не доступна anon/PUBLIC ----------
 reset role;
 do $$
-declare t jsonb;
+declare f record; bad int := 0;
 begin
-  -- rollout_target для аппарата без активной раскатки → null
-  t := public.rollout_target('<DEVICE_A_ID>');
-  raise notice 'rollout_target без активной раскатки: % (ожидается null)', t;
+  for f in
+    select p.oid::regprocedure as sig
+      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public'
+       and p.proname in ('rollout_create', 'rollout_set_status', 'device_set_ring_tz',
+                         'rollout_target', 'rollout_my_org', 'rollout_autopause')
+  loop
+    if has_function_privilege('anon', f.sig, 'execute')
+       or has_function_privilege('public', f.sig, 'execute') then
+      raise notice 'ОШИБКА: % доступна anon/PUBLIC', f.sig;
+      bad := bad + 1;
+    end if;
+  end loop;
+  if bad = 0 then raise notice 'ok: ни одна функция R3 не доступна anon/PUBLIC'; end if;
 end $$;
+
+-- ---------- триггер автопаузы (под полными правами) ----------
+-- Проверка по received_at: два update_failed с разных устройств кольца
+-- ставят активную раскатку на паузу, а busy/not_newer — нет.
+-- Требует двух устройств в одной организации и кольце; подставьте их id и
+-- раскомментируйте при необходимости:
+--   insert into public.events(device_id, org_id, type, data)
+--   values ('<DEVICE_ID>', '<ORG_ID>', 'update_failed', '{"reason":"sha_mismatch"}');
+-- (events.ts / received_at имеют значения по умолчанию в вашей схеме — иначе
+-- задайте их явно: ts => now(), received_at => now()).
 
 rollback;
