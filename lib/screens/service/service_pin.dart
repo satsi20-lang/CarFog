@@ -6,6 +6,7 @@ import '../../services/cloud_service.dart';
 import '../../services/pin_policy.dart';
 import '../../services/security_service.dart';
 import '../../widgets/lang_switcher.dart';
+import '../../widgets/portrait_ui.dart';
 
 enum _Mode { pin, master, newPin }
 
@@ -37,11 +38,7 @@ class _ServicePinScreenState extends State<ServicePinScreen>
   bool get _isLocked => _lockLeft > Duration.zero;
 
   static const _labels = {
-    'title_pin': {
-      'et': 'Sisesta PIN',
-      'en': 'Enter PIN',
-      'ru': 'Введите PIN',
-    },
+    'title_pin': {'et': 'Sisesta PIN', 'en': 'Enter PIN', 'ru': 'Введите PIN'},
     'title_master': {
       'et': 'Avariikood',
       'en': 'Emergency code',
@@ -74,11 +71,7 @@ class _ServicePinScreenState extends State<ServicePinScreen>
     },
     'back': {'et': 'Tagasi', 'en': 'Back', 'ru': 'Назад'},
     'cancel': {'et': 'Tühista', 'en': 'Cancel', 'ru': 'Отмена'},
-    'title_new_pin': {
-      'et': 'Uus PIN',
-      'en': 'New PIN',
-      'ru': 'Новый PIN',
-    },
+    'title_new_pin': {'et': 'Uus PIN', 'en': 'New PIN', 'ru': 'Новый PIN'},
     'title_confirm_pin': {
       'et': 'Korda PIN-i',
       'en': 'Repeat the PIN',
@@ -287,208 +280,188 @@ class _ServicePinScreenState extends State<ServicePinScreen>
     final lang = notifier.lang;
     final blocked = _mode != _Mode.newPin && _isLocked;
 
+    // Портрет 720x1280 dp: сверху язык, затем заголовок/статус, точки ввода,
+    // крупная клавиатура по центру, внизу ссылки. Не помещается — прокрутка.
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E1A),
       body: SafeArea(
-        child: Row(
-          children: [
-            // Левая колонка: статус/заголовок, переключение режима, отмена
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(PUi.gutter),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Align(
+                alignment: Alignment.centerRight,
+                child: LangSwitcher(
+                  current: lang,
+                  onChanged: notifier.setLanguage,
+                ),
+              ),
+              const SizedBox(height: 48),
+              Text(
+                blocked
+                    ? _t('locked_title', lang)
+                    : _mode == _Mode.pin
+                    ? _t('title_pin', lang)
+                    : _mode == _Mode.master
+                    ? _t('title_master', lang)
+                    : (_newPinStep == 0
+                          ? _t('title_new_pin', lang)
+                          : _t('title_confirm_pin', lang)),
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: blocked ? const Color(0xFFE53935) : Colors.white,
+                  fontSize: PUi.titleSp,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 16),
+              if (blocked)
+                Column(
                   children: [
-                    LangSwitcher(current: lang, onChanged: notifier.setLanguage),
-                    const Spacer(),
                     Text(
-                      blocked
-                          ? _t('locked_title', lang)
-                          : _mode == _Mode.pin
-                              ? _t('title_pin', lang)
-                              : _mode == _Mode.master
-                              ? _t('title_master', lang)
-                              : (_newPinStep == 0
-                                    ? _t('title_new_pin', lang)
-                                    : _t('title_confirm_pin', lang)),
-                      style: TextStyle(
-                        color: blocked ? const Color(0xFFE53935) : Colors.white,
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
+                      _t('locked_sub', lang),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Color(0xFF8899AA),
+                        fontSize: PUi.minBodySp,
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    if (blocked)
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _t('locked_sub', lang),
-                            style: const TextStyle(
-                              color: Color(0xFF8899AA),
-                              fontSize: 14,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            _formatDuration(_lockLeft),
-                            style: const TextStyle(
-                              color: Color(0xFFE53935),
-                              fontSize: 40,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 2,
-                            ),
-                          ),
-                        ],
-                      )
-                    else if (_mode == _Mode.newPin)
-                      Text(
-                        _t('new_pin_hint', lang),
-                        style: const TextStyle(
-                          color: Color(0xFFFFAA00),
-                          fontSize: 13,
-                        ),
-                      )
-                    else if (_mode == _Mode.master)
-                      Text(
-                        _t('master_hint', lang),
-                        style: const TextStyle(
-                          color: Color(0xFF8899AA),
-                          fontSize: 13,
-                        ),
-                      )
-                    else
-                      _AttemptsIndicator(
-                        label: _t('attempts', lang),
-                        left: _attemptsLeft,
-                        total: SecurityService.maxAttempts,
-                        alignStart: true,
-                      ),
-                    const Spacer(),
-                    if (_mode == _Mode.pin)
-                      TextButton(
-                        onPressed: () => setState(() {
-                          _mode = _Mode.master;
-                          _entered = '';
-                        }),
-                        child: Text(
-                          _t('master_link', lang),
-                          style: const TextStyle(
-                            color: Color(0xFF00C6B2),
-                            fontSize: 14,
-                          ),
-                        ),
-                      )
-                    else if (_mode == _Mode.master)
-                      TextButton(
-                        onPressed: () => setState(() {
-                          _mode = _Mode.pin;
-                          _entered = '';
-                        }),
-                        child: Text(
-                          _t('back', lang),
-                          style: const TextStyle(
-                            color: Color(0xFF00C6B2),
-                            fontSize: 14,
-                          ),
-                        ),
-                      ),
-                    TextButton(
-                      onPressed: () => notifier.transition(AppState.standby),
-                      child: Text(
-                        _t('cancel', lang),
-                        style: const TextStyle(
-                          color: Color(0xFF556677),
-                          fontSize: 15,
-                        ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _formatDuration(_lockLeft),
+                      style: const TextStyle(
+                        color: Color(0xFFE53935),
+                        fontSize: 56,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 2,
                       ),
                     ),
                   ],
+                )
+              else if (_mode == _Mode.newPin)
+                Text(
+                  _t('new_pin_hint', lang),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xFFFFAA00),
+                    fontSize: PUi.minBodySp,
+                  ),
+                )
+              else if (_mode == _Mode.master)
+                Text(
+                  _t('master_hint', lang),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xFF8899AA),
+                    fontSize: PUi.minBodySp,
+                  ),
+                )
+              else
+                _AttemptsIndicator(
+                  label: _t('attempts', lang),
+                  left: _attemptsLeft,
+                  total: SecurityService.maxAttempts,
+                  alignStart: false,
                 ),
-              ),
-            ),
-
-            Container(width: 1, color: const Color(0xFF1A2233)),
-
-            // Правая колонка: точки ввода + клавиатура
-            Expanded(
-              child: Center(
-                child: SingleChildScrollView(
-                  child: Column(
+              const SizedBox(height: 40),
+              if (!blocked)
+                AnimatedBuilder(
+                  animation: _shakeAnimation,
+                  builder: (context, child) => Transform.translate(
+                    offset: Offset(_shakeAnimation.value, 0),
+                    child: child,
+                  ),
+                  child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
+                    children: List.generate(_maxLen, (i) {
+                      final filled = i < _entered.length;
+                      return Container(
+                        margin: EdgeInsets.symmetric(
+                          horizontal: _maxLen > 4 ? 8 : 14,
+                        ),
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: filled
+                              ? const Color(0xFF00C6B2)
+                              : Colors.transparent,
+                          border: Border.all(
+                            color: const Color(0xFF00C6B2),
+                            width: 3,
+                          ),
+                        ),
+                      );
+                    }),
+                  ),
+                ),
+              if (!blocked) const SizedBox(height: 40),
+              if (!blocked)
+                SizedBox(
+                  width: 520,
+                  child: GridView.count(
+                    crossAxisCount: 3,
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    mainAxisSpacing: 16,
+                    crossAxisSpacing: 16,
+                    childAspectRatio: 1.45,
                     children: [
-                      if (!blocked)
-                        AnimatedBuilder(
-                          animation: _shakeAnimation,
-                          builder: (context, child) => Transform.translate(
-                            offset: Offset(_shakeAnimation.value, 0),
-                            child: child,
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: List.generate(_maxLen, (i) {
-                              final filled = i < _entered.length;
-                              return Container(
-                                margin: EdgeInsets.symmetric(
-                                  horizontal: _maxLen > 4 ? 5 : 10,
-                                ),
-                                width: 16,
-                                height: 16,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: filled
-                                      ? const Color(0xFF00C6B2)
-                                      : Colors.transparent,
-                                  border: Border.all(
-                                    color: const Color(0xFF00C6B2),
-                                    width: 2,
-                                  ),
-                                ),
-                              );
-                            }),
-                          ),
-                        ),
-
-                      if (!blocked) const SizedBox(height: 24),
-
-                      if (!blocked)
-                        SizedBox(
-                          width: 260,
-                          child: GridView.count(
-                            crossAxisCount: 3,
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            mainAxisSpacing: 10,
-                            crossAxisSpacing: 10,
-                            childAspectRatio: 1.5,
-                            children: [
-                              ...['1', '2', '3', '4', '5', '6', '7', '8', '9']
-                                  .map(
-                                (d) => _DigitButton(
-                                  label: d,
-                                  onTap: () => _onDigit(d),
-                                ),
-                              ),
-                              const SizedBox.shrink(),
-                              _DigitButton(
-                                label: '0',
-                                onTap: () => _onDigit('0'),
-                              ),
-                              _DigitButton(
-                                label: '⌫',
-                                onTap: _onBackspace,
-                                color: const Color(0xFF334455),
-                              ),
-                            ],
-                          ),
-                        ),
+                      ...['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(
+                        (d) => _DigitButton(label: d, onTap: () => _onDigit(d)),
+                      ),
+                      const SizedBox.shrink(),
+                      _DigitButton(label: '0', onTap: () => _onDigit('0')),
+                      _DigitButton(
+                        label: '⌫',
+                        onTap: _onBackspace,
+                        color: const Color(0xFF334455),
+                      ),
                     ],
                   ),
                 ),
+              const SizedBox(height: 40),
+              if (_mode == _Mode.pin)
+                _linkButton(
+                  _t('master_link', lang),
+                  const Color(0xFF00C6B2),
+                  () => setState(() {
+                    _mode = _Mode.master;
+                    _entered = '';
+                  }),
+                )
+              else if (_mode == _Mode.master)
+                _linkButton(
+                  _t('back', lang),
+                  const Color(0xFF00C6B2),
+                  () => setState(() {
+                    _mode = _Mode.pin;
+                    _entered = '';
+                  }),
+                ),
+              _linkButton(
+                _t('cancel', lang),
+                const Color(0xFF8899AA),
+                () => notifier.transition(AppState.standby),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
+      ),
+    );
+  }
+
+  // Ссылка-кнопка внизу экрана PIN: зона касания не меньше 56 dp.
+  Widget _linkButton(String text, Color color, VoidCallback onTap) {
+    return TextButton(
+      onPressed: onTap,
+      style: TextButton.styleFrom(
+        minimumSize: const Size(PUi.minTouch * 3, PUi.minTouch),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(color: color, fontSize: PUi.minBodySp),
       ),
     );
   }
@@ -516,31 +489,33 @@ class _AttemptsIndicator extends StatelessWidget {
     final Color color = left >= 3
         ? const Color(0xFF00C6B2)
         : left == 2
-            ? const Color(0xFFFFAA00)
-            : const Color(0xFFE53935);
+        ? const Color(0xFFFFAA00)
+        : const Color(0xFFE53935);
 
     return Column(
-      crossAxisAlignment:
-          alignStart ? CrossAxisAlignment.start : CrossAxisAlignment.center,
+      crossAxisAlignment: alignStart
+          ? CrossAxisAlignment.start
+          : CrossAxisAlignment.center,
       children: [
         Text(
           '$label: $left',
           style: TextStyle(
             color: color,
-            fontSize: 14,
+            fontSize: PUi.minBodySp,
             fontWeight: FontWeight.bold,
           ),
         ),
         const SizedBox(height: 8),
         Row(
-          mainAxisAlignment:
-              alignStart ? MainAxisAlignment.start : MainAxisAlignment.center,
+          mainAxisAlignment: alignStart
+              ? MainAxisAlignment.start
+              : MainAxisAlignment.center,
           children: List.generate(total, (i) {
             final alive = i < left;
             return Container(
               margin: const EdgeInsets.symmetric(horizontal: 3),
-              width: 26,
-              height: 4,
+              width: 40,
+              height: 6,
               decoration: BoxDecoration(
                 color: alive ? color : const Color(0xFF334455),
                 borderRadius: BorderRadius.circular(2),
@@ -571,11 +546,12 @@ class _DigitButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(
           color: color,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(color: const Color(0xFF2A3A4A)),
         ),
         child: Center(
@@ -583,7 +559,7 @@ class _DigitButton extends StatelessWidget {
             label,
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 22,
+              fontSize: 40,
               fontWeight: FontWeight.bold,
             ),
           ),

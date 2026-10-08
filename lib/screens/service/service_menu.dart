@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../models/app_state.dart';
 import '../../models/bus_map.dart';
 import '../../widgets/lang_switcher.dart';
+import '../../widgets/portrait_ui.dart';
 import 'bus_port_section.dart';
 import '../../models/out_of_service.dart';
 import '../../models/remote_limits.dart';
@@ -1095,22 +1096,31 @@ class _ServiceMenuScreenState extends State<ServiceMenuScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
                 children: [
-                  Text(
-                    t['menu_title']!,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
+                  Expanded(
+                    child: Text(
+                      t['menu_title']!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
-                  const Spacer(),
                   LangSwitcher(current: lang, onChanged: notifier.setLanguage),
                   const SizedBox(width: 16),
                   TextButton(
                     onPressed: () => notifier.transition(AppState.standby),
+                    style: TextButton.styleFrom(
+                      minimumSize: const Size(88, PUi.minTouch),
+                    ),
                     child: Text(
                       t['exit']!,
-                      style: const TextStyle(color: Color(0xFF00C6B2)),
+                      style: const TextStyle(
+                        color: Color(0xFF00C6B2),
+                        fontSize: 18,
+                      ),
                     ),
                   ),
                 ],
@@ -1127,8 +1137,8 @@ class _ServiceMenuScreenState extends State<ServiceMenuScreen> {
                     onTap: () => setState(() => _tab = i),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                        vertical: 12,
-                        horizontal: 18,
+                        vertical: 18,
+                        horizontal: 20,
                       ),
                       decoration: BoxDecoration(
                         border: Border(
@@ -1144,6 +1154,7 @@ class _ServiceMenuScreenState extends State<ServiceMenuScreen> {
                         tabs[i],
                         textAlign: TextAlign.center,
                         style: TextStyle(
+                          fontSize: 18,
                           color: active
                               ? const Color(0xFF00C6B2)
                               : const Color(0xFF556677),

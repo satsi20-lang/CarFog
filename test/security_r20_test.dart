@@ -150,6 +150,17 @@ void main() {
 
   // -------------------------------------------- принудительная смена
   group('экран PIN: принудительная смена', () {
+    // Экран PIN — портретный (SY156-A510, 720x1280 dp): тест в том же размере.
+    final view = TestWidgetsFlutterBinding.instance.platformDispatcher.implicitView!;
+    setUp(() {
+      view.devicePixelRatio = 1.5;
+      view.physicalSize = const Size(1080, 1920);
+    });
+    tearDown(() {
+      view.resetPhysicalSize();
+      view.resetDevicePixelRatio();
+    });
+
     Future<void> settle(WidgetTester t) async {
       for (var i = 0; i < 10; i++) {
         await t.runAsync(() => Future.delayed(const Duration(milliseconds: 40)));

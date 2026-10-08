@@ -85,71 +85,92 @@ class SelectFlavorScreen extends StatelessWidget {
                 // Сетка занимает всё свободное место; не помещается —
                 // прокручивается.
                 Expanded(
-                  child: GridView.builder(
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: _crossAxisCount,
-                      childAspectRatio: 1.15,
-                      crossAxisSpacing: 24,
-                      mainAxisSpacing: 24,
-                    ),
-                    itemCount: kFlavorCount,
-                    itemBuilder: (context, i) {
-                      final available = levels.length > i ? levels[i] : false;
-                      return GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: available
-                            ? () => context.read<AppNotifier>().selectFlavor(i)
-                            : null,
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          decoration: BoxDecoration(
-                            color: available
-                                ? const Color(0xFF2E2E2E)
-                                : const Color(0xFF3A3A3A),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: available
-                                  ? const Color(0xFF2EC4B6)
-                                  : Colors.grey,
-                              width: 2,
-                            ),
-                          ),
-                          child: Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(12),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  FittedBox(
-                                    fit: BoxFit.scaleDown,
-                                    child: Text(
-                                      names.length > i ? names[i] : '',
-                                      style: TextStyle(
-                                        color: available
-                                            ? Colors.white
-                                            : Colors.grey,
-                                        fontSize: PUi.titleSp,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                  if (!available)
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 8),
-                                      child: Text(
-                                        t['unavailable']!,
-                                        textAlign: TextAlign.center,
-                                        style: const TextStyle(
-                                          color: Colors.grey,
-                                          fontSize: PUi.minBodySp,
+                  child: LayoutBuilder(
+                    builder: (context, box) {
+                      const spacing = 24.0;
+                      final rows = (kFlavorCount / _crossAxisCount).ceil();
+                      final cellW =
+                          (box.maxWidth - spacing * (_crossAxisCount - 1)) /
+                          _crossAxisCount;
+                      final cellH =
+                          (box.maxHeight - spacing * (rows - 1)) / rows;
+                      // Карточки растягиваются по высоте на всё свободное
+                      // место (без больших пустых полей), но не становятся
+                      // слишком вытянутыми или приплюснутыми.
+                      final aspect = (cellW / cellH).clamp(0.8, 1.6);
+                      return GridView.builder(
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: _crossAxisCount,
+                          childAspectRatio: aspect,
+                          crossAxisSpacing: spacing,
+                          mainAxisSpacing: spacing,
+                        ),
+                        itemCount: kFlavorCount,
+                        itemBuilder: (context, i) {
+                          final available = levels.length > i
+                              ? levels[i]
+                              : false;
+                          return GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: available
+                                ? () => context
+                                      .read<AppNotifier>()
+                                      .selectFlavor(i)
+                                : null,
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              decoration: BoxDecoration(
+                                color: available
+                                    ? const Color(0xFF2E2E2E)
+                                    : const Color(0xFF3A3A3A),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: available
+                                      ? const Color(0xFF2EC4B6)
+                                      : Colors.grey,
+                                  width: 2,
+                                ),
+                              ),
+                              child: Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        child: Text(
+                                          names.length > i ? names[i] : '',
+                                          style: TextStyle(
+                                            color: available
+                                                ? Colors.white
+                                                : Colors.grey,
+                                            fontSize: PUi.titleSp,
+                                            fontWeight: FontWeight.bold,
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                ],
+                                      if (!available)
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                            top: 8,
+                                          ),
+                                          child: Text(
+                                            t['unavailable']!,
+                                            textAlign: TextAlign.center,
+                                            style: const TextStyle(
+                                              color: Colors.grey,
+                                              fontSize: PUi.minBodySp,
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
-                        ),
+                          );
+                        },
                       );
                     },
                   ),
@@ -158,8 +179,9 @@ class SelectFlavorScreen extends StatelessWidget {
                 SizedBox(
                   height: PUi.buttonH,
                   child: OutlinedButton(
-                    onPressed: () =>
-                        context.read<AppNotifier>().transition(AppState.standby),
+                    onPressed: () => context.read<AppNotifier>().transition(
+                      AppState.standby,
+                    ),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.white70,
                       side: const BorderSide(color: Colors.white38, width: 2),

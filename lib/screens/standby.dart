@@ -157,8 +157,10 @@ class _StandbyScreenState extends State<StandbyScreen> {
       controller.addListener(() {
         if (!mounted || failed || !controller.value.hasError) return;
         failed = true;
-        debugPrint('StandbyScreen: playback error for $path: '
-            '${controller.value.errorDescription}');
+        debugPrint(
+          'StandbyScreen: playback error for $path: '
+          '${controller.value.errorDescription}',
+        );
         _stopVideo();
       });
     } else {
@@ -280,8 +282,9 @@ class _StandbyScreenState extends State<StandbyScreen> {
               top: 0,
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onLongPress: () =>
-                    context.read<AppNotifier>().transition(AppState.servicePinEntry),
+                onLongPress: () => context.read<AppNotifier>().transition(
+                  AppState.servicePinEntry,
+                ),
                 child: const SizedBox(width: 80, height: 80),
               ),
             ),
@@ -295,45 +298,50 @@ class _StandbyScreenState extends State<StandbyScreen> {
     // Портрет 720x1280 dp: крупный QR в верхней половине, название ниже;
     // низ занимает подсказка (Positioned выше). QR масштабируется по
     // ширине экрана, но не больше доступной высоты.
-    return Container(
-      color: const Color(0xFF0B2545),
-      child: LayoutBuilder(
-        builder: (context, c) {
-          final qr = (c.maxWidth * 0.62).clamp(220.0, c.maxHeight * 0.4);
-          return Column(
-            children: [
-              const Spacer(flex: 3),
-              Image.asset(
-                'assets/qr_code.png',
-                width: qr,
-                errorBuilder: (_, _, _) => Icon(
-                  Icons.local_car_wash,
-                  size: qr * 0.6,
-                  color: PUi.accent,
+    return SizedBox.expand(
+      child: ColoredBox(
+        color: const Color(0xFF0B2545),
+        child: LayoutBuilder(
+          builder: (context, c) {
+            final qr = (c.maxWidth * 0.62).clamp(220.0, c.maxHeight * 0.4);
+            return Column(
+              children: [
+                const Spacer(flex: 3),
+                Image.asset(
+                  'assets/qr_code.png',
+                  width: qr,
+                  errorBuilder: (_, _, _) => Icon(
+                    Icons.local_car_wash,
+                    size: qr * 0.6,
+                    color: PUi.accent,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 40),
-              const Text(
-                'CaRFog OÜ',
-                style: TextStyle(
-                  color: PUi.accent,
-                  fontSize: 56,
-                  fontWeight: FontWeight.bold,
+                const SizedBox(height: 40),
+                const Text(
+                  'CaRFog OÜ',
+                  style: TextStyle(
+                    color: PUi.accent,
+                    fontSize: 56,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: PUi.gutter),
-                child: Text(
-                  'СУХОЙ ТУМАН · KUIV UDU · DRY FOG',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white70, fontSize: PUi.minBodySp),
+                const SizedBox(height: 12),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: PUi.gutter),
+                  child: Text(
+                    'СУХОЙ ТУМАН · KUIV UDU · DRY FOG',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: PUi.minBodySp,
+                    ),
+                  ),
                 ),
-              ),
-              const Spacer(flex: 4),
-            ],
-          );
-        },
+                const Spacer(flex: 4),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
