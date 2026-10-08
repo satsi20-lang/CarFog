@@ -14,12 +14,17 @@ class ModbusService {
   // диагностику по логу вместо одной внятной ошибки на экране. code ==
   // 'PORT_BUSY' — сигнал звать именно эту ошибку, а не общую "не открылся".
   static Future<({bool ok, String? code, int? pid})> open({
-    String port = BusParams.port,
+    String? port,
     int baud = BusParams.baud,
   }) async {
+    final usePort = port ?? BusParams.port;
+    if (BusPortPolicy.check(usePort) != BusPortCheck.ok) {
+      debugPrint('ModbusService.open: порт не допускается ($usePort)');
+      return (ok: false, code: 'BAD_PORT', pid: null);
+    }
     try {
       final result = await _channel.invokeMethod<Map>('open', {
-        'port': port,
+        'port': usePort,
         'baud': baud,
       });
       final ok = result?['ok'] as bool? ?? false;
@@ -334,14 +339,16 @@ class ModbusService {
   static Future<int?> baudSweep({
     required int slaveId,
     List<int> bauds = const [4800, 19200, 38400, 115200],
-    String port = BusParams.port,
+    String? port,
     int originalBaud = BusParams.baud,
   }) async {
+    final usePort = port ?? BusParams.port;
+    if (BusPortPolicy.check(usePort) != BusPortCheck.ok) return null;
     try {
       return await _channel.invokeMethod<int>('baudSweep', {
         'slaveId': slaveId,
         'bauds': bauds,
-        'port': port,
+        'port': usePort,
         'originalBaud': originalBaud,
       });
     } catch (e) {
@@ -358,13 +365,15 @@ class ModbusService {
   // после диагностики, иначе приложение останется без связи с боевым
   // модулем на обычных параметрах порта.
   static Future<bool> openWithParity({
-    String port = BusParams.port,
+    String? port,
     int baud = BusParams.baud,
     required String parity,
   }) async {
+    final usePort = port ?? BusParams.port;
+    if (BusPortPolicy.check(usePort) != BusPortCheck.ok) return false;
     try {
       return await _channel.invokeMethod<bool>('openWithParity', {
-            'port': port,
+            'port': usePort,
             'baud': baud,
             'parity': parity,
           }) ??

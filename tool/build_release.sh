@@ -51,6 +51,14 @@ VER_LINE=$(grep '^version:' pubspec.yaml | awk '{print $2}')
 VNAME=${VER_LINE%+*}
 VCODE=${VER_LINE#*+}
 
+# Аппаратный профиль — единственный источник правды lib/models/hardware_profile.dart
+# (свою копию не храним): версии с 1.8.0 собираются только под него.
+HW_FILE=lib/models/hardware_profile.dart
+HW_ID=$(sed -n "s/.*static const String id = '\([^']*\)';.*/\1/p" "$HW_FILE")
+HW_NOTE=$(sed -n "s/.*static const String releaseNote = '\([^']*\)';.*/\1/p" "$HW_FILE")
+[ -n "$HW_ID" ] && [ -n "$HW_NOTE" ] \
+  || { echo "ОШИБКА: не прочитан профиль из $HW_FILE" >&2; exit 4; }
+
 ARGS=(build apk --release --target-platform android-arm64)   # НЕ --split-per-abi: он меняет versionCode
 if [ "$TEST_BUILD" = "1" ]; then
   echo "!!! ТЕСТОВАЯ СБОРКА: без сигнала здоровья, только для проверки отката !!!" >&2
@@ -83,4 +91,13 @@ else
   NAME="carfog-$VNAME-b$VCODE-${SHA:0:12}.apk"
 fi
 cp "$APK" "$OUT_DIR/$NAME"
+# Примечание релиза рядом с файлом (имя APK не меняется: оно хэш-ориентировано).
+{
+  echo "$NAME"
+  echo "версия $VNAME+$VCODE $HW_NOTE"
+  echo "профиль: $HW_ID"
+  [ "$TEST_BUILD" = "1" ] && echo "ТЕСТОВАЯ СБОРКА (без сигнала здоровья)"
+  echo "sha256=$SHA"
+} > "$OUT_DIR/$NAME.note.txt"
+echo "ПРИМЕЧАНИЕ: версия $VNAME+$VCODE $HW_NOTE (профиль $HW_ID)"
 echo "OK  $NAME  sha256=$SHA  size=$SIZE"

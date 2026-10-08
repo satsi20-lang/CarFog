@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_state.dart';
 import '../models/bus_map.dart';
+import '../models/hardware_profile.dart';
 
 class ConfigService {
   static const _key = 'app_config';
@@ -58,6 +59,7 @@ class ConfigService {
     'energyMeterInstalled': c.energyMeterInstalled,
     'coinAcceptorInstalled': c.coinAcceptorInstalled,
     'idlePowerTariffPerKwh': c.idlePowerTariffPerKwh,
+    'busPort': c.busPort,
     'flavorNames': c.flavorNames,
   };
 
@@ -86,6 +88,11 @@ class ConfigService {
     coinAcceptorInstalled: (j['coinAcceptorInstalled'] as bool?) ?? false,
     idlePowerTariffPerKwh:
         (j['idlePowerTariffPerKwh'] as num?)?.toDouble() ?? 0.20,
+    // Сохранённое недопустимое/запрещённое значение не применяется.
+    busPort: BusPortPolicy.check((j['busPort'] as String?) ?? '') ==
+            BusPortCheck.ok
+        ? j['busPort'] as String
+        : HardwareProfile.defaultBusPort,
     flavorNames: (j['flavorNames'] as Map<String, dynamic>?)?.map(
       (k, v) => MapEntry(k, List<String>.from(v)),
     ),

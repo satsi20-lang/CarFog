@@ -7,6 +7,7 @@ import '../services/modbus_service.dart';
 import '../services/session_service.dart';
 import '../widgets/fog_background.dart';
 import '../widgets/lang_switcher.dart';
+import '../widgets/portrait_ui.dart';
 
 const Map<String, Map<String, String>> _i18n = {
   'ru': {
@@ -377,150 +378,137 @@ class _PaymentScreenState extends State<PaymentScreen> {
       backgroundColor: const Color(0xFF1A1A1A),
       body: FogBackground(
         child: SafeArea(
-          child: Row(
-            children: [
-              // Левая колонка: заголовок, аромат, крупная цена
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+          child: Padding(
+            padding: const EdgeInsets.all(PUi.gutter),
+            child: PortraitScroll(
+              // Портрет: сверху заголовок и язык, затем аромат и крупная
+              // цена, ниже прогресс и суммы, внизу таймер и отмена.
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
                     children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              t['title']!,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 22,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
+                      Expanded(
+                        child: Text(
+                          t['title']!,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: PUi.titleSp,
+                            fontWeight: FontWeight.bold,
                           ),
-                          LangSwitcher(
-                            current: lang,
-                            onChanged: notifier.setLanguage,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 24),
-                      Text(
-                        t['flavor']!,
-                        style: const TextStyle(
-                          color: Colors.white60,
-                          fontSize: 15,
                         ),
                       ),
-                      Text(
-                        flavorName,
-                        style: const TextStyle(
-                          color: Color(0xFF2EC4B6),
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const Spacer(),
-                      Text(
-                        '${_euro(_priceCents)} €',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 64,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Text(
-                        t['price']!,
-                        style: const TextStyle(
-                          color: Colors.white60,
-                          fontSize: 15,
-                        ),
-                      ),
-                      const Spacer(),
-                      Text(
-                        _formatTime(_secondsLeft),
-                        style: const TextStyle(
-                          color: Colors.white38,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
+                      LangSwitcher(
+                        current: lang,
+                        onChanged: notifier.setLanguage,
                       ),
                     ],
                   ),
-                ),
-              ),
-
-              // Разделитель
-              Container(width: 1, color: const Color(0xFF2E2E2E)),
-
-              // Правая колонка: прогресс, суммы, инструкция, отмена
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        _coinAcceptorDown && _terminalEnabled
-                            ? t['instruction_coin_down_with_card']!
-                            : _terminalEnabled
-                                ? t['instruction_with_card']!
-                                : t['instruction']!,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 18,
-                        ),
-                      ),
-                      const SizedBox(height: 28),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: LinearProgressIndicator(
-                          value: progress,
-                          minHeight: 24,
-                          backgroundColor: const Color(0xFF2E2E2E),
-                          valueColor: const AlwaysStoppedAnimation<Color>(
-                            Color(0xFF2EC4B6),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      _InfoRow(
-                        label: t['paid']!,
-                        value: '${_euro(_balanceCents)} €',
-                        valueColor: _balanceCents >= _priceCents
-                            ? Colors.greenAccent
-                            : const Color(0xFF2EC4B6),
-                      ),
-                      const SizedBox(height: 10),
-                      _InfoRow(
-                        label: t['remaining']!,
-                        value: '${_euro(remainingCents)} €',
-                      ),
-                      const Spacer(),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 52,
-                        child: OutlinedButton(
-                          onPressed: _cancel,
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.white60,
-                            side: const BorderSide(color: Colors.white30),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          child: Text(
-                            t['cancel']!,
-                            style: const TextStyle(fontSize: 16),
-                          ),
-                        ),
-                      ),
-                    ],
+                  const SizedBox(height: 32),
+                  Text(
+                    t['flavor']!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white60,
+                      fontSize: PUi.minBodySp,
+                    ),
                   ),
-                ),
+                  Text(
+                    flavorName,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Color(0xFF2EC4B6),
+                      fontSize: PUi.titleSp,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '${_euro(_priceCents)} €',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 112,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    t['price']!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white60,
+                      fontSize: PUi.minBodySp,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    _coinAcceptorDown && _terminalEnabled
+                        ? t['instruction_coin_down_with_card']!
+                        : _terminalEnabled
+                            ? t['instruction_with_card']!
+                            : t['instruction']!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: PUi.bodySp + 4,
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: LinearProgressIndicator(
+                      value: progress,
+                      minHeight: 36,
+                      backgroundColor: const Color(0xFF2E2E2E),
+                      valueColor: const AlwaysStoppedAnimation<Color>(
+                        Color(0xFF2EC4B6),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+                  _InfoRow(
+                    label: t['paid']!,
+                    value: '${_euro(_balanceCents)} €',
+                    valueColor: _balanceCents >= _priceCents
+                        ? Colors.greenAccent
+                        : const Color(0xFF2EC4B6),
+                  ),
+                  const SizedBox(height: 12),
+                  _InfoRow(
+                    label: t['remaining']!,
+                    value: '${_euro(remainingCents)} €',
+                  ),
+                  const Spacer(),
+                  Text(
+                    _formatTime(_secondsLeft),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white54,
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    height: PUi.buttonH,
+                    child: OutlinedButton(
+                      onPressed: _cancel,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white70,
+                        side: const BorderSide(color: Colors.white38, width: 2),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      child: Text(
+                        t['cancel']!,
+                        style: const TextStyle(fontSize: 28),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -544,15 +532,17 @@ class _InfoRow extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(
-          label,
-          style: const TextStyle(color: Colors.white60, fontSize: 15),
+        Flexible(
+          child: Text(
+            label,
+            style: const TextStyle(color: Colors.white60, fontSize: PUi.bodySp + 4),
+          ),
         ),
         Text(
           value,
           style: TextStyle(
             color: valueColor,
-            fontSize: 15,
+            fontSize: PUi.bodySp + 8,
             fontWeight: FontWeight.bold,
           ),
         ),

@@ -423,6 +423,21 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
         channel.setMethodCallHandler(this)
     }
 
+    // Порт приходит из Dart аргументом. Молчаливой подстановки чужого порта
+    // нет: без аргумента или с недопустимым/запрещённым узлом — ошибка.
+    private fun requirePort(call: MethodCall, result: MethodChannel.Result): String? {
+        val port = call.argument<String>("port")
+        if (port == null) {
+            result.error("NO_PORT", "port не передан", null)
+            return null
+        }
+        if (!BusPortPolicy.isAllowed(port)) {
+            result.error("BAD_PORT", "порт не допускается", null)
+            return null
+        }
+        return port
+    }
+
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
 
@@ -430,13 +445,13 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
             // каждый вызов "open" безусловно создавал новый ModbusRtu и
             // терял предыдущий БЕЗ close(), не освобождая символьное
             // устройство. При повторных вызовах (в частности, из цикла
-            // StartupService на шаге 37) на одном /dev/ttyS5 копились
+            // StartupService на шаге 37) на одном порту шины копились
             // открытые дескрипторы, и ответ мог вычитываться не из того
             // дескриптора, который отправлял запрос — снаружи это выглядит
             // как "устройство не отвечает", хотя физически (индикатор на
             // модуле мигает) запросы доходят.
             "open" -> {
-                val port = call.argument<String>("port") ?: "/dev/ttyS5"
+                val port = requirePort(call, result) ?: return
                 val baud = call.argument<Int>("baud") ?: 9600
                 val opened = openPort(port, baud, "explicit open() call")
                 result.success(
@@ -651,7 +666,7 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
             // ЛЮБОЙ исход (нашли или нет) не должен оставить приложение без
             // рабочего соединения.
             "baudSweep" -> {
-                val port = call.argument<String>("port") ?: "/dev/ttyS5"
+                val port = requirePort(call, result) ?: return
                 val slaveId = call.argument<Int>("slaveId") ?: 5
                 val bauds = (call.argument<List<Int>>("bauds"))
                     ?: listOf(4800, 19200, 38400, 115200)
@@ -691,7 +706,7 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
             // диагностики, иначе приложение останется без связи с боевым
             // модулем.
             "openWithParity" -> {
-                val port = call.argument<String>("port") ?: "/dev/ttyS5"
+                val port = requirePort(call, result) ?: return
                 val baud = call.argument<Int>("baud") ?: 9600
                 val parity = call.argument<String>("parity") ?: "none"
 

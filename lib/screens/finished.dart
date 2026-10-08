@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../widgets/fog_background.dart';
+import '../widgets/portrait_ui.dart';
 import '../widgets/lang_switcher.dart';
 
 class FinishedScreen extends StatefulWidget {
@@ -87,8 +88,8 @@ class _FinishedScreenState extends State<FinishedScreen>
             children: [
               // Lang switcher
               Positioned(
-                top: 16,
-                right: 16,
+                top: 24,
+                right: 24,
                 child: LangSwitcher(
                   current: lang,
                   onChanged: notifier.setLanguage,
@@ -97,102 +98,107 @@ class _FinishedScreenState extends State<FinishedScreen>
 
               // Main content
               Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    // Animated checkmark
-                    ScaleTransition(
-                      scale: _scaleAnimation,
-                      child: Container(
-                        width: 120,
-                        height: 120,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: const Color(
-                            0xFF00C6B2,
-                          ).withValues(alpha: 0.15),
-                          border: Border.all(
-                            color: const Color(0xFF00C6B2),
-                            width: 3,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.only(top: 112, bottom: 24),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // Animated checkmark
+                      ScaleTransition(
+                        scale: _scaleAnimation,
+                        child: Container(
+                          width: 240,
+                          height: 240,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: const Color(
+                              0xFF00C6B2,
+                            ).withValues(alpha: 0.15),
+                            border: Border.all(
+                              color: const Color(0xFF00C6B2),
+                              width: 4,
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.check_rounded,
+                            color: Color(0xFF00C6B2),
+                            size: 144,
                           ),
                         ),
-                        child: const Icon(
-                          Icons.check_rounded,
-                          color: Color(0xFF00C6B2),
-                          size: 72,
-                        ),
                       ),
-                    ),
 
-                    const SizedBox(height: 32),
+                      const SizedBox(height: 48),
 
-                    // Title
-                    Text(
-                      _t('title', lang),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 0.5,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    // Subtitle
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 40),
-                      child: Text(
-                        _t('subtitle', lang),
+                      // Title
+                      Text(
+                        _t('title', lang),
                         style: const TextStyle(
-                          color: Color(0xFF8899AA),
-                          fontSize: 16,
-                          height: 1.5,
+                          color: Colors.white,
+                          fontSize: 48,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.5,
                         ),
                         textAlign: TextAlign.center,
                       ),
-                    ),
 
-                    const SizedBox(height: 48),
+                      const SizedBox(height: 24),
 
-                    // Countdown
-                    Column(
-                      children: [
-                        Text(
-                          _t('returning', lang),
-                          style: const TextStyle(
-                            color: Color(0xFF556677),
-                            fontSize: 14,
-                          ),
+                      // Subtitle
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: PUi.gutter,
                         ),
-                        const SizedBox(height: 8),
-                        Container(
-                          width: 56,
-                          height: 56,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: const Color(
-                                0xFF00C6B2,
-                              ).withValues(alpha: 0.4),
-                              width: 2,
+                        child: Text(
+                          _t('subtitle', lang),
+                          style: const TextStyle(
+                            color: Color(0xFF8899AA),
+                            fontSize: PUi.bodySp + 2,
+                            height: 1.5,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+
+                      const SizedBox(height: 64),
+
+                      // Countdown
+                      Column(
+                        children: [
+                          Text(
+                            _t('returning', lang),
+                            style: const TextStyle(
+                              color: Color(0xFF8899AA),
+                              fontSize: PUi.minBodySp,
                             ),
                           ),
-                          child: Center(
-                            child: Text(
-                              '$_secondsLeft${_t('sec', lang)}',
-                              style: const TextStyle(
-                                color: Color(0xFF00C6B2),
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
+                          const SizedBox(height: 12),
+                          Container(
+                            width: 96,
+                            height: 96,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: const Color(
+                                  0xFF00C6B2,
+                                ).withValues(alpha: 0.4),
+                                width: 2,
+                              ),
+                            ),
+                            child: Center(
+                              child: Text(
+                                '$_secondsLeft${_t('sec', lang)}',
+                                style: const TextStyle(
+                                  color: Color(0xFF00C6B2),
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],

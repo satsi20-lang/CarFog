@@ -13,6 +13,7 @@ import '../services/out_of_service_service.dart';
 import '../services/session_service.dart';
 import '../widgets/fog_background.dart';
 import '../widgets/lang_switcher.dart';
+import '../widgets/portrait_ui.dart';
 
 const Map<String, Map<String, String>> i18n = {
   'ru': {
@@ -610,146 +611,131 @@ class _TreatingScreenState extends State<TreatingScreen>
             paintBase: false,
             intensity: _isBlinking ? 0 : 0.14,
             child: SafeArea(
-              child: Row(
-                children: [
-                  // Левая колонка: заголовок, аромат, индикатор фаз
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+              child: Padding(
+                padding: const EdgeInsets.all(PUi.gutter),
+                child: PortraitScroll(
+                  // Портрет: сверху заголовок/язык и аромат, в середине
+                  // крупный таймер с прогрессом, ниже индикатор фаз и отмена.
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
                         children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  title,
-                                  style: TextStyle(
-                                    color: titleColor,
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                              LangSwitcher(
-                                current: lang,
-                                onChanged: notifier.setLanguage,
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            subtitle,
-                            style: const TextStyle(
-                              color: Colors.white60,
-                              fontSize: 13,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            '${t['flavor']!}: $flavorName',
-                            style: const TextStyle(
-                              color: Color(0xFF2EC4B6),
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const Spacer(),
-                          // Индикатор текущей фазы
-                          Row(
-                            children: [
-                              _PhaseIndicator(
-                                active: _phase == _Phase.compressor,
-                                done: _phase != _Phase.compressor,
-                                label: '1',
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Container(
-                                  height: 2,
-                                  color: Colors.white24,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              _PhaseIndicator(
-                                active: _phase == _Phase.treating,
-                                done: _phase == _Phase.shutdown,
-                                label: '2',
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Container(
-                                  height: 2,
-                                  color: Colors.white24,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              _PhaseIndicator(
-                                active: _phase == _Phase.shutdown,
-                                done: false,
-                                label: '3',
-                              ),
-                            ],
-                          ),
-                          if (_phase != _Phase.shutdown) ...[
-                            const SizedBox(height: 20),
-                            SizedBox(
-                              width: double.infinity,
-                              height: 48,
-                              child: OutlinedButton(
-                                onPressed: _onCancel,
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: Colors.white70,
-                                  side: const BorderSide(color: Colors.white38),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                ),
-                                child: Text(t['cancel']!),
+                          Expanded(
+                            child: Text(
+                              title,
+                              style: TextStyle(
+                                color: titleColor,
+                                fontSize: PUi.titleSp,
+                                fontWeight: FontWeight.bold,
                               ),
                             ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-
-                  Container(width: 1, color: const Color(0xFF2E2E2E)),
-
-                  // Правая колонка: большой таймер + прогресс-бар
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            '$_secondsLeft ${t['seconds']!}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 72,
-                              fontWeight: FontWeight.bold,
-                            ),
                           ),
-                          const SizedBox(height: 16),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(10),
-                            child: LinearProgressIndicator(
-                              value: _progress,
-                              minHeight: 24,
-                              backgroundColor: const Color(0xFF2E2E2E),
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                _phase == _Phase.treating
-                                    ? const Color(0xFFFF3333)
-                                    : const Color(0xFF2EC4B6),
-                              ),
-                            ),
+                          LangSwitcher(
+                            current: lang,
+                            onChanged: notifier.setLanguage,
                           ),
                         ],
                       ),
-                    ),
+                      const SizedBox(height: 12),
+                      Text(
+                        subtitle,
+                        style: const TextStyle(
+                          color: Colors.white60,
+                          fontSize: PUi.minBodySp,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Text(
+                        '${t['flavor']!}: $flavorName',
+                        style: const TextStyle(
+                          color: Color(0xFF2EC4B6),
+                          fontSize: PUi.bodySp + 4,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const Spacer(),
+                      Center(
+                        child: Text(
+                          '$_secondsLeft ${t['seconds']!}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 112,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: LinearProgressIndicator(
+                          value: _progress,
+                          minHeight: 40,
+                          backgroundColor: const Color(0xFF2E2E2E),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            _phase == _Phase.treating
+                                ? const Color(0xFFFF3333)
+                                : const Color(0xFF2EC4B6),
+                          ),
+                        ),
+                      ),
+                      const Spacer(),
+                      // Индикатор текущей фазы
+                      Row(
+                        children: [
+                          _PhaseIndicator(
+                            active: _phase == _Phase.compressor,
+                            done: _phase != _Phase.compressor,
+                            label: '1',
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Container(height: 3, color: Colors.white24),
+                          ),
+                          const SizedBox(width: 12),
+                          _PhaseIndicator(
+                            active: _phase == _Phase.treating,
+                            done: _phase == _Phase.shutdown,
+                            label: '2',
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Container(height: 3, color: Colors.white24),
+                          ),
+                          const SizedBox(width: 12),
+                          _PhaseIndicator(
+                            active: _phase == _Phase.shutdown,
+                            done: false,
+                            label: '3',
+                          ),
+                        ],
+                      ),
+                      if (_phase != _Phase.shutdown) ...[
+                        const SizedBox(height: 28),
+                        SizedBox(
+                          height: PUi.buttonH,
+                          child: OutlinedButton(
+                            onPressed: _onCancel,
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.white70,
+                              side: const BorderSide(
+                                color: Colors.white38,
+                                width: 2,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                            child: Text(
+                              t['cancel']!,
+                              style: const TextStyle(fontSize: 28),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ),
@@ -782,8 +768,8 @@ class _PhaseIndicator extends StatelessWidget {
     }
 
     return Container(
-      width: 36,
-      height: 36,
+      width: 64,
+      height: 64,
       decoration: BoxDecoration(color: color, shape: BoxShape.circle),
       child: Center(
         child: Text(
@@ -791,7 +777,7 @@ class _PhaseIndicator extends StatelessWidget {
           style: const TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.bold,
-            fontSize: 16,
+            fontSize: 28,
           ),
         ),
       ),

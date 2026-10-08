@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/config_service.dart';
 import '../services/modbus_service.dart';
 import 'bus_map.dart';
+import 'hardware_profile.dart';
 import 'out_of_service.dart';
 
 // Активное количество ароматов на этом конкретном аппарате: столько
@@ -76,6 +77,12 @@ class AppConfig {
   // месяц, это пара евро — цифра для оператора, не для ценообразования.
   double idlePowerTariffPerKwh;
 
+  // Порт шины RS485 (настройка, только по указанию техподдержки; см.
+  // BusPortPolicy в bus_map.dart: запрещённые узлы и формат). Вступает в силу
+  // при перезапуске приложения. Заводская запись и удалённые команды его
+  // не трогают.
+  String busPort;
+
   Map<String, List<String>> flavorNames;
 
   AppConfig({
@@ -103,6 +110,7 @@ class AppConfig {
     this.energyMeterInstalled = false,
     this.coinAcceptorInstalled = false,
     this.idlePowerTariffPerKwh = 0.20,
+    this.busPort = HardwareProfile.defaultBusPort,
     Map<String, List<String>>? flavorNames,
   }) : flavorNames =
            flavorNames ??
@@ -161,6 +169,7 @@ class AppConfig {
     bool? energyMeterInstalled,
     bool? coinAcceptorInstalled,
     double? idlePowerTariffPerKwh,
+    String? busPort,
     Map<String, List<String>>? flavorNames,
   }) {
     return AppConfig(
@@ -191,6 +200,7 @@ class AppConfig {
           coinAcceptorInstalled ?? this.coinAcceptorInstalled,
       idlePowerTariffPerKwh:
           idlePowerTariffPerKwh ?? this.idlePowerTariffPerKwh,
+      busPort: busPort ?? this.busPort,
       flavorNames: flavorNames ?? this.flavorNames,
     );
   }
@@ -210,6 +220,8 @@ class AppConfig {
       'flavor_count': kFlavorCount,
       'flavor_names_ru': flavorNames['ru']?.take(kFlavorCount).toList() ?? [],
       'kiosk_mode_enabled': kioskModeEnabled,
+      'bus_port': busPort,
+      'hardware_profile': HardwareProfile.id,
     };
   }
 }

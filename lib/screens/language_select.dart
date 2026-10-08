@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../widgets/fog_background.dart';
+import '../widgets/portrait_ui.dart';
 
 class LanguageSelectScreen extends StatelessWidget {
   const LanguageSelectScreen({super.key});
@@ -19,16 +20,16 @@ class LanguageSelectScreen extends StatelessWidget {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: Colors.white,
-                  fontSize: 22,
+                  fontSize: PUi.titleSp,
                   fontWeight: FontWeight.bold,
-                  height: 1.6,
+                  height: 1.5,
                 ),
               ),
-              const SizedBox(height: 60),
+              const SizedBox(height: 72),
               _LangButton(label: 'Eesti', lang: 'et'),
-              const SizedBox(height: 20),
+              const SizedBox(height: 28),
               _LangButton(label: 'English', lang: 'en'),
-              const SizedBox(height: 20),
+              const SizedBox(height: 28),
               _LangButton(label: 'Русский', lang: 'ru'),
             ],
           ),
@@ -46,8 +47,8 @@ class _LangButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 280,
-      height: 72,
+      width: 520,
+      height: PUi.buttonH + 16,
       child: ElevatedButton(
         onPressed: () {
           final notifier = context.read<AppNotifier>();
@@ -58,10 +59,10 @@ class _LangButton extends StatelessWidget {
           backgroundColor: const Color(0xFF2E2E2E),
           foregroundColor: Colors.white,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-            side: const BorderSide(color: Color(0xFF2EC4B6), width: 1.5),
+            borderRadius: BorderRadius.circular(14),
+            side: const BorderSide(color: Color(0xFF2EC4B6), width: 2),
           ),
-          textStyle: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          textStyle: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
         ),
         child: Text(label),
       ),

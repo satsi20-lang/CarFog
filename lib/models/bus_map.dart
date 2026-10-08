@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'app_state.dart' show AppConfig;
+import 'hardware_profile.dart';
 
 // ============================================================
 // КАРТА ШИНЫ MODBUS И КАНАЛОВ — единственный источник правды.
@@ -24,14 +26,55 @@ import 'app_state.dart' show AppConfig;
 // ------------------------------------------------------------
 // ШИНА — ПОДТВЕРЖДЕНО 27.09.2026
 // ------------------------------------------------------------
+// Допустимые узлы шины. Запрещённые узлы НЕЛЬЗЯ открывать никогда, даже если
+// выбраны вручную (зеркало — android/.../BusPortPolicy.kt):
+//   /dev/ttyS1            — на Syoung занят Bluetooth;
+//   /dev/ttyUSB0..2       — USB-модем 4G (Quectel).
+enum BusPortCheck { ok, badFormat, forbidden }
+
+class BusPortPolicy {
+  BusPortPolicy._();
+
+  static const List<String> forbidden = [
+    '/dev/ttyS1',
+    '/dev/ttyUSB0',
+    '/dev/ttyUSB1',
+    '/dev/ttyUSB2',
+  ];
+
+  static final RegExp _shape = RegExp(r'^/dev/(ttyS|ttyUSB|ttyACM)[0-9]+$');
+
+  static BusPortCheck check(String port) {
+    if (!_shape.hasMatch(port)) return BusPortCheck.badFormat;
+    if (forbidden.contains(port)) return BusPortCheck.forbidden;
+    return BusPortCheck.ok;
+  }
+}
+
 class BusParams {
   BusParams._();
 
-  static const String port = '/dev/ttyS5';
+  // Порт шины — НАСТРОЙКА (AppConfig.busPort, по умолчанию
+  // HardwareProfile.defaultBusPort), а не константа: на Syoung SY156-A510
+  // UART с номером 5 нет, а узел белого 4-пинового разъёма ещё не определён. Значение
+  // выставляется один раз при старте из конфигурации (applyConfigured) и
+  // меняется только перезапуском приложения. Запрещённые и недопустимые
+  // узлы сюда не попадают никогда: берётся значение по умолчанию.
+  static String _port = HardwareProfile.defaultBusPort;
+  static String get port => _port;
 
-  // /dev/ttyS1 занят системным 4G-модемом — не открывать НИ ПРИ КАКИХ
-  // условиях (подтверждено, что ничего в коде его не трогает).
-  static const String reservedPort4g = '/dev/ttyS1';
+  // Применяет сохранённое значение; недопустимое/запрещённое отклоняется
+  // (возвращает false, порт остаётся прежним).
+  static bool applyConfigured(String? value) {
+    if (value == null || BusPortPolicy.check(value) != BusPortCheck.ok) {
+      return false;
+    }
+    _port = value;
+    return true;
+  }
+
+  @visibleForTesting
+  static void resetPortForTest() => _port = HardwareProfile.defaultBusPort;
 
   static const int baud = 9600;
 

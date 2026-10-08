@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../models/app_state.dart';
 import '../../models/bus_map.dart';
 import '../../widgets/lang_switcher.dart';
+import 'bus_port_section.dart';
 import '../../models/out_of_service.dart';
 import '../../models/remote_limits.dart';
 import '../../services/cloud_service.dart';
@@ -2654,6 +2655,9 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
     return ListView(
       padding: const EdgeInsets.all(24),
       children: [
+        // Порт шины RS485 — настройка (только по указанию техподдержки).
+        const BusPortSection(),
+        const SizedBox(height: 16),
         // Признак работоспособности шины (задача "починить обмен по
         // шине", 5.3) — техник должен видеть текущее состояние, не
         // догадываясь по симптомам вроде "клиенты жалуются, что не

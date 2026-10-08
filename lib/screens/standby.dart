@@ -6,6 +6,7 @@ import 'package:video_player/video_player.dart';
 import '../models/app_state.dart';
 import '../services/storage_service.dart';
 import '../widgets/lang_switcher.dart';
+import '../widgets/portrait_ui.dart';
 
 class StandbyScreen extends StatefulWidget {
   const StandbyScreen({super.key});
@@ -13,6 +14,12 @@ class StandbyScreen extends StatefulWidget {
   @override
   State<StandbyScreen> createState() => _StandbyScreenState();
 }
+
+const _hintStyle = TextStyle(
+  color: Colors.white,
+  fontSize: PUi.bodySp,
+  height: 1.4,
+);
 
 class _StandbyScreenState extends State<StandbyScreen> {
   static const _idleTimeout = Duration(seconds: 30);
@@ -222,13 +229,13 @@ class _StandbyScreenState extends State<StandbyScreen> {
 
             // Переключатель языка в правом верхнем углу
             Positioned(
-              top: 16,
-              right: 16,
+              top: 24,
+              right: 24,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                padding: const EdgeInsets.fromLTRB(8, 8, 16, 8),
                 decoration: BoxDecoration(
                   color: Colors.black54,
-                  borderRadius: BorderRadius.circular(6),
+                  borderRadius: BorderRadius.circular(14),
                 ),
                 child: LangSwitcher(
                   current: notifier.lang,
@@ -239,27 +246,29 @@ class _StandbyScreenState extends State<StandbyScreen> {
 
             // Подсказка внизу
             Positioned(
-              bottom: 40,
-              left: 0,
-              right: 0,
+              bottom: 64,
+              left: PUi.gutter,
+              right: PUi.gutter,
               child: Center(
                 child: Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 12,
+                    horizontal: 32,
+                    vertical: 20,
                   ),
                   decoration: BoxDecoration(
                     color: Colors.black54,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: const Color(0xFF2EC4B6),
-                      width: 1,
-                    ),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: PUi.accent, width: 2),
                   ),
-                  child: const Text(
-                    'Нажмите для начала  ·  Tap to start  ·  Puudutage alustamiseks',
-                    style: TextStyle(color: Colors.white, fontSize: 13),
-                    textAlign: TextAlign.center,
+                  // Три строки одна под другой: в портрете одна длинная строка
+                  // на 22+ sp не помещается в ширину.
+                  child: const Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('Нажмите для начала', style: _hintStyle),
+                      Text('Tap to start', style: _hintStyle),
+                      Text('Puudutage alustamiseks', style: _hintStyle),
+                    ],
                   ),
                 ),
               ),
@@ -283,37 +292,48 @@ class _StandbyScreenState extends State<StandbyScreen> {
   }
 
   Widget _buildPlaceholder() {
+    // Портрет 720x1280 dp: крупный QR в верхней половине, название ниже;
+    // низ занимает подсказка (Positioned выше). QR масштабируется по
+    // ширине экрана, но не больше доступной высоты.
     return Container(
       color: const Color(0xFF0B2545),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Image.asset(
-              'assets/qr_code.png',
-              width: 220,
-              errorBuilder: (_, _, _) => const Icon(
-                Icons.local_car_wash,
-                size: 100,
-                color: Color(0xFF2EC4B6),
+      child: LayoutBuilder(
+        builder: (context, c) {
+          final qr = (c.maxWidth * 0.62).clamp(220.0, c.maxHeight * 0.4);
+          return Column(
+            children: [
+              const Spacer(flex: 3),
+              Image.asset(
+                'assets/qr_code.png',
+                width: qr,
+                errorBuilder: (_, _, _) => Icon(
+                  Icons.local_car_wash,
+                  size: qr * 0.6,
+                  color: PUi.accent,
+                ),
               ),
-            ),
-            const SizedBox(height: 30),
-            const Text(
-              'CaRFog OÜ',
-              style: TextStyle(
-                color: Color(0xFF2EC4B6),
-                fontSize: 32,
-                fontWeight: FontWeight.bold,
+              const SizedBox(height: 40),
+              const Text(
+                'CaRFog OÜ',
+                style: TextStyle(
+                  color: PUi.accent,
+                  fontSize: 56,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'СУХОЙ ТУМАН · KUIV UDU · DRY FOG',
-              style: TextStyle(color: Colors.white70, fontSize: 14),
-            ),
-          ],
-        ),
+              const SizedBox(height: 12),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: PUi.gutter),
+                child: Text(
+                  'СУХОЙ ТУМАН · KUIV UDU · DRY FOG',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white70, fontSize: PUi.minBodySp),
+                ),
+              ),
+              const Spacer(flex: 4),
+            ],
+          );
+        },
       ),
     );
   }
