@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'dart:io';
 import 'models/app_state.dart';
 import 'models/bus_map.dart';
+import 'models/device_spec.dart';
 import 'services/app_log_service.dart';
 import 'screens/language_select.dart';
 import 'screens/standby.dart';
@@ -57,13 +58,32 @@ void main() async {
   ]);
   // Заводская конфигурация облака (файл на общем каталоге): применяется до
   // настройки облачного слоя; остальные настройки не трогаются.
-  final config = await FactoryConfigService.applyOnStartup(await ConfigService.load());
+  final config = await FactoryConfigService.applyOnStartup(
+    await ConfigService.load(),
+  );
+  // Языки из спецификации без перевода: сохраняются, но не показываются;
+  // одна строка в журнал (коды языков — не секрет).
+  final unsupported = config.spec.unsupportedLangs;
+  if (unsupported.isNotEmpty) {
+    AppLog.log(
+      'Spec',
+      'языки без перевода пока не показываются: ${unsupported.join(',')}'
+          '${config.spec.displayLangs.length == 1 && !config.spec.langs.any(DeviceSpec.implemented.contains) ? ' (используется ${DeviceSpec.fallbackLang})' : ''}',
+    );
+  }
   // Порт шины — из настройки (недопустимый/запрещённый узел не применяется).
   if (!BusParams.applyConfigured(config.busPort)) {
-    AppLog.log('Bus', 'порт шины из настроек отклонён, используется ${BusParams.port}');
+    AppLog.log(
+      'Bus',
+      'порт шины из настроек отклонён, используется ${BusParams.port}',
+    );
   }
   // Секреты из настроек не должны попасть в журнал и пакет диагностики.
-  AppLog.setSecrets([config.servicePin, config.cloudToken, config.cloudAnonKey]);
+  AppLog.setSecrets([
+    config.servicePin,
+    config.cloudToken,
+    config.cloudAnonKey,
+  ]);
 
   final notifier = AppNotifier()..config = config;
   // Блок оплаты по конфигурации (термопара/счётчик не отмечены) — до первого

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_state.dart';
+import '../models/device_spec.dart';
 import 'app_log_service.dart';
 import 'cloud_service.dart';
 import 'config_service.dart';
@@ -27,12 +28,16 @@ class FactoryConfig {
   final String cloudUrl;
   final String anonKey;
   final String token;
+  // Спецификация аппарата (ключ "spec" файла); null — в файле её нет (старые
+  // файлы без spec работают как раньше, spec в настройках не трогается).
+  final DeviceSpec? spec;
   const FactoryConfig({
     required this.configId,
     required this.deviceId,
     required this.cloudUrl,
     required this.anonKey,
     required this.token,
+    this.spec,
   });
 }
 
@@ -44,6 +49,7 @@ enum FactoryConfigError {
   badDeviceId,
   notHttps,
   tooLong,
+  badSpec,
 }
 
 class FactoryConfigParse {
@@ -92,6 +98,13 @@ FactoryConfigParse parseFactoryConfig(String text) {
   if (uri == null || uri.scheme != 'https' || uri.host.isEmpty) {
     return const FactoryConfigParse.fail(FactoryConfigError.notHttps);
   }
+  // spec (если есть) проверяется по контракту; неверный — отказ всего файла
+  // (генератор такого не выдаёт; применять половину файла нельзя).
+  DeviceSpec? spec;
+  if (j.containsKey('spec')) {
+    spec = DeviceSpec.tryParse(j['spec']);
+    if (spec == null) return const FactoryConfigParse.fail(FactoryConfigError.badSpec);
+  }
   // Лишние поля игнорируются.
   return FactoryConfigParse.ok(FactoryConfig(
     configId: configId,
@@ -99,6 +112,7 @@ FactoryConfigParse parseFactoryConfig(String text) {
     cloudUrl: url,
     anonKey: key,
     token: token,
+    spec: spec,
   ));
 }
 
@@ -274,13 +288,18 @@ class FactoryConfigService {
     if (fc.configId == last && !_cloudEmpty(current)) {
       return FactoryApplyResult(FactoryApplyStatus.upToDate, current, configId: fc.configId);
     }
-    // Применить: ТОЛЬКО облачные поля, остальные настройки не трогаем.
+    // Применить: ТОЛЬКО облачные поля и (если есть) spec; остальные настройки
+    // (цена, длительность, PIN, названия ароматов, флаги оборудования, порт
+    // шины…) не трогаем.
     final updated = current.copyWith(
       deviceId: fc.deviceId,
       cloudUrl: fc.cloudUrl,
       cloudAnonKey: fc.anonKey,
       cloudToken: fc.token,
       cloudEnabled: true,
+      specPumps: fc.spec?.pumps,
+      specLangs: fc.spec?.langs,
+      specDefaultLang: fc.spec?.defaultLang,
     );
     return FactoryApplyResult(FactoryApplyStatus.applied, updated, configId: fc.configId);
   }

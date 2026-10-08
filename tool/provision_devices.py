@@ -13,14 +13,20 @@
   batch.sql           вставки в devices (с явным кольцом --ring, по умолчанию
                       test) и device_claims (токены и ХЭШИ кодов; открытых кодов
                       нет);
-  labels.csv          device_id и ОТКРЫТЫЙ код — для наклеек;
+  labels.csv          device_id, ОТКРЫТЫЙ код и «подпись» (например «4 насоса ·
+                      ET/EN/RU», только текст для печати) — для наклеек;
   configs/<ID>.json   по ОДНОМУ файлу на аппарат (формат 1: config_id, device_id,
-                      cloud_url, anon_key, token) — для заводской записи
+                      cloud_url, anon_key, token, spec) — для заводской записи
                       (tool/provision_push.sh); config_id у каждого свой
                       (<дата>-<8 hex>), при смене токена выдаётся новый;
   devices.txt         список номеров партии (без секретов).
 Файлы с кодами и токенами — ЧУВСТВИТЕЛЬНЫЕ: права 600 (каталоги 700), хранить
 оффлайн.
+
+Спецификация аппарата (одинакова для всей партии): --pumps 4…10 (по умолчанию 4),
+--langs через запятую (по умолчанию et,en,ru; порядок = порядок на экране выбора),
+--default-lang (по умолчанию первый из --langs). Хранится в devices (spec_*) и
+в файле конфигурации (ключ "spec"); номер аппарата не меняется.
 
 Повторный запуск с теми же номерами отказывает: выданные id записываются в
 provisioning_out/issued_ids.txt (только id, без секретов).
@@ -29,6 +35,8 @@ provisioning_out/issued_ids.txt (только id, без секретов).
   tool/provision_devices.py --org-id <uuid> --prefix CARFOG- --start 100 --count 20 \\
       --cloud-url https://xxxx.supabase.co            # ключ — из PROVISION_ANON_KEY
   tool/provision_devices.py --org-id <uuid> --list ids.txt --cloud-url ...
+  tool/provision_devices.py --org-id <uuid> --prefix CARFOG- --start 200 --count 5 \\
+      --cloud-url https://xxxx.supabase.co --pumps 8 --langs ru,en,de --default-lang ru
 """
 import argparse
 import base64
@@ -51,6 +59,16 @@ RINGS = ("test", "early", "all")
 DEFAULT_RING = "test"
 ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+# Контракт «spec» (единый для базы, генератора, файла и приложения; см.
+# supabase/migrations/20261008000000_r5_spec.sql, lib/models/device_spec.dart).
+LANG_CATALOG = (
+    "bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fr", "ga", "hr", "hu",
+    "it", "lt", "lv", "mt", "nl", "pl", "pt", "ro", "ru", "sk", "sl", "sv", "uk", "no",
+)
+PUMPS_MIN, PUMPS_MAX, DEFAULT_PUMPS = 4, 10, 4
+LANGS_MAX = 24
+DEFAULT_LANGS = ("et", "en", "ru")
+HARDWARE_PROFILE = "sy156-a510"
 OUT_DIR = "provisioning_out"
 REGISTRY = "issued_ids.txt"
 
@@ -82,6 +100,40 @@ def code_hash(salt: str, code: str) -> str:
     return hashlib.sha256((salt + normalize_code(code)).encode("utf-8")).hexdigest()
 
 
+def parse_spec(pumps=DEFAULT_PUMPS, langs=None, default_lang=None) -> dict:
+    """Проверяет параметры спецификации по контракту; возвращает словарь spec.
+
+    langs — строка через запятую или список; пусто → et,en,ru; default_lang
+    пусто → первый из langs."""
+    if isinstance(pumps, bool) or not isinstance(pumps, int) or not PUMPS_MIN <= pumps <= PUMPS_MAX:
+        raise ProvisionError(f"--pumps: целое {PUMPS_MIN}…{PUMPS_MAX}, получено {pumps!r}")
+    if langs is None or langs == "" or langs == []:
+        lst = list(DEFAULT_LANGS)
+    elif isinstance(langs, str):
+        lst = [x.strip() for x in langs.split(",")]
+    else:
+        lst = list(langs)
+    if not 1 <= len(lst) <= LANGS_MAX:
+        raise ProvisionError(f"--langs: от 1 до {LANGS_MAX} кодов, получено {len(lst)}")
+    for code in lst:
+        if code != code.lower() or code not in LANG_CATALOG:
+            raise ProvisionError(
+                f"--langs: недопустимый код {code!r} (нижний регистр, из каталога: {', '.join(LANG_CATALOG)})")
+    if len(set(lst)) != len(lst):
+        raise ProvisionError("--langs: коды языков повторяются")
+    default = lst[0] if default_lang in (None, "") else default_lang
+    if default not in lst:
+        raise ProvisionError(f"--default-lang {default!r} должен входить в --langs ({','.join(lst)})")
+    return {"pumps": pumps, "langs": lst, "default_lang": default, "hardware_profile": HARDWARE_PROFILE}
+
+
+def spec_label(spec: dict) -> str:
+    """Подпись для печати: «4 насоса · ET/EN/RU». Только текст; номер не меняется."""
+    n = spec["pumps"]
+    word = "насоса" if n in (2, 3, 4) else "насосов"
+    return f"{n} {word} · " + "/".join(c.upper() for c in spec["langs"])
+
+
 def new_token() -> str:
     return base64.urlsafe_b64encode(secrets.token_bytes(TOKEN_BYTES)).decode("ascii").rstrip("=")
 
@@ -92,16 +144,20 @@ def new_config_id(today=None) -> str:
     return f"{d}-{secrets.token_hex(4)}"
 
 
-def render_config(item, cloud_url: str, anon_key: str) -> str:
-    """JSON одного аппарата (формат 1) для приложения."""
-    return json.dumps({
+def render_config(item, cloud_url: str, anon_key: str, spec=None) -> str:
+    """JSON одного аппарата (формат 1) для приложения. spec — по контракту
+    (parse_spec); без него ключа "spec" в файле нет (старый формат)."""
+    d = {
         "format": 1,
         "config_id": item["config_id"],
         "device_id": item["id"],
         "cloud_url": cloud_url,
         "anon_key": anon_key,
         "token": item["token"],
-    }, ensure_ascii=False, indent=2) + "\n"
+    }
+    if spec is not None:
+        d["spec"] = spec
+    return json.dumps(d, ensure_ascii=False, indent=2) + "\n"
 
 
 def sql_str(s: str) -> str:
@@ -160,9 +216,11 @@ def generate(ids, org_id: str, cloud_url: str, anon_key: str):
     return items
 
 
-def render_sql(items, org_id: str, stamp: str, ring: str = DEFAULT_RING) -> str:
+def render_sql(items, org_id: str, stamp: str, ring: str = DEFAULT_RING, spec=None) -> str:
     if ring not in RINGS:
         raise ProvisionError(f"--ring: допустимо {', '.join(RINGS)}")
+    spec = spec or parse_spec()
+    langs_sql = "array[" + ", ".join(sql_str(c) for c in spec["langs"]) + "]::text[]"
     lines = [
         f"-- Партия аппаратов {stamp}. Токены и ХЭШИ кодов; открытых кодов здесь нет.",
         "-- Файл чувствителен (токены): хранить оффлайн, в git не добавлять.",
@@ -171,9 +229,11 @@ def render_sql(items, org_id: str, stamp: str, ring: str = DEFAULT_RING) -> str:
     ]
     for it in items:
         lines.append(
-            "insert into public.devices (id, org_id, token, name, ring) values "
+            "insert into public.devices (id, org_id, token, name, ring, spec_pumps, "
+            "spec_langs, spec_default_lang, hardware_profile) values "
             f"({sql_str(it['id'])}, {sql_str(org_id)}, {sql_str(it['token'])}, "
-            f"{sql_str(it['id'])}, {sql_str(ring)});"
+            f"{sql_str(it['id'])}, {sql_str(ring)}, {spec['pumps']}, {langs_sql}, "
+            f"{sql_str(spec['default_lang'])}, {sql_str(spec['hardware_profile'])});"
         )
     for it in items:
         lines.append(
@@ -197,6 +257,13 @@ def run(argv=None, today=None) -> dict:
     p.add_argument("--ring", default=DEFAULT_RING, choices=RINGS,
                    help="кольцо раскатки, записывается в devices.ring явно "
                         "(по умолчанию test: новые аппараты не попадают под боевую раскатку)")
+    p.add_argument("--pumps", type=int, default=DEFAULT_PUMPS,
+                   help=f"число насосов/ароматов {PUMPS_MIN}…{PUMPS_MAX} (по умолчанию {DEFAULT_PUMPS})")
+    p.add_argument("--langs", default=",".join(DEFAULT_LANGS),
+                   help="коды языков через запятую, порядок = порядок на экране выбора "
+                        f"(по умолчанию {','.join(DEFAULT_LANGS)})")
+    p.add_argument("--default-lang", default=None,
+                   help="язык по умолчанию (один из --langs; по умолчанию первый)")
     p.add_argument("--batch", default=None,
                    help="имя партии (каталог provisioning_out/<партия>/); по умолчанию batch_<дата>")
     p.add_argument("--out", default=OUT_DIR)
@@ -209,6 +276,7 @@ def run(argv=None, today=None) -> dict:
     if not args.anon_key:
         raise ProvisionError("публичный ключ не задан (PROVISION_ANON_KEY или --anon-key)")
 
+    spec = parse_spec(args.pumps, args.langs, args.default_lang)
     ids = device_ids(args)
     os.makedirs(args.out, exist_ok=True)
     issued = read_registry(args.out)
@@ -240,18 +308,18 @@ def run(argv=None, today=None) -> dict:
     os.chmod(batch_dir, 0o700)
     os.chmod(cfg_dir, 0o700)
 
-    write_private(sql_path, render_sql(items, args.org_id, stamp, args.ring))
+    write_private(sql_path, render_sql(items, args.org_id, stamp, args.ring, spec))
     import io
     buf = io.StringIO()
     w = csv.writer(buf, lineterminator="\n")
-    w.writerow(["device_id", "claim_code"])
+    w.writerow(["device_id", "claim_code", "подпись"])
     for it in items:
-        w.writerow([it["id"], format_code(it["code"])])
+        w.writerow([it["id"], format_code(it["code"]), spec_label(spec)])
     write_private(csv_path, buf.getvalue())
     cfg_paths = []
     for it in items:
         cp = os.path.join(cfg_dir, f"{it['id']}.json")
-        write_private(cp, render_config(it, args.cloud_url, args.anon_key))
+        write_private(cp, render_config(it, args.cloud_url, args.anon_key, spec))
         cfg_paths.append(cp)
     write_private(list_path, "\n".join(ids) + "\n")
 

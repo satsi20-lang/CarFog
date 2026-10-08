@@ -95,7 +95,7 @@ class ProvisionTest(unittest.TestCase):
             self.assertEqual(len({c["token"] for c in cfg.values()}), 20)
             self.assertEqual(len({c["config_id"] for c in cfg.values()}), 20)
             for c in cfg.values():
-                self.assertEqual(set(c), {"format", "config_id", "device_id", "cloud_url", "anon_key", "token"})
+                self.assertEqual(set(c), {"format", "config_id", "device_id", "cloud_url", "anon_key", "token", "spec"})
                 self.assertEqual(c["format"], 1)
                 self.assertRegex(c["config_id"], r"^\d{4}-\d{2}-\d{2}-[0-9a-f]{8}$")
                 self.assertTrue(c["config_id"].startswith("2026-10-07-"))
@@ -165,14 +165,15 @@ class ProvisionTest(unittest.TestCase):
             devs = [ln for ln in sql.splitlines() if ln.startswith("insert into public.devices")]
             self.assertEqual(len(devs), 3)
             for ln in devs:
-                self.assertIn("(id, org_id, token, name, ring)", ln)
-                self.assertTrue(ln.rstrip().endswith("'test');"), ln)  # по умолчанию test
+                self.assertIn("(id, org_id, token, name, ring, spec_pumps, spec_langs, "
+                              "spec_default_lang, hardware_profile)", ln)
+                self.assertIn(", 'test', ", ln)  # кольцо по умолчанию test
         with tempfile.TemporaryDirectory() as tmp:
             res = run(tmp, "--prefix", "B-", "--start", "1", "--count", "2", "--ring", "early")
             with open(res["files"][0], encoding="utf-8") as f:
                 sql = f.read()
-            self.assertEqual(sql.count("'early');"), 2)
-            self.assertNotIn("'all');", sql)
+            self.assertEqual(sql.count(", 'early', "), 2)
+            self.assertNotIn(", 'all', ", sql)
 
     def test_ring_invalid_refused(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -253,6 +254,107 @@ if cmd == "shell":
         sys.exit(0)
 sys.exit(0)
 """
+
+
+class SpecTest(unittest.TestCase):
+    """Спецификация аппарата (число насосов, языки): контракт, файл, SQL, подпись."""
+
+    def test_defaults(self):
+        sp = pd.parse_spec()
+        self.assertEqual(sp, {"pumps": 4, "langs": ["et", "en", "ru"], "default_lang": "et",
+                              "hardware_profile": "sy156-a510"})
+
+    def test_parse_valid(self):
+        sp = pd.parse_spec(10, "ru,en,de", "en")
+        self.assertEqual((sp["pumps"], sp["langs"], sp["default_lang"]), (10, ["ru", "en", "de"], "en"))
+        # порядок сохраняется, default по умолчанию — первый
+        self.assertEqual(pd.parse_spec(6, "de,fr")["default_lang"], "de")
+        self.assertEqual(pd.parse_spec(4, "no")["langs"], ["no"])
+
+    def test_pumps_bounds(self):
+        for ok in (4, 10):
+            pd.parse_spec(ok)
+        for bad in (3, 11, 0, -1, 4.5, "5", True, None):
+            with self.assertRaises(pd.ProvisionError, msg=repr(bad)):
+                pd.parse_spec(bad)
+
+    def test_langs_invalid(self):
+        for bad in ("xx", "et,xx", "ET", "et,ET", "et,et", "et,,en", " ", "et en"):
+            with self.assertRaises(pd.ProvisionError, msg=repr(bad)):
+                pd.parse_spec(4, bad)
+        # >24 кодов
+        many = [c for c in pd.LANG_CATALOG][:25]
+        with self.assertRaises(pd.ProvisionError):
+            pd.parse_spec(4, ",".join(many))
+        self.assertEqual(len(pd.parse_spec(4, ",".join(many[:24]))["langs"]), 24)
+
+    def test_default_lang_must_be_in_langs(self):
+        with self.assertRaises(pd.ProvisionError):
+            pd.parse_spec(4, "et,en", "ru")
+        with self.assertRaises(pd.ProvisionError):
+            pd.parse_spec(4, "et,en", "EN")
+
+    def test_catalog_has_27_codes(self):
+        self.assertEqual(len(pd.LANG_CATALOG), 27)
+        self.assertEqual(len(set(pd.LANG_CATALOG)), 27)
+        self.assertTrue(all(c == c.lower() and 2 <= len(c) <= 3 for c in pd.LANG_CATALOG))
+
+    def test_label(self):
+        self.assertEqual(pd.spec_label(pd.parse_spec()), "4 насоса · ET/EN/RU")
+        self.assertEqual(pd.spec_label(pd.parse_spec(8, "ru,de")), "8 насосов · RU/DE")
+
+    def test_run_writes_spec_to_sql_config_and_labels(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            res = run(tmp, "--prefix", "S-", "--start", "1", "--count", "2",
+                      "--pumps", "8", "--langs", "ru,en,de", "--default-lang", "en")
+            with open(res["files"][0], encoding="utf-8") as f:
+                sql = f.read()
+            devs = [ln for ln in sql.splitlines() if ln.startswith("insert into public.devices")]
+            self.assertEqual(len(devs), 2)
+            for ln in devs:
+                self.assertIn(", 8, array['ru', 'en', 'de']::text[], 'en', 'sy156-a510');", ln)
+            with open(res["files"][1], encoding="utf-8") as f:
+                rows = list(csv.DictReader(f))
+            self.assertEqual(list(rows[0].keys()), ["device_id", "claim_code", "подпись"])
+            self.assertEqual({r["подпись"] for r in rows}, {"8 насосов · RU/EN/DE"})
+            for cp in res["configs"]:
+                with open(cp, encoding="utf-8") as f:
+                    j = json.load(f)
+                self.assertEqual(j["format"], 1)
+                self.assertEqual(j["spec"], {"pumps": 8, "langs": ["ru", "en", "de"],
+                                             "default_lang": "en", "hardware_profile": "sy156-a510"})
+
+    def test_run_defaults_and_bad_values_refused_without_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            res = run(tmp, "--prefix", "D-", "--start", "1", "--count", "1")
+            with open(res["configs"][0], encoding="utf-8") as f:
+                j = json.load(f)
+            self.assertEqual(j["spec"]["pumps"], 4)
+            self.assertEqual(j["spec"]["langs"], ["et", "en", "ru"])
+        for extra in (["--pumps", "3"], ["--pumps", "11"], ["--langs", "xx"],
+                      ["--langs", "et,et"], ["--langs", "et,en", "--default-lang", "ru"]):
+            with tempfile.TemporaryDirectory() as tmp:
+                with self.assertRaises(pd.ProvisionError, msg=str(extra)):
+                    run(tmp, "--prefix", "B-", "--start", "1", "--count", "1", *extra)
+                self.assertFalse(os.path.exists(os.path.join(tmp, pd.REGISTRY)))  # номера не «сожжены»
+                self.assertFalse(os.path.exists(os.path.join(tmp, "batch_2026-10-07")))
+
+    def test_old_config_without_spec_still_renders(self):
+        item = {"config_id": "2026-10-07-aabbccdd", "id": "X-1", "token": "t"}
+        j = json.loads(pd.render_config(item, URL, KEY))
+        self.assertNotIn("spec", j)
+        self.assertEqual(j["format"], 1)
+
+    def test_sql_has_no_secrets_besides_token_and_matches_db_catalog(self):
+        # каталог кодов генератора совпадает с каталогом в миграции R5
+        here = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(here, "..", "supabase", "migrations", "20261008000000_r5_spec.sql"),
+                  encoding="utf-8") as f:
+            mig = f.read()
+        m = re.search(r"array\[((?:'[a-z]+',?\s*)+)\]::text\[\]", mig)
+        self.assertIsNotNone(m)
+        db_codes = tuple(re.findall(r"'([a-z]+)'", m.group(1)))
+        self.assertEqual(db_codes, pd.LANG_CATALOG)
 
 
 class ScriptsTest(unittest.TestCase):
