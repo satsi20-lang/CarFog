@@ -15,6 +15,7 @@ import '../services/out_of_service_service.dart';
 import '../services/session_service.dart';
 import '../widgets/fog_background.dart';
 import '../widgets/lang_switcher.dart';
+import '../widgets/portrait_ui.dart';
 
 const Map<String, Map<String, String>> i18n = {
   'ru': {
@@ -500,124 +501,112 @@ class _PreparingScreenState extends State<PreparingScreen> {
         // Тёплый акцент — идёт нагрев испарителя (Задача 1.4).
         accentColor: const Color(0xFFFFAA00),
         child: SafeArea(
-          child: Row(
-            children: [
-              // Левая колонка: заголовок, температура, прогресс
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+          child: Padding(
+            padding: const EdgeInsets.all(PUi.gutter),
+            child: PortraitScroll(
+              // Портрет: сверху заголовок/язык и температура с прогрессом,
+              // ниже подсказки для клиента, внизу отмена.
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
                     children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              t['title']!,
-                              style: const TextStyle(
-                                color: Color(0xFFFFAA00),
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                          LangSwitcher(
-                            current: lang,
-                            onChanged: notifier.setLanguage,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        t['subtitle']!,
-                        style: const TextStyle(
-                          color: Colors.white60,
-                          fontSize: 13,
-                        ),
-                      ),
-                      const Spacer(),
-                      Center(
+                      Expanded(
                         child: Text(
-                          '${_currentTemp.toStringAsFixed(0)}°C',
+                          t['title']!,
                           style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 72,
+                            color: Color(0xFFFFAA00),
+                            fontSize: PUi.titleSp,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                       ),
-                      const SizedBox(height: 16),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: LinearProgressIndicator(
-                          value: _progress,
-                          minHeight: 24,
-                          backgroundColor: const Color(0xFF2E2E2E),
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            _progress > 0.9
-                                ? Colors.redAccent
-                                : const Color(0xFFFF3333),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Center(
-                        child: Text(
-                          '${t['target']!} ${_targetTemp.toStringAsFixed(0)}°C',
-                          style: const TextStyle(
-                            color: Colors.white54,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                      const Spacer(),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 52,
-                        child: OutlinedButton(
-                          onPressed: _onCancel,
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFF556677),
-                            side: const BorderSide(color: Color(0xFF556677)),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                          ),
-                          child: Text(t['cancel']!),
-                        ),
+                      LangSwitcher(
+                        current: lang,
+                        onChanged: notifier.setLanguage,
                       ),
                     ],
                   ),
-                ),
-              ),
-
-              Container(width: 1, color: const Color(0xFF2E2E2E)),
-
-              // Правая колонка: инструкции для клиента
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      _HintRow(text: t['hint1']!),
-                      const SizedBox(height: 16),
-                      _HintRow(text: t['hint2']!),
-                      const SizedBox(height: 16),
-                      _HintRow(text: t['hint3']!),
-                      const SizedBox(height: 16),
-                      _HintRow(
-                        text: t['hint4']!.replaceAll(
-                          '{s}',
-                          '${notifier.config.pumpAfterHeaterS}',
+                  const SizedBox(height: 12),
+                  Text(
+                    t['subtitle']!,
+                    style: const TextStyle(
+                      color: Colors.white60,
+                      fontSize: PUi.minBodySp,
+                    ),
+                  ),
+                  const Spacer(),
+                  Center(
+                    child: Text(
+                      '${_currentTemp.toStringAsFixed(0)}°C',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 128,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: LinearProgressIndicator(
+                      value: _progress,
+                      minHeight: 40,
+                      backgroundColor: const Color(0xFF2E2E2E),
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        _progress > 0.9
+                            ? Colors.redAccent
+                            : const Color(0xFFFF3333),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Center(
+                    child: Text(
+                      '${t['target']!} ${_targetTemp.toStringAsFixed(0)}°C',
+                      style: const TextStyle(
+                        color: Colors.white60,
+                        fontSize: PUi.minBodySp,
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
+                  _HintRow(text: t['hint1']!),
+                  const SizedBox(height: 20),
+                  _HintRow(text: t['hint2']!),
+                  const SizedBox(height: 20),
+                  _HintRow(text: t['hint3']!),
+                  const SizedBox(height: 20),
+                  _HintRow(
+                    text: t['hint4']!.replaceAll(
+                      '{s}',
+                      '${notifier.config.pumpAfterHeaterS}',
+                    ),
+                  ),
+                  const Spacer(),
+                  SizedBox(
+                    height: PUi.buttonH,
+                    child: OutlinedButton(
+                      onPressed: _onCancel,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF8899AA),
+                        side: const BorderSide(
+                          color: Color(0xFF8899AA),
+                          width: 2,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
                         ),
                       ),
-                    ],
+                      child: Text(
+                        t['cancel']!,
+                        style: const TextStyle(fontSize: 28),
+                      ),
+                    ),
                   ),
-                ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -634,14 +623,14 @@ class _HintRow extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Icon(Icons.arrow_right, color: Color(0xFF2EC4B6), size: 20),
+        const Icon(Icons.arrow_right, color: Color(0xFF2EC4B6), size: 36),
         const SizedBox(width: 8),
         Expanded(
           child: Text(
             text,
             style: const TextStyle(
               color: Colors.white70,
-              fontSize: 14,
+              fontSize: PUi.minBodySp + 2,
               height: 1.4,
             ),
           ),

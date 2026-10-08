@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../widgets/fog_background.dart';
 import '../widgets/lang_switcher.dart';
+import '../widgets/portrait_ui.dart';
 
 class ErrorScreen extends StatefulWidget {
   const ErrorScreen({super.key});
@@ -208,8 +209,8 @@ class _ErrorScreenState extends State<ErrorScreen>
             children: [
               // Lang switcher
               Positioned(
-                top: 16,
-                right: 16,
+                top: 24,
+                right: 24,
                 child: LangSwitcher(
                   current: lang,
                   onChanged: notifier.setLanguage,
@@ -237,8 +238,8 @@ class _ErrorScreenState extends State<ErrorScreen>
 
               // Main content
               Center(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(PUi.gutter, 112, PUi.gutter, 24),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -250,8 +251,8 @@ class _ErrorScreenState extends State<ErrorScreen>
                           child: child,
                         ),
                         child: Container(
-                          width: 120,
-                          height: 120,
+                          width: 240,
+                          height: 240,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             color: const Color(
@@ -259,58 +260,58 @@ class _ErrorScreenState extends State<ErrorScreen>
                             ).withValues(alpha: 0.12),
                             border: Border.all(
                               color: const Color(0xFFE53935),
-                              width: 3,
+                              width: 4,
                             ),
                           ),
                           child: const Icon(
                             Icons.error_outline_rounded,
                             color: Color(0xFFE53935),
-                            size: 72,
+                            size: 144,
                           ),
                         ),
                       ),
 
-                      const SizedBox(height: 32),
+                      const SizedBox(height: 48),
 
                       // Error title
                       Text(
                         _t('title', lang, code),
                         style: const TextStyle(
                           color: Color(0xFFE53935),
-                          fontSize: 26,
+                          fontSize: 42,
                           fontWeight: FontWeight.bold,
                           letterSpacing: 0.5,
                         ),
                         textAlign: TextAlign.center,
                       ),
 
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 24),
 
                       // Error detail
                       Text(
                         _t('detail', lang, code),
                         style: const TextStyle(
                           color: Color(0xFF8899AA),
-                          fontSize: 15,
+                          fontSize: PUi.bodySp + 2,
                           height: 1.5,
                         ),
                         textAlign: TextAlign.center,
                       ),
 
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 20),
 
                       // Contact staff
                       Text(
                         _t('contact', lang),
                         style: const TextStyle(
-                          color: Color(0xFF556677),
-                          fontSize: 14,
+                          color: Color(0xFF8899AA),
+                          fontSize: PUi.minBodySp,
                           height: 1.5,
                         ),
                         textAlign: TextAlign.center,
                       ),
 
-                      const SizedBox(height: 48),
+                      const SizedBox(height: 64),
 
                       // Countdown — скрыт для 'bus_unavailable': возврат не
                       // по таймеру, а сам, когда шина восстановится (см.
@@ -322,14 +323,14 @@ class _ErrorScreenState extends State<ErrorScreen>
                             Text(
                               _t('returning', lang),
                               style: const TextStyle(
-                                color: Color(0xFF556677),
-                                fontSize: 14,
+                                color: Color(0xFF8899AA),
+                                fontSize: PUi.minBodySp,
                               ),
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 12),
                             Container(
-                              width: 56,
-                              height: 56,
+                              width: 96,
+                              height: 96,
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
                                 border: Border.all(
@@ -344,7 +345,7 @@ class _ErrorScreenState extends State<ErrorScreen>
                                   '$_secondsLeft${_t('sec', lang)}',
                                   style: const TextStyle(
                                     color: Color(0xFFE53935),
-                                    fontSize: 20,
+                                    fontSize: 32,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),

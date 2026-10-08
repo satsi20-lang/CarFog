@@ -29,7 +29,7 @@ import 'modbus_service.dart';
 // только после нескольких подряд неудачных команд — не на каждую
 // единичную.
 class StartupService {
-  static const _port = BusParams.port;
+  static String get _port => BusParams.port;
 
   // Первые попытки — часто (шина может ответить уже через пару секунд
   // после подачи питания), дальше интервал растёт — не молотить шину

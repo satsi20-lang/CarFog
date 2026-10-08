@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../widgets/fog_background.dart';
 import '../widgets/lang_switcher.dart';
+import '../widgets/portrait_ui.dart';
 
 const Map<String, Map<String, String>> i18n = {
   'ru': {
@@ -28,10 +29,9 @@ const Map<String, Map<String, String>> i18n = {
 class SelectFlavorScreen extends StatelessWidget {
   const SelectFlavorScreen({super.key});
 
-  // Сетка подстраивается под kFlavorCount: до 4 ароматов — в один ряд
-  // (широкие карточки на весь альбомный экран), больше — переносится
-  // на несколько рядов по 4 в ряд.
-  int get _crossAxisCount => kFlavorCount <= 4 ? kFlavorCount : 4;
+  // Портрет 720x1280 dp: ароматы — крупные карточки в 2 колонки (при 4
+  // ароматах 2x2, при 8 — 2x4 с прокруткой, если не помещаются).
+  static const int _crossAxisCount = 2;
 
   @override
   Widget build(BuildContext context) {
@@ -44,129 +44,159 @@ class SelectFlavorScreen extends StatelessWidget {
     return Scaffold(
       body: FogBackground(
         child: SafeArea(
-          child: Row(
-            children: [
-              // Левая колонка: заголовок, подсказка, отмена — фиксированная
-              // ширина, чтобы сетка ароматов получила максимум пространства.
-              SizedBox(
-                width: 280,
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      LangSwitcher(
-                        current: lang,
-                        onChanged: notifier.setLanguage,
-                      ),
-                      const SizedBox(height: 24),
-                      Text(
-                        t['title']!,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 26,
-                          fontWeight: FontWeight.bold,
-                          height: 1.2,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        t['hint']!,
-                        style: const TextStyle(
-                          color: Colors.white60,
-                          fontSize: 13,
-                        ),
-                      ),
-                      const Spacer(),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 52,
-                        child: OutlinedButton(
-                          onPressed: () => context
-                              .read<AppNotifier>()
-                              .transition(AppState.standby),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.white60,
-                            side: const BorderSide(color: Colors.white30),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          child: Text(
-                            t['cancel']!,
-                            style: const TextStyle(fontSize: 16),
-                          ),
-                        ),
-                      ),
-                    ],
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              PUi.gutter,
+              24,
+              PUi.gutter,
+              PUi.gutter,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: LangSwitcher(
+                    current: lang,
+                    onChanged: notifier.setLanguage,
                   ),
                 ),
-              ),
-
-              // Правая часть: сетка ароматов
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(0, 24, 24, 24),
-                  child: GridView.builder(
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: _crossAxisCount,
-                      childAspectRatio: 1.3,
-                      crossAxisSpacing: 16,
-                      mainAxisSpacing: 16,
-                    ),
-                    itemCount: kFlavorCount,
-                    itemBuilder: (context, i) {
-                      final available = levels.length > i ? levels[i] : false;
-                      return GestureDetector(
-                        onTap: available
-                            ? () => context.read<AppNotifier>().selectFlavor(i)
-                            : null,
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          decoration: BoxDecoration(
-                            color: available
-                                ? const Color(0xFF2E2E2E)
-                                : const Color(0xFF3A3A3A),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: available
-                                  ? const Color(0xFF2EC4B6)
-                                  : Colors.grey,
-                              width: 1.5,
-                            ),
-                          ),
-                          child: Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  names.length > i ? names[i] : '',
-                                  style: TextStyle(
-                                    color: available
-                                        ? Colors.white
-                                        : Colors.grey,
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
+                const SizedBox(height: 32),
+                Text(
+                  t['title']!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: PUi.titleSp,
+                    fontWeight: FontWeight.bold,
+                    height: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  t['hint']!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white60,
+                    fontSize: PUi.minBodySp,
+                  ),
+                ),
+                const SizedBox(height: 28),
+                // Сетка занимает всё свободное место; не помещается —
+                // прокручивается.
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, box) {
+                      const spacing = 24.0;
+                      final rows = (kFlavorCount / _crossAxisCount).ceil();
+                      final cellW =
+                          (box.maxWidth - spacing * (_crossAxisCount - 1)) /
+                          _crossAxisCount;
+                      final cellH =
+                          (box.maxHeight - spacing * (rows - 1)) / rows;
+                      // Карточки растягиваются по высоте на всё свободное
+                      // место (без больших пустых полей), но не становятся
+                      // слишком вытянутыми или приплюснутыми.
+                      final aspect = (cellW / cellH).clamp(0.8, 1.6);
+                      return GridView.builder(
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: _crossAxisCount,
+                          childAspectRatio: aspect,
+                          crossAxisSpacing: spacing,
+                          mainAxisSpacing: spacing,
+                        ),
+                        itemCount: kFlavorCount,
+                        itemBuilder: (context, i) {
+                          final available = levels.length > i
+                              ? levels[i]
+                              : false;
+                          return GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: available
+                                ? () => context
+                                      .read<AppNotifier>()
+                                      .selectFlavor(i)
+                                : null,
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              decoration: BoxDecoration(
+                                color: available
+                                    ? const Color(0xFF2E2E2E)
+                                    : const Color(0xFF3A3A3A),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: available
+                                      ? const Color(0xFF2EC4B6)
+                                      : Colors.grey,
+                                  width: 2,
+                                ),
+                              ),
+                              child: Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        child: Text(
+                                          names.length > i ? names[i] : '',
+                                          style: TextStyle(
+                                            color: available
+                                                ? Colors.white
+                                                : Colors.grey,
+                                            fontSize: PUi.titleSp,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                      if (!available)
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                            top: 8,
+                                          ),
+                                          child: Text(
+                                            t['unavailable']!,
+                                            textAlign: TextAlign.center,
+                                            style: const TextStyle(
+                                              color: Colors.grey,
+                                              fontSize: PUi.minBodySp,
+                                            ),
+                                          ),
+                                        ),
+                                    ],
                                   ),
                                 ),
-                                if (!available)
-                                  Text(
-                                    t['unavailable']!,
-                                    style: const TextStyle(
-                                      color: Colors.grey,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                              ],
+                              ),
                             ),
-                          ),
-                        ),
+                          );
+                        },
                       );
                     },
                   ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 24),
+                SizedBox(
+                  height: PUi.buttonH,
+                  child: OutlinedButton(
+                    onPressed: () => context.read<AppNotifier>().transition(
+                      AppState.standby,
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white70,
+                      side: const BorderSide(color: Colors.white38, width: 2),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: Text(
+                      t['cancel']!,
+                      style: const TextStyle(fontSize: 28),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

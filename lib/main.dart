@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'dart:io';
 import 'models/app_state.dart';
+import 'models/bus_map.dart';
 import 'services/app_log_service.dart';
 import 'screens/language_select.dart';
 import 'screens/standby.dart';
@@ -48,15 +49,19 @@ void main() async {
   }
   AppLog.install();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-  // Планшет физически установлен в альбомной ориентации — весь UI
-  // спроектирован под неё (см. переделанные экраны).
+  // Основной планшет Syoung SY156-A510 стоит в портрете (профиль —
+  // models/hardware_profile.dart); весь UI спроектирован под него.
   SystemChrome.setPreferredOrientations([
-    DeviceOrientation.landscapeLeft,
-    DeviceOrientation.landscapeRight,
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
   ]);
   // Заводская конфигурация облака (файл на общем каталоге): применяется до
   // настройки облачного слоя; остальные настройки не трогаются.
   final config = await FactoryConfigService.applyOnStartup(await ConfigService.load());
+  // Порт шины — из настройки (недопустимый/запрещённый узел не применяется).
+  if (!BusParams.applyConfigured(config.busPort)) {
+    AppLog.log('Bus', 'порт шины из настроек отклонён, используется ${BusParams.port}');
+  }
   // Секреты из настроек не должны попасть в журнал и пакет диагностики.
   AppLog.setSecrets([config.servicePin, config.cloudToken, config.cloudAnonKey]);
 

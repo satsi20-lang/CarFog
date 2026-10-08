@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../widgets/fog_background.dart';
 import '../widgets/lang_switcher.dart';
+import '../widgets/portrait_ui.dart';
 
 // Экран "аппарат выведен из обслуживания" (задача "вывод аппарата из
 // обслуживания", требования 6-7). Заменяет экран ожидания:
@@ -45,8 +46,8 @@ class OutOfServiceScreen extends StatelessWidget {
           child: Stack(
             children: [
               Positioned(
-                top: 16,
-                right: 16,
+                top: 24,
+                right: 24,
                 child: LangSwitcher(
                   current: lang,
                   onChanged: notifier.setLanguage,
@@ -69,45 +70,45 @@ class OutOfServiceScreen extends StatelessWidget {
               ),
 
               Center(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(PUi.gutter, 112, PUi.gutter, 24),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Container(
-                        width: 120,
-                        height: 120,
+                        width: 240,
+                        height: 240,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: const Color(0xFFE53935).withValues(alpha: 0.12),
                           border: Border.all(
                             color: const Color(0xFFE53935),
-                            width: 3,
+                            width: 4,
                           ),
                         ),
                         child: const Icon(
                           Icons.build_circle_outlined,
                           color: Color(0xFFE53935),
-                          size: 72,
+                          size: 144,
                         ),
                       ),
-                      const SizedBox(height: 32),
+                      const SizedBox(height: 48),
                       Text(
                         _texts['title']![lang] ?? _texts['title']!['ru']!,
                         style: const TextStyle(
                           color: Color(0xFFE53935),
-                          fontSize: 28,
+                          fontSize: 44,
                           fontWeight: FontWeight.bold,
                           letterSpacing: 0.5,
                         ),
                         textAlign: TextAlign.center,
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 24),
                       Text(
                         _texts['detail']![lang] ?? _texts['detail']!['ru']!,
                         style: const TextStyle(
                           color: Color(0xFF8899AA),
-                          fontSize: 16,
+                          fontSize: PUi.bodySp + 2,
                           height: 1.5,
                         ),
                         textAlign: TextAlign.center,

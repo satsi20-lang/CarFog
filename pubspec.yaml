@@ -1,5 +1,5 @@
 name: dry_fog_app
-description: "A new Flutter project."
+description: "CaRFog «Сухой туман» — для SY156-A510 (портрет); профиль в lib/models/hardware_profile.dart"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -16,7 +16,9 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.7.0+21
+# С 1.8.0 версии собираются только под Syoung SY156-A510 (портрет), см.
+# docs/hardware.md и docs/releases.md.
+version: 1.8.0+22
 
 environment:
   sdk: ^3.12.2

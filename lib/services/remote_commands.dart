@@ -335,6 +335,8 @@ class RemoteCommands {
       cloudAnonKey: keep.cloudAnonKey,
       cloudToken: keep.cloudToken,
       cloudEnabled: keep.cloudEnabled,
+      // Порт шины — аппаратная настройка, заводской сброс её не трогает.
+      busPort: keep.busPort,
     );
     await notifier.saveConfig(fresh);
   }
