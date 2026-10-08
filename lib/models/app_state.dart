@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/config_service.dart';
 import '../services/modbus_service.dart';
 import 'bus_map.dart';
+import 'device_spec.dart';
 import 'hardware_profile.dart';
 import 'out_of_service.dart';
 
@@ -83,6 +84,13 @@ class AppConfig {
   // не трогают.
   String busPort;
 
+  // Спецификация аппарата (число насосов, языки): задаётся заводской записью
+  // (ключ "spec" файла конфигурации), в этой части только хранится (экраны и
+  // карта каналов её пока не используют). Контракт — models/device_spec.dart.
+  int specPumps;
+  List<String> specLangs;
+  String specDefaultLang;
+
   Map<String, List<String>> flavorNames;
 
   AppConfig({
@@ -111,6 +119,9 @@ class AppConfig {
     this.coinAcceptorInstalled = false,
     this.idlePowerTariffPerKwh = 0.20,
     this.busPort = HardwareProfile.defaultBusPort,
+    this.specPumps = DeviceSpec.defaultPumps,
+    this.specLangs = DeviceSpec.defaultLangs,
+    this.specDefaultLang = 'et',
     Map<String, List<String>>? flavorNames,
   }) : flavorNames =
            flavorNames ??
@@ -170,6 +181,9 @@ class AppConfig {
     bool? coinAcceptorInstalled,
     double? idlePowerTariffPerKwh,
     String? busPort,
+    int? specPumps,
+    List<String>? specLangs,
+    String? specDefaultLang,
     Map<String, List<String>>? flavorNames,
   }) {
     return AppConfig(
@@ -201,9 +215,19 @@ class AppConfig {
       idlePowerTariffPerKwh:
           idlePowerTariffPerKwh ?? this.idlePowerTariffPerKwh,
       busPort: busPort ?? this.busPort,
+      specPumps: specPumps ?? this.specPumps,
+      specLangs: specLangs ?? this.specLangs,
+      specDefaultLang: specDefaultLang ?? this.specDefaultLang,
       flavorNames: flavorNames ?? this.flavorNames,
     );
   }
+
+  // Спецификация как объект (hardwareProfile — константа профиля).
+  DeviceSpec get spec => DeviceSpec(
+    pumps: specPumps,
+    langs: specLangs,
+    defaultLang: specDefaultLang,
+  );
 
   // Слепок настроек для облака (Шаг 34) — только эксплуатационная часть,
   // то, что панель управления реально должна показывать оператору. При
@@ -221,6 +245,9 @@ class AppConfig {
       'flavor_names_ru': flavorNames['ru']?.take(kFlavorCount).toList() ?? [],
       'kiosk_mode_enabled': kioskModeEnabled,
       'bus_port': busPort,
+      'spec_pumps': specPumps,
+      'spec_langs': specLangs,
+      'spec_default_lang': specDefaultLang,
       'hardware_profile': HardwareProfile.id,
     };
   }
