@@ -10,6 +10,7 @@ import '../../models/bus_map.dart';
 import '../../widgets/lang_switcher.dart';
 import '../../widgets/portrait_ui.dart';
 import 'bus_port_section.dart';
+import 'scroll_hint_row.dart';
 import '../../models/out_of_service.dart';
 import '../../models/remote_limits.dart';
 import '../../services/cloud_service.dart';
@@ -1128,8 +1129,7 @@ class _ServiceMenuScreenState extends State<ServiceMenuScreen> {
             ),
 
             // Вкладки
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
+            ScrollHintRow(
               child: Row(
                 children: List.generate(tabs.length, (i) {
                   final active = _tab == i;
