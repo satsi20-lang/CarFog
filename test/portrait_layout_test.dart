@@ -174,6 +174,52 @@ void main() {
       });
     }
   }
+  // Подсказка прокрутки вкладок: на старте виден только правый край; листая
+  // стрелкой вправо, доходим до последней вкладки целиком (все 8 достижимы).
+  for (final lang in ['ru', 'en', 'et']) {
+    testWidgets('вкладки сервисного меню: подсказка и все 8 достижимы [$lang]',
+        (tester) async {
+      portrait(tester);
+      await pumpScreen(tester, const ServiceMenuScreen(), notifier(lang));
+      // При первом входе меню показывает окно «Мастер-код этого аппарата».
+      final dlg = find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.byType(TextButton),
+      );
+      if (dlg.evaluate().isNotEmpty) {
+        await tester.tap(dlg.last);
+        await tester.pump(const Duration(milliseconds: 600));
+      }
+      final left = find.byKey(const ValueKey('tabs_hint_left'));
+      final right = find.byKey(const ValueKey('tabs_hint_right'));
+      expect(left, findsNothing);
+      expect(right, findsOneWidget); // не помещаются: есть что листать
+      final row = find.byType(SingleChildScrollView).first;
+      final tabs = find.descendant(of: row, matching: find.byType(GestureDetector));
+      expect(tabs, findsNWidgets(8));
+      for (var i = 0; i < 12 && right.evaluate().isNotEmpty; i++) {
+        await tester.tap(right);
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pump(const Duration(milliseconds: 400));
+      }
+      expect(right, findsNothing); // дошли до конца
+      expect(left, findsOneWidget); // слева есть что вернуть
+      final last = tester.getRect(tabs.at(7));
+      expect(last.right, lessThanOrEqualTo(720.0 + 0.5));
+      expect(last.left, greaterThanOrEqualTo(0));
+      expect(tester.takeException(), isNull);
+      // и обратно: стрелка влево возвращает первые вкладки
+      for (var i = 0; i < 12 && left.evaluate().isNotEmpty; i++) {
+        await tester.tap(left);
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pump(const Duration(milliseconds: 400));
+      }
+      expect(left, findsNothing);
+      expect(tester.getRect(tabs.at(0)).left, greaterThanOrEqualTo(0));
+      await dispose(tester);
+    });
+  }
+
   // Чтобы список имён не считался неиспользуемым.
   test('вкладок восемь', () => expect(tabNames['ru']!.length, 8));
 }
