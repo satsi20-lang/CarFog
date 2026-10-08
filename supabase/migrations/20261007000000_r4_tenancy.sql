@@ -261,6 +261,7 @@ create index if not exists staff_audit_org_idx on public.staff_audit (org_id, at
 alter table public.staff_audit enable row level security;
 revoke all on table public.staff_audit from public, anon, authenticated;
 grant select on table public.staff_audit to authenticated;
+drop policy if exists staff_audit_read on public.staff_audit;
 create policy staff_audit_read on public.staff_audit
   for select to authenticated
   using (org_id is not null and public.is_staff(org_id));
