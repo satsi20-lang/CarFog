@@ -18,7 +18,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # of the product and file versions while build-number is used as the build suffix.
 # С 1.8.0 версии собираются только под Syoung SY156-A510 (портрет), см.
 # docs/hardware.md и docs/releases.md.
-version: 1.10.0+25
+version: 1.10.1+26
 
 environment:
   sdk: ^3.12.2
