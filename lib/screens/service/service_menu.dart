@@ -2962,14 +2962,20 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
               onChanged: _outputsLocked ? null : _setHeater,
             ),
           ];
-          return List.generate(5, (row) {
+          // Рядов столько, сколько нужно (насосов 4…8 + компрессор и ТЭН);
+          // при нечётном числе последний ряд с одним тумблером.
+          return List.generate((toggles.length + 1) ~/ 2, (row) {
             return Padding(
               padding: const EdgeInsets.only(bottom: 4),
               child: Row(
                 children: [
                   Expanded(child: toggles[row * 2]),
                   const SizedBox(width: 8),
-                  Expanded(child: toggles[row * 2 + 1]),
+                  Expanded(
+                    child: row * 2 + 1 < toggles.length
+                        ? toggles[row * 2 + 1]
+                        : const SizedBox.shrink(),
+                  ),
                 ],
               ),
             );
