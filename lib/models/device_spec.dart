@@ -18,7 +18,9 @@ class DeviceSpec {
   });
 
   static const int minPumps = 4;
-  static const int maxPumps = 10;
+  // Решение владельца 10.10.2026: пока максимум 8 насосов (в базе check остаётся
+  // 4…10; верхняя граница 8 держится в приложении, генераторе и панели).
+  static const int maxPumps = 8;
   static const int defaultPumps = 4;
   static const int maxLangs = 24;
   static const List<String> defaultLangs = ['et', 'en', 'ru'];
@@ -60,6 +62,11 @@ class DeviceSpec {
 
   // Запасной язык, если пересечение langs и implemented пусто.
   static const String fallbackLang = 'en';
+
+  // Число активных насосов/ароматов из значения specPumps: при любой ошибке
+  // (не целое, вне 4…8) — значение по умолчанию 4.
+  static int activeFor(Object? pumps) =>
+      pumps is int && pumps >= minPumps && pumps <= maxPumps ? pumps : defaultPumps;
 
   // Проверка по контракту; null — всё верно, иначе короткий код причины.
   static String? validate({

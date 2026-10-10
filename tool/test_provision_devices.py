@@ -265,16 +265,16 @@ class SpecTest(unittest.TestCase):
                               "hardware_profile": "sy156-a510"})
 
     def test_parse_valid(self):
-        sp = pd.parse_spec(10, "ru,en,de", "en")
-        self.assertEqual((sp["pumps"], sp["langs"], sp["default_lang"]), (10, ["ru", "en", "de"], "en"))
+        sp = pd.parse_spec(8, "ru,en,de", "en")
+        self.assertEqual((sp["pumps"], sp["langs"], sp["default_lang"]), (8, ["ru", "en", "de"], "en"))
         # порядок сохраняется, default по умолчанию — первый
         self.assertEqual(pd.parse_spec(6, "de,fr")["default_lang"], "de")
         self.assertEqual(pd.parse_spec(4, "no")["langs"], ["no"])
 
     def test_pumps_bounds(self):
-        for ok in (4, 10):
+        for ok in (4, 8):
             pd.parse_spec(ok)
-        for bad in (3, 11, 0, -1, 4.5, "5", True, None):
+        for bad in (3, 9, 10, 11, 0, -1, 4.5, "5", True, None):
             with self.assertRaises(pd.ProvisionError, msg=repr(bad)):
                 pd.parse_spec(bad)
 
@@ -331,7 +331,7 @@ class SpecTest(unittest.TestCase):
                 j = json.load(f)
             self.assertEqual(j["spec"]["pumps"], 4)
             self.assertEqual(j["spec"]["langs"], ["et", "en", "ru"])
-        for extra in (["--pumps", "3"], ["--pumps", "11"], ["--langs", "xx"],
+        for extra in (["--pumps", "3"], ["--pumps", "9"], ["--pumps", "11"], ["--langs", "xx"],
                       ["--langs", "et,et"], ["--langs", "et,en", "--default-lang", "ru"]):
             with tempfile.TemporaryDirectory() as tmp:
                 with self.assertRaises(pd.ProvisionError, msg=str(extra)):

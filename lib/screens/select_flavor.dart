@@ -29,16 +29,13 @@ const Map<String, Map<String, String>> i18n = {
 class SelectFlavorScreen extends StatelessWidget {
   const SelectFlavorScreen({super.key});
 
-  // Портрет 720x1280 dp: ароматы — крупные карточки в 2 колонки (при 4
-  // ароматах 2x2, при 8 — 2x4 с прокруткой, если не помещаются).
-  static const int _crossAxisCount = 2;
-
   @override
   Widget build(BuildContext context) {
     final notifier = context.watch<AppNotifier>();
     final lang = notifier.lang;
     final levels = notifier.levels;
     final names = notifier.config.flavorNames[lang]!;
+    final count = notifier.config.activeFlavorCount;
     final t = i18n[lang]!;
 
     return Scaffold(
@@ -82,97 +79,17 @@ class SelectFlavorScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 28),
-                // Сетка занимает всё свободное место; не помещается —
-                // прокручивается.
+                // Сетка: 2 колонки; число карточек = число насосов из spec (4…8):
+                // 4 → 2 ряда, 5–6 → 3, 7–8 → 4. Нечётная последняя карточка
+                // ЦЕНТРИРУЕТСЯ в своём ряду. Не помещается — прокрутка.
                 Expanded(
-                  child: LayoutBuilder(
-                    builder: (context, box) {
-                      const spacing = 24.0;
-                      final rows = (kFlavorCount / _crossAxisCount).ceil();
-                      final cellW =
-                          (box.maxWidth - spacing * (_crossAxisCount - 1)) /
-                          _crossAxisCount;
-                      final cellH =
-                          (box.maxHeight - spacing * (rows - 1)) / rows;
-                      // Карточки растягиваются по высоте на всё свободное
-                      // место (без больших пустых полей), но не становятся
-                      // слишком вытянутыми или приплюснутыми.
-                      final aspect = (cellW / cellH).clamp(0.8, 1.6);
-                      return GridView.builder(
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: _crossAxisCount,
-                          childAspectRatio: aspect,
-                          crossAxisSpacing: spacing,
-                          mainAxisSpacing: spacing,
-                        ),
-                        itemCount: kFlavorCount,
-                        itemBuilder: (context, i) {
-                          final available = levels.length > i
-                              ? levels[i]
-                              : false;
-                          return GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: available
-                                ? () => context
-                                      .read<AppNotifier>()
-                                      .selectFlavor(i)
-                                : null,
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 200),
-                              decoration: BoxDecoration(
-                                color: available
-                                    ? const Color(0xFF2E2E2E)
-                                    : const Color(0xFF3A3A3A),
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: available
-                                      ? const Color(0xFF2EC4B6)
-                                      : Colors.grey,
-                                  width: 2,
-                                ),
-                              ),
-                              child: Center(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(12),
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      FittedBox(
-                                        fit: BoxFit.scaleDown,
-                                        child: Text(
-                                          names.length > i ? names[i] : '',
-                                          style: TextStyle(
-                                            color: available
-                                                ? Colors.white
-                                                : Colors.grey,
-                                            fontSize: PUi.titleSp,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ),
-                                      if (!available)
-                                        Padding(
-                                          padding: const EdgeInsets.only(
-                                            top: 8,
-                                          ),
-                                          child: Text(
-                                            t['unavailable']!,
-                                            textAlign: TextAlign.center,
-                                            style: const TextStyle(
-                                              color: Colors.grey,
-                                              fontSize: PUi.minBodySp,
-                                            ),
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      );
-                    },
+                  child: _FlavorGrid(
+                    count: count,
+                    names: names,
+                    levels: levels,
+                    unavailable: t['unavailable']!,
+                    onSelect: (i) =>
+                        context.read<AppNotifier>().selectFlavor(i),
                   ),
                 ),
                 const SizedBox(height: 24),
@@ -195,6 +112,148 @@ class SelectFlavorScreen extends StatelessWidget {
                     ),
                   ),
                 ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// Сетка карточек ароматов (2 колонки, до 8 карточек).
+class _FlavorGrid extends StatelessWidget {
+  final int count;
+  final List<String> names;
+  final List<bool> levels;
+  final String unavailable;
+  final void Function(int) onSelect;
+
+  const _FlavorGrid({
+    required this.count,
+    required this.names,
+    required this.levels,
+    required this.unavailable,
+    required this.onSelect,
+  });
+
+  static const double _spacing = 24;
+  static const double _minCardH = 120;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, box) {
+        final rows = (count / 2).ceil();
+        final cellW = (box.maxWidth - _spacing) / 2;
+        final fit = (box.maxHeight - _spacing * (rows - 1)) / rows;
+        // Карточки растягиваются по высоте, но не вытягиваются и не
+        // становятся ниже минимума (меньше — прокрутка).
+        final cellH = fit.clamp(_minCardH, cellW * 1.25);
+        Widget card(int i) => SizedBox(
+          width: cellW,
+          height: cellH,
+          child: _FlavorCard(
+            name: names.length > i ? names[i] : '',
+            available: levels.length > i ? levels[i] : false,
+            unavailable: unavailable,
+            onTap: () => onSelect(i),
+          ),
+        );
+        return Center(
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (var r = 0; r < rows; r++) ...[
+                  if (r > 0) const SizedBox(height: _spacing),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      card(r * 2),
+                      if (r * 2 + 1 < count) ...[
+                        const SizedBox(width: _spacing),
+                        card(r * 2 + 1),
+                      ],
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _FlavorCard extends StatelessWidget {
+  final String name;
+  final bool available;
+  final String unavailable;
+  final VoidCallback onTap;
+
+  const _FlavorCard({
+    required this.name,
+    required this.available,
+    required this.unavailable,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: available ? onTap : null,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        decoration: BoxDecoration(
+          color: available ? const Color(0xFF2E2E2E) : const Color(0xFF3A3A3A),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: available ? const Color(0xFF2EC4B6) : Colors.grey,
+            width: 2,
+          ),
+        ),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Название переносится на 2 строки; очень длинное сжимается.
+                Flexible(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 280),
+                      child: Text(
+                        name,
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: available ? Colors.white : Colors.grey,
+                          fontSize: PUi.titleSp,
+                          fontWeight: FontWeight.bold,
+                          height: 1.1,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                if (!available)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      unavailable,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.grey,
+                        fontSize: PUi.minBodySp,
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),

@@ -53,11 +53,12 @@ void main() {
       expect([s.pumps, s.langs, s.defaultLang], [4, ['ru', 'de'], 'ru']); // default — первый
     });
 
-    test('границы насосов 4…10', () {
-      for (final ok in [4, 5, 10]) {
+    test('границы насосов 4…8', () {
+      expect(DeviceSpec.maxPumps, 8);
+      for (final ok in [4, 5, 8]) {
         expect(DeviceSpec.tryParse({'pumps': ok}), isNotNull, reason: '$ok');
       }
-      for (final bad in [3, 11, 0, -1, 4.5, '5', null, true, 100]) {
+      for (final bad in [3, 9, 10, 11, 0, -1, 4.5, '5', null, true, 100]) {
         expect(DeviceSpec.tryParse({'pumps': bad}), isNull, reason: '$bad');
       }
     });
@@ -136,7 +137,7 @@ void main() {
 
     test('сохранение–загрузка: пользовательские названия по языкам и spec', () async {
       final c = AppConfig(
-        specPumps: 9,
+        specPumps: 7,
         specLangs: ['ru', 'de', 'en'],
         specDefaultLang: 'de',
         flavorNames: {
@@ -147,7 +148,7 @@ void main() {
       );
       await ConfigService.save(c);
       final back = await ConfigService.load();
-      expect([back.specPumps, back.specLangs, back.specDefaultLang], [9, ['ru', 'de', 'en'], 'de']);
+      expect([back.specPumps, back.specLangs, back.specDefaultLang], [7, ['ru', 'de', 'en'], 'de']);
       expect(back.flavorNames['de']![9], 'Duft 9');
       expect(back.flavorNames['ru']![0], 'Аромат 0');
     });

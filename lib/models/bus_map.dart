@@ -143,15 +143,14 @@ enum PumpChannel {
   pump2,
   pump3,
   pump4,
-  // ПЛАНИРУЕТСЯ — резерв, физически не разведено.
-  pump5(connected: false),
-  pump6(connected: false),
-  pump7(connected: false),
-  pump8(connected: false);
-
-  const PumpChannel({this.connected = true});
-
-  final bool connected;
+  // Насосы 5–8: каналы DO4–DO7 и датчики DI4–DI7 есть в карте всегда; активны
+  // ли они, определяет число насосов аппарата (AppConfig.activeFlavorCount из
+  // spec), а не поле перечисления. Схема разводки релейного блока для насосов
+  // 5–8 уточняется владельцем.
+  pump5,
+  pump6,
+  pump7,
+  pump8;
 
   // Встроенный Enum.index (0-based, порядок объявления) совпадает и с DO
   // (сам насос), и с DI (датчик уровня ЭТОГО ЖЕ насоса, см. sensorDI) —
@@ -162,10 +161,9 @@ enum PumpChannel {
   int get terminalNumber => index + 1; // 1-based номер клеммы на модуле
 }
 
-// Насосы/датчики уровня, реально задействованные на этом аппарате —
-// столько канистр показывается покупателю (см. kFlavorCount, app_state.dart:
-// это число уже само по себе решение "сколько из 8 подключено", здесь
-// просто общая длина перечисления PumpChannel для справки/проверок диапазона).
+// Сколько насосов/датчиков реально задействовано на аппарате, решает spec
+// (AppConfig.activeFlavorCount, app_state.dart); здесь — общая длина
+// перечисления PumpChannel (8) для проверок диапазона.
 const int kIoChannelCount = 16; // всего DO/DI на модуле (0-15)
 
 class AuxOutput {

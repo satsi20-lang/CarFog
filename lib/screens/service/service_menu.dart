@@ -1588,7 +1588,9 @@ class _FlavorsTabState extends State<_FlavorsTab> {
   void initState() {
     super.initState();
     final names = context.read<AppNotifier>().config.flavorNames;
-    _ctrls = List.generate(kFlavorCount, (i) {
+    // Поля заводятся для всех 8 каналов (число активных берётся из spec и
+    // может смениться), показываются только активные.
+    _ctrls = List.generate(PumpChannel.values.length, (i) {
       return _langs.map((l) {
         return TextEditingController(text: names[l]?[i] ?? '');
       }).toList();
@@ -1609,14 +1611,14 @@ class _FlavorsTabState extends State<_FlavorsTab> {
     final notifier = context.read<AppNotifier>();
     final currentNames = notifier.config.flavorNames;
     final newNames = <String, List<String>>{};
-    // Правим только первые kFlavorCount имён, остальные (если раньше
-    // было настроено больше — например, после отката с 6/8 ароматов)
-    // сохраняем как есть, чтобы не терять их при последующем увеличении
-    // kFlavorCount.
+    // Правим только названия активных ароматов (spec), остальные (если число
+    // насосов уменьшили) сохраняем как есть, чтобы не терять их при
+    // последующем увеличении числа насосов.
+    final active = notifier.config.activeFlavorCount;
     for (int li = 0; li < _langs.length; li++) {
       final lang = _langs[li];
       final existing = List<String>.from(currentNames[lang] ?? const []);
-      for (int i = 0; i < kFlavorCount; i++) {
+      for (int i = 0; i < active; i++) {
         final value = _ctrls[i][li].text.trim();
         if (i < existing.length) {
           existing[i] = value;
@@ -1636,7 +1638,9 @@ class _FlavorsTabState extends State<_FlavorsTab> {
 
   @override
   Widget build(BuildContext context) {
-    final t = _i18n[context.watch<AppNotifier>().lang]!;
+    final notifier = context.watch<AppNotifier>();
+    final t = _i18n[notifier.lang]!;
+    final activeCount = notifier.config.activeFlavorCount;
     // Единый скроллящийся контейнер вместо Expanded(ListView) внутри
     // жёсткой Column: раньше при появлении клавиатуры (тап в поле имени)
     // содержимое вкладки не могло сжаться и вылезало за пределы экрана.
@@ -1666,8 +1670,8 @@ class _FlavorsTabState extends State<_FlavorsTab> {
               ],
             ),
           ),
-          // Список ароматов (kFlavorCount — легко сменить на 6/8)
-          ...List.generate(kFlavorCount, (i) {
+          // Список ароматов: только активные (число насосов из spec)
+          ...List.generate(activeCount, (i) {
             return Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Row(
@@ -2209,9 +2213,10 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
 
   Future<void> _allOn() async {
     final t = _t;
+    final active = context.read<AppNotifier>().config.activeFlavorCount;
     if (!await _confirmLoad('${t['compressor']} + ${t['heater']}')) return;
     setState(() => _busy = true);
-    for (var i = 0; i < 8; i++) {
+    for (var i = 0; i < active; i++) {
       await ModbusService.setPump(i, true);
       _armPumpAutoOff(i);
     }
@@ -2221,7 +2226,7 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
     _armHeaterAutoOff();
     if (!mounted) return;
     setState(() {
-      _pumpOn.fillRange(0, 8, true);
+      _pumpOn.fillRange(0, active, true);
       _compressorOn = true;
       _heaterOn = true;
       _busy = false;
@@ -2789,12 +2794,10 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
           ),
         ),
         const SizedBox(height: 12),
-        // Ряды по 4 карточки — под ландшафтную ширину. kFlavorCount=4
-        // укладывается в один ряд; при 6/8 появятся дополнительные ряды
-        // автоматически.
-        ...List.generate((kFlavorCount / 4).ceil(), (row) {
+        // Ряды по 4 карточки; число активных ароматов берётся из spec (4…8).
+        ...List.generate((notifier.config.activeFlavorCount / 4).ceil(), (row) {
           final start = row * 4;
-          final count = (kFlavorCount - start).clamp(0, 4);
+          final count = (notifier.config.activeFlavorCount - start).clamp(0, 4);
           return Padding(
             padding: const EdgeInsets.only(bottom: 10),
             child: Row(
@@ -2929,14 +2932,12 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
 
         ...(() {
           final toggles = <Widget>[
-            // Все 8 физических каналов насоса остаются доступны для
-            // ручного теста (полная ёмкость DIO-модуля), но имя аромата
-            // подписывается только для реально активных (kFlavorCount).
-            ...List.generate(8, (i) {
-              final label = i < kFlavorCount
-                  ? '${t['pump']} ${i + 1} '
-                        '(${flavors.length > i ? flavors[i] : '${t['flavor_fallback']} ${i + 1}'})'
-                  : '${t['pump']} ${i + 1}';
+            // Ручной тест: только активные насосы (число из spec, 4…8);
+            // включить насос сверх активного числа нельзя и на уровне шины
+            // (ModbusService.setDO).
+            ...List.generate(notifier.config.activeFlavorCount, (i) {
+              final label = '${t['pump']} ${i + 1} '
+                  '(${flavors.length > i ? flavors[i] : '${t['flavor_fallback']} ${i + 1}'})';
               final secondsLeft = _pumpSecondsLeft[i];
               return _ToggleRow(
                 label: secondsLeft != null
