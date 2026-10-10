@@ -44,13 +44,22 @@
              в собственной задаче независимо от того, через какой intent
              его вызвали — любой повторный запуск маршрутизируется в уже
              существующий (onNewIntent), а не создаёт второй. -->
+        <!-- configChanges (задача "устойчивость шины", 1.10.3): любое
+             изменение конфигурации, которого нет в списке, пересоздаёт
+             активность, а с ней и движок Flutter (Dart стартует заново, порт
+             шины переоткрывается). На киоске смена окна/вставок (скрытие
+             панели навигации, клавиатура, смена режима) не должна этого
+             делать — Flutter сам перерисовывается по новым размерам.
+             navigation/touchscreen/colorMode/mcc/mnc добавлены к прежнему
+             списку с запасом: какой именно параметр меняет прошивка при
+             скрытии панели навигации, на планшете не проверено. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleInstance"
             android:taskAffinity=""
             android:theme="@style/LaunchTheme"
-            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:configChanges="orientation|keyboardHidden|keyboard|navigation|touchscreen|screenSize|smallestScreenSize|screenLayout|density|uiMode|colorMode|mcc|mnc|locale|layoutDirection|fontScale"
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize">
             <!-- Specifies an Android theme to apply to this Activity as soon as

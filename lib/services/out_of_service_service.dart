@@ -159,10 +159,16 @@ class OutOfServiceService {
     bool showScreen = true,
   }) async {
     final existing = notifier.outOfService;
+    // Временная причина (bus_down) — не "первый вывод": постоянный отказ
+    // начинается сейчас, прежний код остаётся в previous_code.
+    final earlier =
+        existing != null && !OutOfServiceCode.isTransient(existing.code)
+        ? existing
+        : null;
     final state = OutOfServiceState(
       code: code,
       // Первоначальный момент вывода не затираем повторными отказами.
-      since: existing?.since ?? DateTime.now(),
+      since: earlier?.since ?? DateTime.now(),
       details: {
         ...details,
         if (existing != null && existing.code != code)
@@ -190,6 +196,38 @@ class OutOfServiceService {
         ...state.details,
       },
     );
+  }
+
+  // ВРЕМЕННЫЙ вывод (задача "устойчивость шины"): тот же признак и тот же
+  // экран "не работает", но без записи на диск — после перезапуска его нет,
+  // а снимается он сам (leaveTransient), когда причина ушла. Уже стоящий
+  // постоянный вывод не подменяется. Событие в облако шлёт вызывающий.
+  // true — признак выставлен этим вызовом.
+  static bool enterTransient(
+    AppNotifier notifier, {
+    required String code,
+    Map<String, dynamic> details = const {},
+    bool showScreen = true,
+  }) {
+    assert(OutOfServiceCode.isTransient(code));
+    if (notifier.outOfService != null) return false;
+    notifier.enterOutOfService(
+      OutOfServiceState(
+        code: code,
+        since: DateTime.now(),
+        details: {...details, 'transient': true},
+      ),
+      showScreen: showScreen,
+    );
+    return true;
+  }
+
+  // Снять временный вывод с этим кодом. Постоянный (или другой временный)
+  // не трогается. true — признак снят.
+  static bool leaveTransient(AppNotifier notifier, {required String code}) {
+    if (notifier.outOfService?.code != code) return false;
+    notifier.leaveOutOfService();
+    return true;
   }
 
   // Событие при старте, если признак восстановлен из хранилища.

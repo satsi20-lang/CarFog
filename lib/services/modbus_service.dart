@@ -54,6 +54,17 @@ class ModbusService {
 
   static bool get isOpen => _open;
 
+  // Состояние сторожа шины на нативной стороне (задача "устойчивость шины"):
+  // без обмена по шине, только счётчики. null — канал не ответил.
+  static Future<Map<dynamic, dynamic>?> busHealth() async {
+    try {
+      return await _channel.invokeMethod<Map>('busHealth');
+    } catch (e) {
+      debugPrint('ModbusService.busHealth error: $e');
+      return null;
+    }
+  }
+
   // Читает ВСЕ 16 дискретных входов одной транзакцией (каналы датчиков
   // уровня — см. PumpChannel.sensorDI в bus_map.dart, IoModuleInputs —
   // монетоприёмник/терминал). Один запрос на 16 входов стоит по времени

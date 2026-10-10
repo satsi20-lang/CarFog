@@ -7,6 +7,7 @@ import '../models/app_state.dart';
 import '../models/bus_map.dart';
 import '../models/remote_limits.dart';
 import 'app_log_service.dart';
+import 'bus_watchdog_service.dart';
 import 'cloud_service.dart';
 import 'heater_safety_monitor.dart';
 import 'heater_trial_service.dart';
@@ -168,6 +169,7 @@ class DiagnosticsService {
       'debug_modes': await _safe(() => ModbusService.activeDebugModes()),
       'reads': reads,
       'watchdog': OutputWatchdogService.status(),
+      'bus_watchdog': BusWatchdogService.status(),
       'detectors': {
         'last_fault': HeaterSafetyMonitor.lastFault,
         'thresholds': {

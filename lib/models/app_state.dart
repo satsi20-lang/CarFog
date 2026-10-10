@@ -360,7 +360,9 @@ class AppNotifier extends ChangeNotifier {
   // --- Выведен из обслуживания (задача "вывод аппарата из обслуживания") ---
   // null — аппарат работает. Выставляется ТОЛЬКО из OutOfServiceService
   // (после подтверждённой записи на диск) и при старте приложения из
-  // main.dart, снимается только вручную на месте.
+  // main.dart, снимается только вручную на месте. Исключение — временные
+  // причины (OutOfServiceCode.transientCodes, сейчас bus_down): без записи
+  // на диск, снимаются сами (OutOfServiceService.leaveTransient).
   OutOfServiceState? _outOfService;
   OutOfServiceState? get outOfService => _outOfService;
   bool get isOutOfService => _outOfService != null;
@@ -444,7 +446,8 @@ class AppNotifier extends ChangeNotifier {
   }
 
   // Снятие признака. Вызывать только из OutOfServiceService.clearByTechnician
-  // (после подтверждённого удаления записи и успешного пробного цикла).
+  // (после подтверждённого удаления записи и успешного пробного цикла) или
+  // OutOfServiceService.leaveTransient (временная причина, bus_down).
   void leaveOutOfService() {
     _outOfService = null;
     refreshPaymentBlock();

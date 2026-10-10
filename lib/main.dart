@@ -27,6 +27,7 @@ import 'services/modbus_service.dart';
 import 'services/out_of_service_service.dart';
 import 'services/output_watchdog_service.dart';
 import 'services/startup_service.dart';
+import 'services/bus_watchdog_service.dart';
 import 'services/sync_service.dart';
 import 'services/update_service.dart';
 import 'services/system_service.dart';
@@ -188,6 +189,10 @@ void main() async {
   // состоянием выходов в состояниях покоя и гасит всё, если модуль поднял
   // что-то сам.
   OutputWatchdogService.start(notifier);
+
+  // Сторож шины (задача "устойчивость шины"): события переоткрытия порта в
+  // журнал и облако, долгий отказ шины — временный экран "не работает".
+  BusWatchdogService.start(notifier);
 
   // Возврат на передний план: заводской файл мог появиться/смениться уже при
   // работающем приложении (запись adb во время наладки).

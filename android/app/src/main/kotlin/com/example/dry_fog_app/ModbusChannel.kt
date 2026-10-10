@@ -14,7 +14,14 @@ import java.util.concurrent.atomic.AtomicInteger
 class ModbusChannel(private val channel: MethodChannel, private val context: Context) :
     MethodChannel.MethodCallHandler {
 
-    private var modbus: ModbusRtu? = null
+    // Порт принадлежит процессу (BusPortRegistry), а не этому экземпляру:
+    // канал видит его, только пока он владелец (последний открывший).
+    private val registry get() = ProcessBus.registry
+    private val modbus: ModbusRtu? get() = registry.busFor(this)
+
+    init {
+        ProcessBus.init(context)
+    }
 
     // Slave IDs согласно схеме проекта
     private val SLAVE_DIO = 5        // CWT-BK-1616 (плата BSM-1616RB), адрес сменён с 1 на 5
@@ -29,11 +36,10 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
     private val ENERGY_CACHE_MAX_AGE_MS = 2000L
 
     companion object {
-        // Объект работы с шиной, открытый последним успешным "open" — нужен
-        // аварийному обработчику (DryFogApplication) для прямого доступа к
-        // порту в обход MethodChannel/Flutter, когда Dart уже нерабочий.
-        @Volatile
-        var activeBus: ModbusRtu? = null
+        // Открытый объект работы с шиной (один на процесс, BusPortRegistry) —
+        // нужен аварийному обработчику (DryFogApplication) для прямого доступа
+        // к порту в обход MethodChannel/Flutter, когда Dart уже нерабочий.
+        val activeBus: ModbusRtu? get() = ProcessBus.registry.current
 
         // Дублирует SLAVE_DIO как доступный статически — тот же адрес,
         // аварийному обработчику нужен вне экземпляра ModbusChannel.
@@ -117,42 +123,23 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
     // одинаково молча проваливались в один и тот же false.
     @Synchronized
     private fun openPort(port: String, baud: Int, reason: String): ModbusRtu.OpenResult {
-        val existing = modbus
-        if (existing != null && existing.isOpen()) {
-            return ModbusRtu.OpenResult.Ok
-        }
-        if (existing != null) {
-            Log.d(TAG, "openPort: закрываю предыдущий экземпляр перед переоткрытием ($reason)")
-            existing.close()
-            modbus = null
-            activeBus = null
-        }
-        val bus = ModbusRtu(context)
-        val result = bus.open(port, baud)
-        return when (result) {
-            is ModbusRtu.OpenResult.Ok -> {
+        // Идемпотентность и владение — в BusPortRegistry (задача
+        // "устойчивость шины"): порт, уже открытый этим процессом (в том
+        // числе другим движком Flutter), переиспользуется, а не даёт
+        // PORT_BUSY с собственным PID.
+        val result = registry.open(this, port, baud)
+        when (result) {
+            is ModbusRtu.OpenResult.Ok ->
                 Log.d(TAG, "openPort: порт открыт ($port, причина: $reason)")
-                modbus = bus
-                activeBus = bus
-                result
-            }
-            is ModbusRtu.OpenResult.Busy -> {
-                Log.e(
-                    TAG,
-                    "openPort: порт занят другим процессом ($port, причина: $reason, " +
-                        "pid=${result.holderPid})"
-                )
-                modbus = null
-                activeBus = null
-                result
-            }
-            is ModbusRtu.OpenResult.Failed -> {
+            is ModbusRtu.OpenResult.Busy -> Log.e(
+                TAG,
+                "openPort: порт занят другим процессом ($port, причина: $reason, " +
+                    "pid=${result.holderPid})"
+            )
+            is ModbusRtu.OpenResult.Failed ->
                 Log.e(TAG, "openPort: не удалось открыть ($port, причина: $reason)")
-                modbus = null
-                activeBus = null
-                result
-            }
         }
+        return result
     }
 
     // Процедура смены Slave ID (задача "правки визарда смены Slave ID по
@@ -471,13 +458,15 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
                 if (modbus != null) {
                     Log.d(TAG, "close: закрываю порт (явный вызов close())")
                 }
-                modbus?.close()
-                modbus = null
-                activeBus = null
+                registry.close(this)
                 result.success(null)
             }
 
             "isOpen" -> result.success(modbus?.isOpen() == true)
+
+            // Состояние сторожа шины (без обмена по шине): ошибки подряд,
+            // счётчик успехов, события переоткрытия — для BusWatchdogService.
+            "busHealth" -> result.success(registry.health(this))
 
             // Читает ВСЕ 16 DI одной транзакцией — один запрос на 16 входов
             // стоит по времени столько же, сколько на 8 (время уходит на
@@ -672,9 +661,7 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
                     ?: listOf(4800, 19200, 38400, 115200)
                 val originalBaud = call.argument<Int>("originalBaud") ?: 9600
 
-                modbus?.close()
-                modbus = null
-                activeBus = null
+                registry.close(this)
 
                 var foundBaud: Int? = null
                 for (baud in bauds) {
@@ -710,18 +697,8 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
                 val baud = call.argument<Int>("baud") ?: 9600
                 val parity = call.argument<String>("parity") ?: "none"
 
-                modbus?.close()
-                modbus = null
-                activeBus = null
-
-                val bus = ModbusRtu(context)
-                val ok = bus.open(port, baud, parity) == ModbusRtu.OpenResult.Ok
-                if (ok) {
-                    modbus = bus
-                    activeBus = bus
-                } else {
-                    bus.close()
-                }
+                // Реестр сам закрывает прежний объект, если параметры другие.
+                val ok = registry.open(this, port, baud, parity) == ModbusRtu.OpenResult.Ok
                 result.success(ok)
             }
 
@@ -1223,20 +1200,20 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
     fun release() {
         paymentPollingActive.set(false)
         coinAcceptorAutoOffHandlerCleanup()
-        val bus = modbus ?: return
-        try {
-            bus.scanWriteMultipleCoils(SLAVE_DIO, 0, List(10) { false }, timeoutMs = 150L)
-        } catch (e: Throwable) {
-            Log.e(TAG, "release: safeAllOff не удался: $e")
+        // Порт у другого (более нового) движка — не закрываем и не гасим
+        // выходы под ним: он уже управляет аппаратом.
+        val released = registry.release(this) { bus ->
+            try {
+                bus.scanWriteMultipleCoils(SLAVE_DIO, 0, List(10) { false }, timeoutMs = 150L)
+            } catch (e: Throwable) {
+                Log.e(TAG, "release: safeAllOff не удался: $e")
+            }
         }
-        try {
-            bus.close()
-        } catch (e: Throwable) {
-            Log.e(TAG, "release: close не удался: $e")
+        if (released) {
+            Log.w(TAG, "release: порт освобождён (движок уничтожен)")
+        } else {
+            Log.w(TAG, "release: порт принадлежит другому каналу — не трогаю")
         }
-        modbus = null
-        if (activeBus === bus) activeBus = null
-        Log.w(TAG, "release: порт освобождён (движок уничтожен)")
     }
 
     private fun coinAcceptorAutoOffHandlerCleanup() {

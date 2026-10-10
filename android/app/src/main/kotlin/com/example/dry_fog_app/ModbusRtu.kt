@@ -16,7 +16,7 @@ import java.util.concurrent.locks.ReentrantLock
 // эксклюзивность обеспечивается FileChannel.tryLock() ниже и от него не
 // зависит. Без context (если вызывающий код его не передал) блокировка
 // продолжает работать, просто сообщение об отказе не будет знать чужой PID.
-class ModbusRtu(private val context: Context? = null) {
+class ModbusRtu(private val context: Context? = null) : SerialBus {
 
     private var raf: RandomAccessFile? = null
     private var inputStream: FileInputStream? = null
@@ -48,6 +48,14 @@ class ModbusRtu(private val context: Context? = null) {
     // работал в фоне).
     private val ioLock = ReentrantLock(true)
 
+    // Итог каждой обычной транзакции (sendAndReceive) для сторожа шины —
+    // см. BusPortRegistry/BusWatchdog. Вызывается ПОСЛЕ снятия ioLock:
+    // обработчик может переоткрыть порт, и держать при этом шину нельзя.
+    // Транзакции сканера (scan*) сюда не входят: "нет ответа" на пустом
+    // адресе — штатный исход перебора, не признак мёртвой шины.
+    @Volatile
+    override var transactionListener: ((Boolean) -> Unit)? = null
+
     // Результат открытия порта — раньше был просто Boolean, из-за чего
     // "порт занят другим процессом" неотличимо от "порт не найден"/"нет
     // прав": оба варианта одинаково молча проваливались, и час ушёл на
@@ -77,7 +85,7 @@ class ModbusRtu(private val context: Context? = null) {
     // DDSU666: найти счётчик"). Дефолт "none" — обычный вызов open(port,
     // baud) продолжает работать как раньше, ничего не меняя для остальных
     // мест кода.
-    fun open(port: String, baud: Int, parity: String = "none"): OpenResult {
+    override fun open(port: String, baud: Int, parity: String): OpenResult {
         return try {
             if (!configurePort(port, baud, parity)) {
                 return OpenResult.Failed
@@ -183,7 +191,26 @@ class ModbusRtu(private val context: Context? = null) {
         return false
     }
 
-    fun close() {
+    // Переоткрытие сторожем шины (BusPortRegistry): под ioLock, чтобы ни
+    // одна транзакция другого потока не попала между close и open; объект
+    // тот же — ссылки на него (ModbusChannel.activeBus и т.п.) остаются
+    // рабочими.
+    override fun reopen(port: String, baud: Int, parity: String, pauseMs: Long): OpenResult {
+        ioLock.lock()
+        try {
+            close()
+            try {
+                Thread.sleep(pauseMs)
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+            return open(port, baud, parity)
+        } finally {
+            ioLock.unlock()
+        }
+    }
+
+    override fun close() {
         // Снимается и сама при закрытии raf ниже (закрытие дескриптора
         // освобождает файловые блокировки), но явный release() — не
         // полагаться на побочный эффект, а зафиксировать намерение.
@@ -213,7 +240,7 @@ class ModbusRtu(private val context: Context? = null) {
         lockInfoFile = null
     }
 
-    fun isOpen() = inputStream != null && outputStream != null
+    override fun isOpen() = inputStream != null && outputStream != null
 
     // FC02: Read Discrete Inputs (DI — датчики уровня, монетоприёмник)
     // timeoutMs — таймаут ожидания ответа (см. sendAndReceive/readWithTimeout);
@@ -611,6 +638,14 @@ class ModbusRtu(private val context: Context? = null) {
     // полудуплексный и общий на всех — без блокировки конкурентные вызовы с
     // разных потоков перемешивали бы байты запросов/ответов друг друга.
     private fun sendAndReceive(request: ByteArray, expectedBytes: Int, timeoutMs: Long = 500): ByteArray? {
+        val resp = transact(request, expectedBytes, timeoutMs)
+        // Порт закрыт (streams == null) — тоже неудача: объект в реестре
+        // хотят видеть открытым, сторож должен попробовать его поднять.
+        transactionListener?.invoke(resp != null)
+        return resp
+    }
+
+    private fun transact(request: ByteArray, expectedBytes: Int, timeoutMs: Long): ByteArray? {
         ioLock.lock()
         try {
             val out = outputStream ?: return null

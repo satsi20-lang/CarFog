@@ -34,6 +34,15 @@ class OutOfServiceCode {
   static const outputStuckOn = 'output_stuck_on';
   // Хранилище не читается / запись повреждена при старте — fail-closed.
   static const stateUnreadable = 'state_unreadable';
+  // Шина не отвечает дольше BusWatchdogService.downAfter (задача
+  // "устойчивость шины"). ВРЕМЕННАЯ причина: на диск не пишется и
+  // снимается сама, как только шина снова отвечает (см.
+  // OutOfServiceService.enterTransient/leaveTransient).
+  static const busDown = 'bus_down';
+
+  // Причины, которые не переживают перезапуск и снимаются автоматически.
+  static const transientCodes = {busDown};
+  static bool isTransient(String code) => transientCodes.contains(code);
 }
 
 class OutOfServiceState {

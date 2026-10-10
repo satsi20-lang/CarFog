@@ -300,6 +300,8 @@ const Map<String, Map<String, String>> _i18n = {
         'выход остаётся включённым после аварийного выключения',
     'oos_code_state_unreadable':
         'состояние не читается (fail-closed при старте)',
+    'oos_code_bus_down':
+        'шина не отвечает (снимется само, когда ответы вернутся)',
     'oos_trial_btn': 'Пробный цикл (без оплаты)',
     'oos_trial_running': 'Идёт пробный цикл…',
     'oos_trial_hint':
@@ -636,6 +638,7 @@ const Map<String, Map<String, String>> _i18n = {
         'overheating (heater does not switch off or thermostat failed)',
     'oos_code_output_stuck_on': 'an output stays on after emergency switch-off',
     'oos_code_state_unreadable': 'state unreadable (fail-closed at startup)',
+    'oos_code_bus_down': 'bus not responding (clears itself when replies return)',
     'oos_trial_btn': 'Trial cycle (no payment)',
     'oos_trial_running': 'Trial cycle running…',
     'oos_trial_hint':
@@ -976,6 +979,7 @@ const Map<String, Map<String, String>> _i18n = {
         'ülekuumenemine (küttekeha ei lülitu välja või termostaat ei tööta)',
     'oos_code_output_stuck_on': 'väljund jääb pärast avariilülitust sisse',
     'oos_code_state_unreadable': 'olek ei ole loetav (fail-closed käivitusel)',
+    'oos_code_bus_down': 'siin ei vasta (taastub ise, kui vastused tulevad tagasi)',
     'oos_trial_btn': 'Prooviring (ilma makseta)',
     'oos_trial_running': 'Prooviring käib…',
     'oos_trial_hint':
@@ -2533,6 +2537,7 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
       OutOfServiceCode.overheat => t['oos_code_overheat']!,
       OutOfServiceCode.outputStuckOn => t['oos_code_output_stuck_on']!,
       OutOfServiceCode.stateUnreadable => t['oos_code_state_unreadable']!,
+      OutOfServiceCode.busDown => t['oos_code_bus_down']!,
       _ => code,
     };
 
