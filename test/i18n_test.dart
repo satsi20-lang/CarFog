@@ -264,10 +264,10 @@ void main() {
 
     test('тумблер «показывать черновые переводы»: draft с файлом виден, без файла — нет', () {
       I18n.loadFromStrings(manifest: manifestRaw, files: {...files, 'de': files['en']});
-      final s = DeviceSpec.tryParse({'langs': ['de', 'ru', 'fr', 'et'], 'default_lang': 'de'})!;
+      final s = DeviceSpec.tryParse({'langs': ['de', 'ru', 'it', 'et'], 'default_lang': 'de'})!;
       expect(s.displayLangs, ['ru', 'et']);
       I18n.showDrafts = true;
-      expect(s.displayLangs, ['de', 'ru', 'et']); // fr без файла
+      expect(s.displayLangs, ['de', 'ru', 'et']); // it без файла
       expect(s.displayDefaultLang, 'de');
       I18n.showDrafts = false;
       expect(s.displayLangs, ['ru', 'et']);
