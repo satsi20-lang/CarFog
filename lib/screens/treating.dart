@@ -6,6 +6,7 @@ import '../models/bus_map.dart';
 import '../models/out_of_service.dart';
 import '../services/cloud_service.dart';
 import '../services/cycle_energy_service.dart';
+import '../services/cycle_summary_service.dart';
 import '../services/heater_safety_monitor.dart';
 import '../services/heater_shutdown_service.dart';
 import '../services/i18n_service.dart';
@@ -122,6 +123,7 @@ class _TreatingScreenState extends State<TreatingScreen>
       // Плохое чтение (null / обрыв / нереалистично) — не принимаем по нему
       // решений: -500°C как "ниже порога включения" включило бы ТЭН.
       if (!HeaterSafetyMonitor.isUsable(temp) || _monitor.lastReadBad) return;
+      CycleSummary.recordTemp(temp);
       setState(() => _currentTemp = temp!);
       // Аварийный потолок: в прогреве он есть, в обработке раньше не было
       // совсем — при залипшем реле от перегрева защищал бы только
@@ -342,6 +344,7 @@ class _TreatingScreenState extends State<TreatingScreen>
     // раньше неудача выключения оставляла _heaterOn=false, и следующий тик
     // считал, что делать нечего, пока ТЭН продолжал греть.
     if (ok) {
+      CycleSummary.heaterCommanded(wantOn);
       _lastHeaterToggleAt = now;
       _heaterOn = wantOn;
       _heaterToggleCount++;
@@ -364,6 +367,11 @@ class _TreatingScreenState extends State<TreatingScreen>
 
   void _startPhase(_Phase phase, int seconds) {
     _timer?.cancel();
+    CycleSummary.enterPhase(switch (phase) {
+      _Phase.compressor => 'compressor_startup',
+      _Phase.treating => 'treating',
+      _Phase.shutdown => 'purge',
+    });
     setState(() {
       _phase = phase;
       _secondsLeft = seconds;
