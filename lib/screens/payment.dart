@@ -3,47 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../services/cloud_service.dart';
+import '../services/i18n_service.dart';
 import '../services/modbus_service.dart';
 import '../services/session_service.dart';
 import '../widgets/fog_background.dart';
 import '../widgets/lang_switcher.dart';
 import '../widgets/portrait_ui.dart';
-
-const Map<String, Map<String, String>> _i18n = {
-  'ru': {
-    'title': 'ОПЛАТА',
-    'flavor': 'Аромат',
-    'price': 'Стоимость услуги',
-    'paid': 'Внесено',
-    'remaining': 'Осталось',
-    'instruction': 'Внесите монеты',
-    'instruction_with_card': 'Внесите монеты или приложите карту',
-    'instruction_coin_down_with_card': 'Приём монет недоступен — оплатите картой',
-    'cancel': 'Отмена',
-  },
-  'en': {
-    'title': 'PAYMENT',
-    'flavor': 'Fragrance',
-    'price': 'Service price',
-    'paid': 'Paid',
-    'remaining': 'Remaining',
-    'instruction': 'Insert coins',
-    'instruction_with_card': 'Insert coins or tap your card',
-    'instruction_coin_down_with_card': 'Coin payment unavailable — pay by card',
-    'cancel': 'Cancel',
-  },
-  'et': {
-    'title': 'MAKSE',
-    'flavor': 'Lõhn',
-    'price': 'Teenuse hind',
-    'paid': 'Makstud',
-    'remaining': 'Jäänud',
-    'instruction': 'Lisa münte',
-    'instruction_with_card': 'Lisa münte või kasuta kaarti',
-    'instruction_coin_down_with_card': 'Mündimakse ei toimi — kasuta kaarti',
-    'cancel': 'Tühista',
-  },
-};
 
 class PaymentScreen extends StatefulWidget {
   const PaymentScreen({super.key});
@@ -366,9 +331,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
   Widget build(BuildContext context) {
     final notifier = context.watch<AppNotifier>();
     final lang = notifier.lang;
-    final t = _i18n[lang]!;
+    String t(String key) => I18n.tr(lang, 'payment.$key');
     final flavorIndex = notifier.selectedFlavor ?? 0;
-    final flavorName = notifier.config.flavorNames[lang]![flavorIndex];
+    final flavorName = notifier.config.flavorNameFor(lang, flavorIndex);
     final remainingCents = (_priceCents - _balanceCents).clamp(0, _priceCents);
     final progress = _priceCents == 0
         ? 0.0
@@ -390,7 +355,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     children: [
                       Expanded(
                         child: Text(
-                          t['title']!,
+                          t('title'),
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: PUi.titleSp,
@@ -400,13 +365,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
                       ),
                       LangSwitcher(
                         current: lang,
+                        langs: notifier.displayLangs,
                         onChanged: notifier.setLanguage,
                       ),
                     ],
                   ),
                   const SizedBox(height: 32),
                   Text(
-                    t['flavor']!,
+                    t('flavor'),
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       color: Colors.white60,
@@ -433,7 +399,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     ),
                   ),
                   Text(
-                    t['price']!,
+                    t('price'),
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       color: Colors.white60,
@@ -443,10 +409,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   const Spacer(),
                   Text(
                     _coinAcceptorDown && _terminalEnabled
-                        ? t['instruction_coin_down_with_card']!
+                        ? t('instruction_coin_down_with_card')
                         : _terminalEnabled
-                            ? t['instruction_with_card']!
-                            : t['instruction']!,
+                        ? t('instruction_with_card')
+                        : t('instruction'),
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       color: Colors.white70,
@@ -467,7 +433,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   ),
                   const SizedBox(height: 28),
                   _InfoRow(
-                    label: t['paid']!,
+                    label: t('paid'),
                     value: '${_euro(_balanceCents)} €',
                     valueColor: _balanceCents >= _priceCents
                         ? Colors.greenAccent
@@ -475,7 +441,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   ),
                   const SizedBox(height: 12),
                   _InfoRow(
-                    label: t['remaining']!,
+                    label: t('remaining'),
                     value: '${_euro(remainingCents)} €',
                   ),
                   const Spacer(),
@@ -501,7 +467,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         ),
                       ),
                       child: Text(
-                        t['cancel']!,
+                        t('cancel'),
                         style: const TextStyle(fontSize: 28),
                       ),
                     ),

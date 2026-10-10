@@ -181,7 +181,7 @@ class _ServicePinScreenState extends State<ServicePinScreen>
           break;
         case PinResult.wrong:
           _fail();
-          _snack(_t('wrong_master', notifier.lang));
+          _snack(_t('wrong_master', notifier.serviceLang));
           await _refresh();
           break;
         case PinResult.locked:
@@ -229,7 +229,7 @@ class _ServicePinScreenState extends State<ServicePinScreen>
   }
 
   Future<void> _checkNewPin(AppNotifier notifier) async {
-    final lang = notifier.lang;
+    final lang = notifier.serviceLang;
     if (_newPinStep == 0) {
       if (PinPolicy.isWeak(_entered)) {
         _fail();
@@ -277,7 +277,7 @@ class _ServicePinScreenState extends State<ServicePinScreen>
   @override
   Widget build(BuildContext context) {
     final notifier = context.watch<AppNotifier>();
-    final lang = notifier.lang;
+    final lang = notifier.serviceLang;
     final blocked = _mode != _Mode.newPin && _isLocked;
 
     // Портрет 720x1280 dp: сверху язык, затем заголовок/статус, точки ввода,
@@ -294,6 +294,7 @@ class _ServicePinScreenState extends State<ServicePinScreen>
                 alignment: Alignment.centerRight,
                 child: LangSwitcher(
                   current: lang,
+                  langs: AppNotifier.serviceLangs,
                   onChanged: notifier.setLanguage,
                 ),
               ),

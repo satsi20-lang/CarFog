@@ -1,30 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
+import '../services/i18n_service.dart';
 import '../widgets/fog_background.dart';
 import '../widgets/lang_switcher.dart';
 import '../widgets/portrait_ui.dart';
-
-const Map<String, Map<String, String>> i18n = {
-  'ru': {
-    'title': 'ВЫБЕРИТЕ АРОМАТ',
-    'hint': 'Серым отмечены временно недоступные ароматы',
-    'unavailable': '(недоступно)',
-    'cancel': 'Отмена',
-  },
-  'en': {
-    'title': 'CHOOSE A FRAGRANCE',
-    'hint': 'Greyed-out fragrances are temporarily unavailable',
-    'unavailable': '(unavailable)',
-    'cancel': 'Cancel',
-  },
-  'et': {
-    'title': 'VALI LÕHN',
-    'hint': 'Hallid lõhnad on ajutiselt saadaval',
-    'unavailable': '(pole saadaval)',
-    'cancel': 'Tühista',
-  },
-};
 
 class SelectFlavorScreen extends StatelessWidget {
   const SelectFlavorScreen({super.key});
@@ -34,9 +14,11 @@ class SelectFlavorScreen extends StatelessWidget {
     final notifier = context.watch<AppNotifier>();
     final lang = notifier.lang;
     final levels = notifier.levels;
-    final names = notifier.config.flavorNames[lang]!;
     final count = notifier.config.activeFlavorCount;
-    final t = i18n[lang]!;
+    final names = [
+      for (var i = 0; i < count; i++) notifier.config.flavorNameFor(lang, i),
+    ];
+    String t(String key) => I18n.tr(lang, 'select_flavor.$key');
 
     return Scaffold(
       body: FogBackground(
@@ -55,12 +37,13 @@ class SelectFlavorScreen extends StatelessWidget {
                   alignment: Alignment.centerRight,
                   child: LangSwitcher(
                     current: lang,
+                    langs: notifier.displayLangs,
                     onChanged: notifier.setLanguage,
                   ),
                 ),
                 const SizedBox(height: 32),
                 Text(
-                  t['title']!,
+                  t('title'),
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     color: Colors.white,
@@ -71,7 +54,7 @@ class SelectFlavorScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  t['hint']!,
+                  t('hint'),
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     color: Colors.white60,
@@ -87,7 +70,7 @@ class SelectFlavorScreen extends StatelessWidget {
                     count: count,
                     names: names,
                     levels: levels,
-                    unavailable: t['unavailable']!,
+                    unavailable: t('unavailable'),
                     onSelect: (i) =>
                         context.read<AppNotifier>().selectFlavor(i),
                   ),
@@ -107,7 +90,7 @@ class SelectFlavorScreen extends StatelessWidget {
                       ),
                     ),
                     child: Text(
-                      t['cancel']!,
+                      t('cancel'),
                       style: const TextStyle(fontSize: 28),
                     ),
                   ),

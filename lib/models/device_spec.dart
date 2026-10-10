@@ -1,9 +1,10 @@
+import '../services/i18n_service.dart';
 import 'hardware_profile.dart';
 
 // Спецификация аппарата: число насосов (= число ароматов) и набор языков.
 // Контракт единый для базы (миграция R5), генератора (tool/provision_devices.py),
-// заводского файла (ключ "spec") и приложения. В этой части спецификация только
-// ХРАНИТСЯ и читается; экраны и карта каналов её пока не используют.
+// заводского файла (ключ "spec") и приложения. Языки клиентских экранов —
+// displayLangs (пересечение langs и переведённых языков из assets/i18n).
 class DeviceSpec {
   final int pumps;
   final List<String> langs;
@@ -56,12 +57,13 @@ class DeviceSpec {
     'no',
   ];
 
-  // Языки, для которых в приложении есть перевод (остальные из spec
-  // сохраняются, но пока не показываются).
-  static const List<String> implemented = ['et', 'en', 'ru'];
+  // Языки, для которых в приложении есть перевод: manifest.json со статусом
+  // released и загруженным файлом (при включённом в сервисном меню показе
+  // черновиков — и draft). Остальные из spec сохраняются, но не показываются.
+  static List<String> get implemented => I18n.availableLangs;
 
   // Запасной язык, если пересечение langs и implemented пусто.
-  static const String fallbackLang = 'en';
+  static const String fallbackLang = I18n.fallbackLang;
 
   // Число активных насосов/ароматов из значения specPumps: при любой ошибке
   // (не целое, вне 4…8) — значение по умолчанию 4.
@@ -122,13 +124,16 @@ class DeviceSpec {
   // Языки, которые можно показать: пересечение langs и implemented в порядке
   // langs; пусто → [en].
   List<String> get displayLangs {
-    final shown = langs.where(implemented.contains).toList();
+    final available = implemented;
+    final shown = langs.where(available.contains).toList();
     return shown.isEmpty ? const [fallbackLang] : shown;
   }
 
   // Коды из spec без перевода (для одной строки-предупреждения в журнал).
-  List<String> get unsupportedLangs =>
-      langs.where((l) => !implemented.contains(l)).toList();
+  List<String> get unsupportedLangs {
+    final available = implemented;
+    return langs.where((l) => !available.contains(l)).toList();
+  }
 
   // Язык по умолчанию для показа: defaultLang, если он показываем, иначе
   // первый показываемый.

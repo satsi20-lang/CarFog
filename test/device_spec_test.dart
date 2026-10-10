@@ -7,6 +7,7 @@ import 'package:dry_fog_app/models/device_spec.dart';
 import 'package:dry_fog_app/services/cloud_service.dart';
 import 'package:dry_fog_app/services/config_service.dart';
 import 'package:dry_fog_app/services/factory_config_service.dart';
+import 'package:dry_fog_app/services/i18n_service.dart';
 
 // Спецификация аппарата (число насосов, языки): контракт, хранение, заводской
 // файл. Экраны и карта каналов в этой части не меняются.
@@ -35,6 +36,8 @@ String _file({Object? spec, bool withSpec = true, String configId = '2026-10-08-
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  // Переводы клиентских экранов (assets/i18n) — как при старте приложения.
+  setUpAll(() => I18n.load());
 
   group('разбор и проверка spec', () {
     test('значения по умолчанию', () {

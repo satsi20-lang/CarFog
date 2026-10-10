@@ -10,48 +10,13 @@ import '../services/cloud_service.dart';
 import '../services/cycle_energy_service.dart';
 import '../services/heater_safety_monitor.dart';
 import '../services/heater_shutdown_service.dart';
+import '../services/i18n_service.dart';
 import '../services/modbus_service.dart';
 import '../services/out_of_service_service.dart';
 import '../services/session_service.dart';
 import '../widgets/fog_background.dart';
 import '../widgets/lang_switcher.dart';
 import '../widgets/portrait_ui.dart';
-
-const Map<String, Map<String, String>> i18n = {
-  'ru': {
-    'title': 'Прогрев...',
-    'subtitle': 'Идёт нагрев испарителя, пожалуйста подождите',
-    'hint1': '1. Вставьте шланг в приоткрытое окно автомобиля',
-    'hint2': '2. Включите внутреннюю рециркуляцию воздуха',
-    'hint3': '3. Закройте все двери и ожидайте снаружи',
-    'hint4':
-        '4. После завершения обработки насос ещё {s} сек будет распылять — не трогайте шланг',
-    'target': 'Цель',
-    'cancel': 'Отмена',
-  },
-  'en': {
-    'title': 'Preheating...',
-    'subtitle': 'Heating the evaporator, please wait',
-    'hint1': '1. Insert the hose through a slightly open window',
-    'hint2': '2. Turn on cabin air recirculation',
-    'hint3': '3. Close all doors and wait outside',
-    'hint4':
-        '4. After treatment ends, the pump keeps spraying for {s} more sec — do not touch the hose',
-    'target': 'Target',
-    'cancel': 'Cancel',
-  },
-  'et': {
-    'title': 'Eelsoojendus...',
-    'subtitle': 'Aurusti soojenemine käib, palun oota',
-    'hint1': '1. Sisesta voolik veidi avatud autoaknasse',
-    'hint2': '2. Lülita sisse salongi õhu ringlus',
-    'hint3': '3. Sulge kõik uksed ja oota väljas',
-    'hint4':
-        '4. Pärast töötluse lõppu pihustab pump veel {s} sek — ära puuduta voolikut',
-    'target': 'Sihtmärk',
-    'cancel': 'Tühista',
-  },
-};
 
 class PreparingScreen extends StatefulWidget {
   const PreparingScreen({super.key});
@@ -494,7 +459,8 @@ class _PreparingScreenState extends State<PreparingScreen> {
   Widget build(BuildContext context) {
     final notifier = context.watch<AppNotifier>();
     final lang = notifier.lang;
-    final t = i18n[lang]!;
+    String t(String key, [Map<String, Object?> params = const {}]) =>
+        I18n.tr(lang, 'preparing.$key', params: params);
 
     return Scaffold(
       body: FogBackground(
@@ -513,7 +479,7 @@ class _PreparingScreenState extends State<PreparingScreen> {
                     children: [
                       Expanded(
                         child: Text(
-                          t['title']!,
+                          t('title'),
                           style: const TextStyle(
                             color: Color(0xFFFFAA00),
                             fontSize: PUi.titleSp,
@@ -523,13 +489,14 @@ class _PreparingScreenState extends State<PreparingScreen> {
                       ),
                       LangSwitcher(
                         current: lang,
+                        langs: notifier.displayLangs,
                         onChanged: notifier.setLanguage,
                       ),
                     ],
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    t['subtitle']!,
+                    t('subtitle'),
                     style: const TextStyle(
                       color: Colors.white60,
                       fontSize: PUi.minBodySp,
@@ -563,7 +530,7 @@ class _PreparingScreenState extends State<PreparingScreen> {
                   const SizedBox(height: 12),
                   Center(
                     child: Text(
-                      '${t['target']!} ${_targetTemp.toStringAsFixed(0)}°C',
+                      t('target', {'temp': _targetTemp.toStringAsFixed(0)}),
                       style: const TextStyle(
                         color: Colors.white60,
                         fontSize: PUi.minBodySp,
@@ -571,17 +538,16 @@ class _PreparingScreenState extends State<PreparingScreen> {
                     ),
                   ),
                   const Spacer(),
-                  _HintRow(text: t['hint1']!),
+                  _HintRow(text: t('hint1')),
                   const SizedBox(height: 20),
-                  _HintRow(text: t['hint2']!),
+                  _HintRow(text: t('hint2')),
                   const SizedBox(height: 20),
-                  _HintRow(text: t['hint3']!),
+                  _HintRow(text: t('hint3')),
                   const SizedBox(height: 20),
                   _HintRow(
-                    text: t['hint4']!.replaceAll(
-                      '{s}',
-                      '${notifier.config.pumpAfterHeaterS}',
-                    ),
+                    text: t('hint4', {
+                      'seconds': notifier.config.pumpAfterHeaterS,
+                    }),
                   ),
                   const Spacer(),
                   SizedBox(
@@ -599,7 +565,7 @@ class _PreparingScreenState extends State<PreparingScreen> {
                         ),
                       ),
                       child: Text(
-                        t['cancel']!,
+                        t('cancel'),
                         style: const TextStyle(fontSize: 28),
                       ),
                     ),

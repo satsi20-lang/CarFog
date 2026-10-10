@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
+import '../services/i18n_service.dart';
 import '../widgets/fog_background.dart';
 import '../widgets/portrait_ui.dart';
 import '../widgets/lang_switcher.dart';
@@ -20,26 +21,11 @@ class _FinishedScreenState extends State<FinishedScreen>
   Timer? _countdownTimer;
   int _secondsLeft = 5;
 
-  static const _labels = {
-    'title': {
-      'et': 'Töötlus lõpetatud!',
-      'en': 'Treatment complete!',
-      'ru': 'Обработка завершена!',
-    },
-    'subtitle': {
-      'et': 'Teie auto salon on töödeldud kuiva uduga.',
-      'en': 'Your car interior has been treated with dry fog.',
-      'ru': 'Салон вашего автомобиля обработан сухим туманом.',
-    },
-    'returning': {
-      'et': 'Naaseb algusesse',
-      'en': 'Returning to start',
-      'ru': 'Возврат к началу',
-    },
-    'sec': {'et': 's', 'en': 's', 'ru': 'с'},
-  };
-
-  String _t(String key, String lang) => _labels[key]?[lang] ?? '';
+  String _t(
+    String key,
+    String lang, [
+    Map<String, Object?> params = const {},
+  ]) => I18n.tr(lang, 'finished.$key', params: params);
 
   @override
   void initState() {
@@ -92,6 +78,7 @@ class _FinishedScreenState extends State<FinishedScreen>
                 right: 24,
                 child: LangSwitcher(
                   current: lang,
+                  langs: notifier.displayLangs,
                   onChanged: notifier.setLanguage,
                 ),
               ),
@@ -186,7 +173,9 @@ class _FinishedScreenState extends State<FinishedScreen>
                             ),
                             child: Center(
                               child: Text(
-                                '$_secondsLeft${_t('sec', lang)}',
+                                _t('countdown', lang, {
+                                  'seconds': _secondsLeft,
+                                }),
                                 style: const TextStyle(
                                   color: Color(0xFF00C6B2),
                                   fontSize: 32,

@@ -227,6 +227,27 @@ class AppConfig {
   // Активное число ароматов/насосов: specPumps в пределах 4…8, при любой ошибке 4.
   int get activeFlavorCount => DeviceSpec.activeFor(specPumps);
 
+  // Название аромата для показа клиенту на любом языке. Названия вносит техник
+  // по языкам (вкладка «Ароматы»: ru/en/et); для языка без своего списка —
+  // запасная цепочка: язык → en → ru → любое непустое → «Flavor N».
+  String flavorNameFor(String lang, int index) {
+    String? at(List<String>? names) {
+      if (names == null || index < 0 || index >= names.length) return null;
+      final n = names[index].trim();
+      return n.isEmpty ? null : names[index];
+    }
+
+    for (final l in [lang, 'en', 'ru']) {
+      final n = at(flavorNames[l]);
+      if (n != null) return n;
+    }
+    for (final names in flavorNames.values) {
+      final n = at(names);
+      if (n != null) return n;
+    }
+    return 'Flavor ${index + 1}';
+  }
+
   // Спецификация как объект (hardwareProfile — константа профиля).
   DeviceSpec get spec => DeviceSpec(
     pumps: specPumps,
@@ -300,8 +321,18 @@ class AppNotifier extends ChangeNotifier {
   AppState get state => _state;
 
   // --- Язык ---
-  String _lang = 'ru';
+  // Стартовое значение — язык по умолчанию из spec (displayDefaultLang);
+  // main.dart вызывает initLanguage() после загрузки конфигурации и переводов.
+  late String _lang = _config.spec.displayDefaultLang;
   String get lang => _lang;
+
+  // Языки клиентских экранов (порядок = spec).
+  List<String> get displayLangs => _config.spec.displayLangs;
+
+  // Сервисные экраны техника переведены только на эти три языка; при другом
+  // выбранном языке они показываются на en.
+  static const List<String> serviceLangs = ['et', 'en', 'ru'];
+  String get serviceLang => serviceLangs.contains(_lang) ? _lang : 'en';
 
   // --- Выбранный аромат (0-7) ---
   int? _selectedFlavor;
@@ -474,6 +505,16 @@ class AppNotifier extends ChangeNotifier {
     if (_outOfService != null && !_allowedWhileOutOfService(newState)) {
       newState = AppState.outOfService;
     }
+    // Из сервисного меню техник мог выбрать язык, которого нет среди языков
+    // клиента (ru/en/et при другом spec) — клиент его не увидит.
+    final fromService =
+        _state == AppState.servicePinEntry || _state == AppState.serviceMenu;
+    final toService =
+        newState == AppState.servicePinEntry ||
+        newState == AppState.serviceMenu;
+    if (fromService && !toService && !displayLangs.contains(_lang)) {
+      _lang = _config.spec.displayDefaultLang;
+    }
     debugPrint('STATE: $_state → $newState (lang=$_lang)');
     if (newState != AppState.error) _errorCode = null;
     _state = newState;
@@ -492,6 +533,48 @@ class AppNotifier extends ChangeNotifier {
   void setLanguage(String lang) {
     _lang = lang;
     notifyListeners();
+  }
+
+  // Вызывается при старте (до runApp): язык по умолчанию из spec; если
+  // показывается один язык, экран выбора языка пропускается.
+  void initLanguage() {
+    _lang = _config.spec.displayDefaultLang;
+    _skipLanguageSelectIfSingle();
+  }
+
+  // Возврат к языку по умолчанию (конец сессии, простой на заставке).
+  void resetLanguage() {
+    final def = _config.spec.displayDefaultLang;
+    if (_lang == def) return;
+    _lang = def;
+    notifyListeners();
+  }
+
+  // Набор показываемых языков изменился (новая spec, тумблер черновиков):
+  // выбранный язык больше не показывается → язык по умолчанию.
+  void refreshLanguages() {
+    _ensureLangShown();
+    notifyListeners();
+  }
+
+  void _ensureLangShown() {
+    final langs = displayLangs;
+    if (!langs.contains(_lang) &&
+        !(_isServiceState && serviceLangs.contains(_lang))) {
+      _lang = _config.spec.displayDefaultLang;
+    }
+    _skipLanguageSelectIfSingle();
+  }
+
+  bool get _isServiceState =>
+      _state == AppState.servicePinEntry || _state == AppState.serviceMenu;
+
+  void _skipLanguageSelectIfSingle() {
+    // Как и после выбора языка — на заставку (блок оплаты проверяется дальше
+    // обычным путём, при выборе аромата).
+    if (_state == AppState.selectLanguage && displayLangs.length <= 1) {
+      _state = AppState.standby;
+    }
   }
 
   // ============================================================
@@ -544,6 +627,8 @@ class AppNotifier extends ChangeNotifier {
   void resetSession() {
     _selectedFlavor = null;
     _errorCode = null;
+    // Следующий клиент начинает на языке по умолчанию.
+    _lang = _config.spec.displayDefaultLang;
     // В режиме "выведен из обслуживания" возврат "в ожидание" ведёт на экран
     // "не работает", а не на заставку, принимающую оплату.
     _state = isPaymentBlocked ? AppState.outOfService : AppState.standby;
@@ -557,6 +642,7 @@ class AppNotifier extends ChangeNotifier {
   void updateConfig(AppConfig newConfig) {
     config = newConfig;
     refreshPaymentBlock();
+    _ensureLangShown();
     _cancelSessionIfFlavorGone();
     notifyListeners();
   }
@@ -564,6 +650,7 @@ class AppNotifier extends ChangeNotifier {
   Future<void> saveConfig(AppConfig newConfig) async {
     config = newConfig;
     refreshPaymentBlock();
+    _ensureLangShown();
     _cancelSessionIfFlavorGone();
     notifyListeners();
     await ConfigService.save(newConfig);

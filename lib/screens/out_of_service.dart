@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
+import '../services/i18n_service.dart';
 import '../widgets/fog_background.dart';
 import '../widgets/lang_switcher.dart';
 import '../widgets/portrait_ui.dart';
@@ -19,20 +20,6 @@ import '../widgets/portrait_ui.dart';
 class OutOfServiceScreen extends StatelessWidget {
   const OutOfServiceScreen({super.key});
 
-  static const _texts = {
-    'title': {
-      'et': 'Seade on ajutiselt hooldusel',
-      'en': 'Temporarily out of service',
-      'ru': 'Аппарат временно не работает',
-    },
-    'detail': {
-      'et': 'Makseid ei võeta vastu. Vabandame ebamugavuse pärast.',
-      'en': 'Payments are not being accepted. We apologise for the '
-          'inconvenience.',
-      'ru': 'Оплата не принимается. Приносим извинения за неудобство.',
-    },
-  };
-
   @override
   Widget build(BuildContext context) {
     final notifier = context.watch<AppNotifier>();
@@ -50,6 +37,7 @@ class OutOfServiceScreen extends StatelessWidget {
                 right: 24,
                 child: LangSwitcher(
                   current: lang,
+                  langs: notifier.displayLangs,
                   onChanged: notifier.setLanguage,
                 ),
               ),
@@ -94,7 +82,7 @@ class OutOfServiceScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 48),
                       Text(
-                        _texts['title']![lang] ?? _texts['title']!['ru']!,
+                        I18n.tr(lang, 'out_of_service.title'),
                         style: const TextStyle(
                           color: Color(0xFFE53935),
                           fontSize: 44,
@@ -105,7 +93,7 @@ class OutOfServiceScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 24),
                       Text(
-                        _texts['detail']![lang] ?? _texts['detail']!['ru']!,
+                        I18n.tr(lang, 'out_of_service.detail'),
                         style: const TextStyle(
                           color: Color(0xFF8899AA),
                           fontSize: PUi.bodySp + 2,

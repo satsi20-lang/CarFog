@@ -18,6 +18,7 @@ import 'package:dry_fog_app/screens/standby.dart';
 import 'package:dry_fog_app/screens/treating.dart';
 import 'package:dry_fog_app/widgets/lang_switcher.dart';
 import 'package:dry_fog_app/widgets/portrait_ui.dart';
+import 'package:dry_fog_app/services/i18n_service.dart';
 
 // Портретный макет под Syoung SY156-A510: физически 1080x1920, плотность 240
 // (devicePixelRatio 1.5) → логические 720x1280 dp. Каждый экран клиента и
@@ -25,6 +26,8 @@ import 'package:dry_fog_app/widgets/portrait_ui.dart';
 // переполнения RenderFlex) на ru/en/et.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  // Переводы клиентских экранов (assets/i18n) — как при старте приложения.
+  setUpAll(() => I18n.load());
 
   final messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
@@ -131,7 +134,7 @@ void main() {
       (tester) async {
     portrait(tester);
     await tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: LangSwitcher(current: 'et', onChanged: (_) {}))),
+      MaterialApp(home: Scaffold(body: LangSwitcher(current: 'et', langs: const ['et', 'en', 'ru'], onChanged: (_) {}))),
     );
     final items = find.text('ET');
     final box = tester.getSize(find

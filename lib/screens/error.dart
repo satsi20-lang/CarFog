@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
+import '../services/i18n_service.dart';
 import '../widgets/fog_background.dart';
 import '../widgets/lang_switcher.dart';
 import '../widgets/portrait_ui.dart';
@@ -20,131 +21,30 @@ class _ErrorScreenState extends State<ErrorScreen>
   Timer? _countdownTimer;
   int _secondsLeft = 10;
 
-  // Локализованные сообщения по коду ошибки
-  static const _errorMessages = {
-    'overheat': {'et': 'Ülekuumenemine', 'en': 'Overheating', 'ru': 'Перегрев'},
-    'timeout': {
-      'et': 'Soojenduse aeg ületatud',
-      'en': 'Heating timeout',
-      'ru': 'Таймаут нагрева',
-    },
-    'sensor': {
-      'et': 'Anduri viga',
-      'en': 'Sensor error',
-      'ru': 'Ошибка датчика',
-    },
-    'generic': {
-      'et': 'Süsteemiviga',
-      'en': 'System error',
-      'ru': 'Ошибка системы',
-    },
-    // Задача "не брать деньги, если шина недоступна" — без технических
-    // подробностей (ни слова про Modbus/RS485/шину): клиенту нужно только
-    // понять, что платить не надо.
-    'bus_unavailable': {
-      'et': 'Seade on ajutiselt hooldusel',
-      'en': 'Temporarily out of service',
-      'ru': 'Аппарат временно не работает',
-    },
-    // Задача "контроль цикла по электросчётчику... готовность оплаты" —
-    // "отказ вместо недосчёта": та же дисциплина, что и у bus_unavailable,
-    // без технических подробностей клиенту.
-    'coin_acceptor_unavailable': {
-      'et': 'Mündimakse ajutiselt ei toimi',
-      'en': 'Coin payment temporarily unavailable',
-      'ru': 'Приём монет временно недоступен',
-    },
-    // Задача "контроль цикла по электросчётчику" — проверка нагрева по
-    // счётчику (фаза 2, часть 1): деньги приняты, ТЭН не дал мощности
-    // вообще. Без технических подробностей клиенту — только то, что
-    // обработки не будет и к оплате вернутся/обратятся.
-    'heater_failure': {
-      'et': 'Seade ei saanud käivituda',
-      'en': 'Device could not start',
-      'ru': 'Устройство не смогло запуститься',
-    },
-    // Задача "детектор отказа датчика температуры": тот же смысл для
-    // клиента, что и у heater_failure — обработки не будет, деньги
-    // возвращает персонал; про датчик и подтипы клиенту не говорим.
-    'heater_sensor_fault': {
-      'et': 'Seade ei saanud käivituda',
-      'en': 'Device could not start',
-      'ru': 'Устройство не смогло запуститься',
-    },
-  };
-
-  static const _errorDetails = {
-    'overheat': {
-      'et': 'Temperatuur ületas 240°C. Seadmed on välja lülitatud.',
-      'en': 'Temperature exceeded 240°C. All devices have been shut down.',
-      'ru': 'Температура превысила 240°C. Все устройства отключены.',
-    },
-    'timeout': {
-      'et': 'Seade ei saavutanud 225°C 600 sekundi jooksul.',
-      'en': 'Device did not reach 225°C within 600 seconds.',
-      'ru': 'Устройство не достигло 225°C за 600 секунд.',
-    },
-    'sensor': {
-      'et': 'Temperatuuriandur ei anna signaali.',
-      'en': 'Temperature sensor is not responding.',
-      'ru': 'Датчик температуры не отвечает.',
-    },
-    'generic': {
-      'et': 'Ilmnes tundmatu viga.',
-      'en': 'An unexpected error occurred.',
-      'ru': 'Возникла непредвиденная ошибка.',
-    },
-    'bus_unavailable': {
-      'et': 'Makseid ei saa praegu vastu võtta. Palun proovige hiljem uuesti.',
-      'en':
-          'Payments are not being accepted right now. Please try again later.',
-      'ru': 'Оплата сейчас не принимается. Пожалуйста, попробуйте позже.',
-    },
-    'coin_acceptor_unavailable': {
-      'et': 'Palun kasutage kaardimakset või pöörduge teenindaja poole.',
-      'en': 'Please use card payment or contact the service staff.',
-      'ru': 'Пожалуйста, оплатите картой или обратитесь к персоналу.',
-    },
-    'heater_failure': {
-      'et': 'Teenust ei osutatud. Palun pöörduge teenindaja poole tagasimakse '
-          'saamiseks.',
-      'en': 'The service was not provided. Please contact the service staff '
-          'for a refund.',
-      'ru': 'Услуга не была оказана. Обратитесь к персоналу для возврата '
-          'средств.',
-    },
-    'heater_sensor_fault': {
-      'et': 'Teenust ei osutatud. Palun pöörduge teenindaja poole tagasimakse '
-          'saamiseks.',
-      'en': 'The service was not provided. Please contact the service staff '
-          'for a refund.',
-      'ru': 'Услуга не была оказана. Обратитесь к персоналу для возврата '
-          'средств.',
-    },
-  };
-
-  static const _labels = {
-    'contact': {
-      'et': 'Palun võtke ühendust teenindajaga.',
-      'en': 'Please contact the service staff.',
-      'ru': 'Обратитесь к обслуживающему персоналу.',
-    },
-    'returning': {
-      'et': 'Naaseb algusesse',
-      'en': 'Returning to start',
-      'ru': 'Возврат к началу',
-    },
-    'sec': {'et': 's', 'en': 's', 'ru': 'с'},
+  // Коды с отдельным текстом (error.<код>.title/detail в assets/i18n);
+  // неизвестный код — generic.
+  static const _knownCodes = {
+    'overheat',
+    'timeout',
+    'sensor',
+    'generic',
+    // Без технических подробностей (ни слова про Modbus/RS485/шину):
+    // клиенту нужно только понять, что платить не надо.
+    'bus_unavailable',
+    // "Отказ вместо недосчёта" — та же дисциплина.
+    'coin_acceptor_unavailable',
+    // Деньги приняты, ТЭН не дал мощности / отказ датчика температуры:
+    // обработки не будет, деньги возвращает персонал.
+    'heater_failure',
+    'heater_sensor_fault',
   };
 
   String _t(String key, String lang, [String code = 'generic']) {
-    if (key == 'title') {
-      return _errorMessages[code]?[lang] ?? _errorMessages['generic']![lang]!;
+    if (key == 'title' || key == 'detail') {
+      final c = _knownCodes.contains(code) ? code : 'generic';
+      return I18n.tr(lang, 'error.$c.$key');
     }
-    if (key == 'detail') {
-      return _errorDetails[code]?[lang] ?? _errorDetails['generic']![lang]!;
-    }
-    return _labels[key]?[lang] ?? '';
+    return I18n.tr(lang, 'error.$key', params: {'seconds': _secondsLeft});
   }
 
   @override
@@ -213,6 +113,7 @@ class _ErrorScreenState extends State<ErrorScreen>
                 right: 24,
                 child: LangSwitcher(
                   current: lang,
+                  langs: notifier.displayLangs,
                   onChanged: notifier.setLanguage,
                 ),
               ),
@@ -342,7 +243,7 @@ class _ErrorScreenState extends State<ErrorScreen>
                               ),
                               child: Center(
                                 child: Text(
-                                  '$_secondsLeft${_t('sec', lang)}',
+                                  _t('countdown', lang),
                                   style: const TextStyle(
                                     color: Color(0xFFE53935),
                                     fontSize: 32,

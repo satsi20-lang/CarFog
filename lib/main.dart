@@ -21,6 +21,7 @@ import 'screens/service/service_menu.dart';
 import 'services/cloud_service.dart';
 import 'services/config_service.dart';
 import 'services/factory_config_service.dart';
+import 'services/i18n_service.dart';
 import 'services/level_service.dart';
 import 'services/modbus_service.dart';
 import 'services/out_of_service_service.dart';
@@ -49,6 +50,9 @@ void main() async {
     );
   }
   AppLog.install();
+  // Переводы клиентских экранов (assets/i18n) — до чтения spec: набор
+  // показываемых языков зависит от manifest. Ошибки не прерывают запуск.
+  await I18n.load();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   // Основной планшет Syoung SY156-A510 стоит в портрете (профиль —
   // models/hardware_profile.dart); весь UI спроектирован под него.
@@ -61,14 +65,16 @@ void main() async {
   final config = await FactoryConfigService.applyOnStartup(
     await ConfigService.load(),
   );
-  // Языки из спецификации без перевода: сохраняются, но не показываются;
-  // одна строка в журнал (коды языков — не секрет).
+  // Языки из спецификации без выпущенного перевода (нет файла или статус
+  // draft): сохраняются, но не показываются; одна строка в журнал (коды
+  // языков — не секрет).
   final unsupported = config.spec.unsupportedLangs;
   if (unsupported.isNotEmpty) {
+    final available = DeviceSpec.implemented;
     AppLog.log(
       'Spec',
       'языки без перевода пока не показываются: ${unsupported.join(',')}'
-          '${config.spec.displayLangs.length == 1 && !config.spec.langs.any(DeviceSpec.implemented.contains) ? ' (используется ${DeviceSpec.fallbackLang})' : ''}',
+          '${!config.spec.langs.any(available.contains) ? ' (используется ${DeviceSpec.fallbackLang})' : ''}',
     );
   }
   // Порт шины — из настройки (недопустимый/запрещённый узел не применяется).
@@ -86,6 +92,8 @@ void main() async {
   ]);
 
   final notifier = AppNotifier()..config = config;
+  // Язык по умолчанию из spec; один язык — без экрана выбора языка.
+  notifier.initLanguage();
   // Блок оплаты по конфигурации (термопара/счётчик не отмечены) — до первого
   // экрана.
   notifier.refreshPaymentBlock();

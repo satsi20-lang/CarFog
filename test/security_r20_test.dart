@@ -177,7 +177,10 @@ void main() {
     }
 
     Future<AppNotifier> open(WidgetTester t) async {
-      final n = AppNotifier()..transition(AppState.servicePinEntry);
+      // Тексты экрана PIN в тесте — русские (язык по умолчанию теперь из spec).
+      final n = AppNotifier()
+        ..setLanguage('ru')
+        ..transition(AppState.servicePinEntry);
       await t.pumpWidget(
         ChangeNotifierProvider.value(
           value: n,
@@ -213,6 +216,7 @@ void main() {
     testWidgets('нормальный PIN сразу открывает меню без принудительной смены', (t) async {
       final n = AppNotifier()
         ..config = AppConfig(servicePin: '7351')
+        ..setLanguage('ru')
         ..transition(AppState.servicePinEntry);
       await t.pumpWidget(
         ChangeNotifierProvider.value(
@@ -230,6 +234,7 @@ void main() {
       final code = (await t.runAsync(() => MasterCodeService.generateNew(random: Random(21))))!;
       final n = AppNotifier()
         ..config = AppConfig(servicePin: '7351')
+        ..setLanguage('ru')
         ..transition(AppState.servicePinEntry);
       await t.pumpWidget(
         ChangeNotifierProvider.value(

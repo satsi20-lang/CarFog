@@ -17,6 +17,7 @@ import '../../services/cloud_service.dart';
 import '../../services/master_code_service.dart';
 import '../../services/pin_policy.dart';
 import '../../services/heater_trial_service.dart';
+import '../../services/i18n_service.dart';
 import '../../services/remote_command_guard.dart';
 import '../../services/diagnostics_service.dart';
 import '../../services/factory_config_service.dart';
@@ -276,6 +277,9 @@ const Map<String, Map<String, String>> _i18n = {
         'Отладка: термопара «залипает» на последнем значении, шину не читает — для проверки детекторов отказа датчика. Проверка идёт с ВКЛЮЧЁННЫМ ТЭНом: техник стоит рядом и готов отключить питание. Живёт до ручного выключения, автоснятие через 30 минут, видно в облаке.',
     'diag_freeze_temp_failed':
         'Заморозить нечем: нет ни одного чтения температуры',
+    'diag_show_drafts': 'Показывать черновые переводы',
+    'diag_show_drafts_hint':
+        'Языки со статусом draft появляются в выборе языка клиента — для проверки текста носителем языка на аппарате. Не сохраняется: после перезапуска выключено. Записывается в журнал.',
     'oos_status_ok': 'Аппарат принимает оплату',
     'oos_status_cfg_blocked':
         'ОПЛАТА ЗАБЛОКИРОВАНА конфигурацией (это не отказ)',
@@ -613,6 +617,9 @@ const Map<String, Map<String, String>> _i18n = {
     'diag_freeze_temp_hint':
         'Debug: the thermocouple "sticks" at its last value, the bus is not read — for testing the sensor-fault detectors. The test runs with the heater ON: the technician stays next to the machine ready to cut power. Stays on until switched off, auto-off after 30 minutes, visible in the cloud.',
     'diag_freeze_temp_failed': 'Nothing to freeze: no temperature reading yet',
+    'diag_show_drafts': 'Show draft translations',
+    'diag_show_drafts_hint':
+        'Languages with draft status appear in the customer language choice — for a native speaker to check the text on the machine. Not saved: off after a restart. Written to the log.',
     'oos_status_ok': 'Machine is accepting payments',
     'oos_status_cfg_blocked': 'PAYMENT BLOCKED by configuration (not a fault)',
     'oos_cfg_missing':
@@ -948,6 +955,9 @@ const Map<String, Map<String, String>> _i18n = {
         'Silumine: termopaar «kleepub» viimase väärtuse külge, siini ei loeta — anduririkke tuvastajate testimiseks. Test käib SISSELÜLITATUD küttekehaga: tehnik seisab kõrval ja on valmis toite katkestama. Püsib sees kuni käsitsi väljalülitamiseni, 30 minuti pärast lülitub ise välja, nähtav pilves.',
     'diag_freeze_temp_failed':
         'Pole mida külmutada: temperatuuri pole veel loetud',
+    'diag_show_drafts': 'Näita mustandtõlkeid',
+    'diag_show_drafts_hint':
+        'Olekuga draft keeled ilmuvad kliendi keelevalikusse — et emakeelne kõneleja saaks teksti seadmes kontrollida. Ei salvestata: pärast taaskäivitust väljas. Kirjutatakse logisse.',
     'oos_status_ok': 'Seade võtab makseid vastu',
     'oos_status_cfg_blocked':
         'MAKSED BLOKEERITUD seadistusega (see ei ole rike)',
@@ -1073,7 +1083,7 @@ class _ServiceMenuScreenState extends State<ServiceMenuScreen> {
   @override
   Widget build(BuildContext context) {
     final notifier = context.watch<AppNotifier>();
-    final lang = notifier.lang;
+    final lang = notifier.serviceLang;
     final t = _i18n[lang]!;
 
     final tabs = [
@@ -1109,7 +1119,11 @@ class _ServiceMenuScreenState extends State<ServiceMenuScreen> {
                       ),
                     ),
                   ),
-                  LangSwitcher(current: lang, onChanged: notifier.setLanguage),
+                  LangSwitcher(
+                    current: lang,
+                    langs: AppNotifier.serviceLangs,
+                    onChanged: notifier.setLanguage,
+                  ),
                   const SizedBox(width: 16),
                   TextButton(
                     onPressed: () => notifier.transition(AppState.standby),
@@ -1248,7 +1262,7 @@ class _SettingsTabState extends State<_SettingsTab> {
 
   void _save() {
     final notifier = context.read<AppNotifier>();
-    final t = _i18n[notifier.lang]!;
+    final t = _i18n[notifier.serviceLang]!;
     final duration = int.tryParse(_durationCtrl.text);
     final pin = _pinCtrl.text.trim();
     final compressorPurge = int.tryParse(_compressorPurgeCtrl.text);
@@ -1327,7 +1341,7 @@ class _SettingsTabState extends State<_SettingsTab> {
     required bool confirmFirst,
     bool forced = false,
   }) async {
-    final t = _i18n[context.read<AppNotifier>().lang]!;
+    final t = _i18n[context.read<AppNotifier>().serviceLang]!;
     if (confirmFirst) {
       final ok = await showDialog<bool>(
         context: context,
@@ -1484,7 +1498,7 @@ class _SettingsTabState extends State<_SettingsTab> {
 
   @override
   Widget build(BuildContext context) {
-    final t = _i18n[context.watch<AppNotifier>().lang]!;
+    final t = _i18n[context.watch<AppNotifier>().serviceLang]!;
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -1630,7 +1644,7 @@ class _FlavorsTabState extends State<_FlavorsTab> {
     }
     final updated = notifier.config.copyWith(flavorNames: newNames);
     notifier.saveConfig(updated);
-    final t = _i18n[notifier.lang]!;
+    final t = _i18n[notifier.serviceLang]!;
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(t['saved']!)));
@@ -1639,7 +1653,7 @@ class _FlavorsTabState extends State<_FlavorsTab> {
   @override
   Widget build(BuildContext context) {
     final notifier = context.watch<AppNotifier>();
-    final t = _i18n[notifier.lang]!;
+    final t = _i18n[notifier.serviceLang]!;
     final activeCount = notifier.config.activeFlavorCount;
     // Единый скроллящийся контейнер вместо Expanded(ListView) внутри
     // жёсткой Column: раньше при появлении клавиатуры (тап в поле имени)
@@ -1987,7 +2001,7 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  Map<String, String> get _t => _i18n[context.read<AppNotifier>().lang]!;
+  Map<String, String> get _t => _i18n[context.read<AppNotifier>().serviceLang]!;
 
   Future<bool> _confirmLoad(String loadName) async {
     final t = _t;
@@ -2355,6 +2369,21 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
     }
   }
 
+  // Показ черновых переводов (draft в assets/i18n/manifest.json) в выборе
+  // языка клиента — проверка текста носителем языка на аппарате до выпуска.
+  // Только в памяти (I18n.showDrafts), пишется в журнал и в облако.
+  void _toggleShowDrafts(bool value) {
+    I18n.showDrafts = value;
+    context.read<AppNotifier>().refreshLanguages();
+    setState(() {});
+    unawaited(
+      CloudService.report(
+        CloudEventType.debugModeChanged,
+        data: {'code': 'show_draft_translations', 'enabled': value},
+      ),
+    );
+  }
+
   // Заморозка показания термопары (см. _freezeTemperature). Включение
   // уходит в облако событием debug_mode_changed, как и у тумблера
   // монетоприёмника.
@@ -2660,7 +2689,7 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
   @override
   Widget build(BuildContext context) {
     final notifier = context.watch<AppNotifier>();
-    final lang = notifier.lang;
+    final lang = notifier.serviceLang;
     final t = _i18n[lang]!;
     final levels = notifier.levels;
     final flavors = notifier.config.flavorNames[lang] ?? [];
@@ -2878,6 +2907,19 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
             style: const TextStyle(color: Color(0xFF556677), fontSize: 12),
           ),
         ),
+        _ToggleRow(
+          key: const ValueKey('diag_show_drafts'),
+          label: t['diag_show_drafts']!,
+          value: I18n.showDrafts,
+          onChanged: _toggleShowDrafts,
+        ),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Text(
+            t['diag_show_drafts_hint']!,
+            style: const TextStyle(color: Color(0xFF556677), fontSize: 12),
+          ),
+        ),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
@@ -2962,14 +3004,20 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
               onChanged: _outputsLocked ? null : _setHeater,
             ),
           ];
-          return List.generate(5, (row) {
+          // Рядов столько, сколько нужно (насосов 4…8 + компрессор и ТЭН);
+          // при нечётном числе последний ряд с одним тумблером.
+          return List.generate((toggles.length + 1) ~/ 2, (row) {
             return Padding(
               padding: const EdgeInsets.only(bottom: 4),
               child: Row(
                 children: [
                   Expanded(child: toggles[row * 2]),
                   const SizedBox(width: 8),
-                  Expanded(child: toggles[row * 2 + 1]),
+                  Expanded(
+                    child: row * 2 + 1 < toggles.length
+                        ? toggles[row * 2 + 1]
+                        : const SizedBox.shrink(),
+                  ),
                 ],
               ),
             );
@@ -3352,7 +3400,7 @@ class _SensorsTabState extends State<_SensorsTab> {
 
   void _saveTerminalSettings() {
     final notifier = context.read<AppNotifier>();
-    final t = _i18n[notifier.lang]!;
+    final t = _i18n[notifier.serviceLang]!;
     final channel = int.tryParse(_terminalChannelCtrl.text);
     final guard = int.tryParse(_terminalGuardCtrl.text);
     if (channel == null || channel < 0 || channel >= kIoChannelCount) {
@@ -3379,7 +3427,7 @@ class _SensorsTabState extends State<_SensorsTab> {
 
   @override
   Widget build(BuildContext context) {
-    final t = _i18n[context.watch<AppNotifier>().lang]!;
+    final t = _i18n[context.watch<AppNotifier>().serviceLang]!;
     final journal = _terminalJournal.reversed.toList(); // новые сверху
 
     return ListView(
@@ -3724,6 +3772,7 @@ class _ToggleRow extends StatelessWidget {
   final ValueChanged<bool>? onChanged;
 
   const _ToggleRow({
+    super.key,
     required this.label,
     required this.value,
     required this.onChanged,
@@ -4811,7 +4860,7 @@ class _ScannerTabState extends State<_ScannerTab> {
 
   @override
   Widget build(BuildContext context) {
-    final t = _i18n[context.watch<AppNotifier>().lang]!;
+    final t = _i18n[context.watch<AppNotifier>().serviceLang]!;
 
     return ListView(
       padding: const EdgeInsets.all(24),
@@ -6272,7 +6321,7 @@ class _CloudTabState extends State<_CloudTab> {
   }
 
   Future<void> _finishCommissioning() async {
-    final t = _i18n[context.read<AppNotifier>().lang]!;
+    final t = _i18n[context.read<AppNotifier>().serviceLang]!;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -6361,7 +6410,7 @@ class _CloudTabState extends State<_CloudTab> {
 
   Future<void> _rollback() async {
     final notifier = context.read<AppNotifier>();
-    final t = _i18n[notifier.lang]!;
+    final t = _i18n[notifier.serviceLang]!;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -6408,7 +6457,7 @@ class _CloudTabState extends State<_CloudTab> {
   }
 
   Future<void> _toggleAdb(bool want) async {
-    final t = _i18n[context.read<AppNotifier>().lang]!;
+    final t = _i18n[context.read<AppNotifier>().serviceLang]!;
     if (want) {
       final ok = await showDialog<bool>(
         context: context,
@@ -6489,7 +6538,7 @@ class _CloudTabState extends State<_CloudTab> {
 
   Future<void> _save() async {
     final notifier = context.read<AppNotifier>();
-    final t = _i18n[notifier.lang]!;
+    final t = _i18n[notifier.serviceLang]!;
 
     final updated = notifier.config.copyWith(
       deviceId: _deviceIdCtrl.text.trim(),
@@ -6524,7 +6573,7 @@ class _CloudTabState extends State<_CloudTab> {
     ]);
 
     if (!mounted) return;
-    final t = _i18n[context.read<AppNotifier>().lang]!;
+    final t = _i18n[context.read<AppNotifier>().serviceLang]!;
     setState(() => _testing = false);
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -6537,7 +6586,7 @@ class _CloudTabState extends State<_CloudTab> {
 
   @override
   Widget build(BuildContext context) {
-    final t = _i18n[context.watch<AppNotifier>().lang]!;
+    final t = _i18n[context.watch<AppNotifier>().serviceLang]!;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -6649,7 +6698,7 @@ class _CloudTabState extends State<_CloudTab> {
                   : () async {
                       await SyncService.syncNow();
                       if (!context.mounted) return;
-                      final t2 = _i18n[context.read<AppNotifier>().lang]!;
+                      final t2 = _i18n[context.read<AppNotifier>().serviceLang]!;
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(content: Text(t2['cloud_synced']!)),
                       );
@@ -6869,7 +6918,7 @@ class _KioskTabState extends State<_KioskTab> {
 
   @override
   Widget build(BuildContext context) {
-    final t = _i18n[context.watch<AppNotifier>().lang]!;
+    final t = _i18n[context.watch<AppNotifier>().serviceLang]!;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
