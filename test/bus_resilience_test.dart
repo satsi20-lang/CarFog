@@ -190,6 +190,41 @@ void main() {
     expect(codes(), ['bus_down']);
   });
 
+  test(
+    'порт закрыт сознательно (сканер в сервисном меню) — не отказ шины',
+    () async {
+      final closed = BusHealth(
+        owner: true,
+        desired: false,
+        open: false,
+        failures: 0,
+        successes: 100,
+      );
+      await tickAt(0, dead());
+      await tickAt(30, closed);
+      await tickAt(95, closed);
+      expect(codes(), isEmpty);
+      expect(notifier.isOutOfService, isFalse);
+      // После сканера порт снова открыт, но молчит — отсчёт с нуля.
+      await tickAt(98, dead());
+      await tickAt(150, dead());
+      expect(codes(), isEmpty);
+      await tickAt(158, dead());
+      expect(codes(), ['bus_down']);
+    },
+  );
+
+  test('desired из нативного снимка', () {
+    expect(
+      BusHealth.fromMap({'owner': true, 'desired': false})!.desired,
+      isFalse,
+    );
+    expect(
+      BusHealth.fromMap({'owner': true, 'desired': true})!.desired,
+      isTrue,
+    );
+  });
+
   test('уходящий движок (не владелец порта) ничего не делает', () async {
     final foreign = BusHealth(
       owner: false,

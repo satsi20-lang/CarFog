@@ -12,6 +12,10 @@ import 'out_of_service_service.dart';
 class BusHealth {
   // Этот движок — владелец порта (у второго движка в том же процессе false).
   final bool owner;
+  // Порт должен быть открыт (на нативной стороне заданы параметры). false —
+  // порт закрыт сознательно (явный close, перебор скорости/поиск адреса в
+  // сервисном меню) или ещё ни разу не открылся.
+  final bool desired;
   final bool open;
   // Ошибки подряд и монотонный счётчик успешных транзакций.
   final int failures;
@@ -22,6 +26,7 @@ class BusHealth {
 
   const BusHealth({
     required this.owner,
+    this.desired = true,
     required this.open,
     required this.failures,
     required this.successes,
@@ -34,6 +39,7 @@ class BusHealth {
     final events = m['events'];
     return BusHealth(
       owner: m['owner'] == true,
+      desired: m['desired'] != false,
       open: m['open'] == true,
       failures: (m['failures'] as num?)?.toInt() ?? 0,
       successes: (m['successes'] as num?)?.toInt() ?? 0,
@@ -166,6 +172,11 @@ class BusWatchdogService {
           previous == null && h.successes > 0 && h.failures == 0;
       final now = _now();
 
+      // Порт закрыт сознательно — это не отказ шины: отсчёт сбрасывается.
+      if (!h.desired) {
+        _badSince = null;
+        return;
+      }
       if (h.open && (progressed || firstLookOk)) {
         await _onGood(now);
       } else if (!h.open || h.failures > 0) {
