@@ -173,7 +173,7 @@ class _BusPortSectionState extends State<BusPortSection> {
   @override
   Widget build(BuildContext context) {
     final notifier = context.watch<AppNotifier>();
-    final t = _i18n[notifier.lang] ?? _i18n['ru']!;
+    final t = _i18n[notifier.serviceLang] ?? _i18n['ru']!;
     final current = notifier.config.busPort;
 
     return Container(

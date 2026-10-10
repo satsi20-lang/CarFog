@@ -8,66 +8,13 @@ import '../services/cloud_service.dart';
 import '../services/cycle_energy_service.dart';
 import '../services/heater_safety_monitor.dart';
 import '../services/heater_shutdown_service.dart';
+import '../services/i18n_service.dart';
 import '../services/modbus_service.dart';
 import '../services/out_of_service_service.dart';
 import '../services/session_service.dart';
 import '../widgets/fog_background.dart';
 import '../widgets/lang_switcher.dart';
 import '../widgets/portrait_ui.dart';
-
-const Map<String, Map<String, String>> i18n = {
-  'ru': {
-    'compressor_title': 'ЗАПУСК КОМПРЕССОРА',
-    'compressor_sub': 'Пожалуйста, подождите',
-    'treating_title': 'ИДЁТ ОБРАБОТКА САЛОНА',
-    'treating_sub': 'Распыление аромата — дождитесь окончания процедуры',
-    'warning_title': 'ФИНАЛ СЕССИИ!',
-    'warning_sub': 'Готовьтесь забрать шланг',
-    'shutdown_title': 'ЗАВЕРШЕНИЕ ПРОЦЕДУРЫ',
-    'shutdown_sub': 'Продувка системы, пожалуйста подождите',
-    'flavor': 'Аромат',
-    'seconds': 'с',
-    'cancel': 'Отмена',
-    'cancel_title': 'Остановить процедуру?',
-    'cancel_body': 'Оплата не возвращается автоматически. Процедура будет прервана.',
-    'cancel_yes': 'Остановить',
-    'cancel_no': 'Продолжить',
-  },
-  'en': {
-    'compressor_title': 'STARTING COMPRESSOR',
-    'compressor_sub': 'Please wait',
-    'treating_title': 'TREATING VEHICLE INTERIOR',
-    'treating_sub': 'Fragrance is being sprayed — please wait',
-    'warning_title': 'SESSION ENDING!',
-    'warning_sub': 'Get ready to remove the hose',
-    'shutdown_title': 'FINISHING UP',
-    'shutdown_sub': 'Purging the system, please wait',
-    'flavor': 'Fragrance',
-    'seconds': 's',
-    'cancel': 'Cancel',
-    'cancel_title': 'Stop the procedure?',
-    'cancel_body': 'Payment is not refunded automatically. The procedure will be interrupted.',
-    'cancel_yes': 'Stop',
-    'cancel_no': 'Continue',
-  },
-  'et': {
-    'compressor_title': 'KOMPRESSORI KÄIVITAMINE',
-    'compressor_sub': 'Palun oota',
-    'treating_title': 'SALONGI TÖÖTLEMINE KÄIB',
-    'treating_sub': 'Lõhna pihustamine käib — palun oota',
-    'warning_title': 'SEANSS LÕPEB!',
-    'warning_sub': 'Valmistu vooliku eemaldamiseks',
-    'shutdown_title': 'LÕPETAMINE',
-    'shutdown_sub': 'Süsteemi puhastamine, palun oota',
-    'flavor': 'Lõhn',
-    'seconds': 's',
-    'cancel': 'Tühista',
-    'cancel_title': 'Peata protseduur?',
-    'cancel_body': 'Makset ei tagastata automaatselt. Protseduur katkestatakse.',
-    'cancel_yes': 'Peata',
-    'cancel_no': 'Jätka',
-  },
-};
 
 // Внутренние подэтапы одного экрана
 enum _Phase { compressor, treating, shutdown }
@@ -255,21 +202,23 @@ class _TreatingScreenState extends State<TreatingScreen>
   // подтверждением. Деньги не возвращаются автоматически.
   Future<void> _onCancel() async {
     if (_faulted || _cancelling || _phase == _Phase.shutdown) return;
-    final lang = context.read<AppNotifier>().lang;
-    final t = i18n[lang]!;
+    // Язык берётся при показе каждой строки: переключение языка во время
+    // окна не закрывает его.
+    String t(String key) =>
+        I18n.tr(context.read<AppNotifier>().lang, 'treating.$key');
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(t['cancel_title']!),
-        content: Text(t['cancel_body']!),
+        title: Text(t('cancel_title')),
+        content: Text(t('cancel_body')),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(t['cancel_no']!),
+            child: Text(t('cancel_no')),
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(t['cancel_yes']!),
+            child: Text(t('cancel_yes')),
           ),
         ],
       ),
@@ -569,9 +518,10 @@ class _TreatingScreenState extends State<TreatingScreen>
   Widget build(BuildContext context) {
     final notifier = context.watch<AppNotifier>();
     final lang = notifier.lang;
-    final t = i18n[lang]!;
+    String t(String key, [Map<String, Object?> params = const {}]) =>
+        I18n.tr(lang, 'treating.$key', params: params);
     final flavorIndex = notifier.selectedFlavor ?? 0;
-    final flavorName = notifier.config.flavorNames[lang]![flavorIndex];
+    final flavorName = notifier.config.flavorNameFor(lang, flavorIndex);
 
     String title;
     String subtitle;
@@ -579,18 +529,18 @@ class _TreatingScreenState extends State<TreatingScreen>
 
     switch (_phase) {
       case _Phase.compressor:
-        title = t['compressor_title']!;
-        subtitle = t['compressor_sub']!;
+        title = t('compressor_title');
+        subtitle = t('compressor_sub');
         titleColor = const Color(0xFFFFAA00);
         break;
       case _Phase.treating:
-        title = _isBlinking ? t['warning_title']! : t['treating_title']!;
-        subtitle = _isBlinking ? t['warning_sub']! : t['treating_sub']!;
+        title = _isBlinking ? t('warning_title') : t('treating_title');
+        subtitle = _isBlinking ? t('warning_sub') : t('treating_sub');
         titleColor = _isBlinking ? Colors.redAccent : const Color(0xFFFF3333);
         break;
       case _Phase.shutdown:
-        title = t['shutdown_title']!;
-        subtitle = t['shutdown_sub']!;
+        title = t('shutdown_title');
+        subtitle = t('shutdown_sub');
         titleColor = const Color(0xFFFFAA00);
         break;
     }
@@ -633,6 +583,7 @@ class _TreatingScreenState extends State<TreatingScreen>
                           ),
                           LangSwitcher(
                             current: lang,
+                            langs: notifier.displayLangs,
                             onChanged: notifier.setLanguage,
                           ),
                         ],
@@ -647,7 +598,7 @@ class _TreatingScreenState extends State<TreatingScreen>
                       ),
                       const SizedBox(height: 20),
                       Text(
-                        '${t['flavor']!}: $flavorName',
+                        t('flavor', {'flavor': flavorName}),
                         style: const TextStyle(
                           color: Color(0xFF2EC4B6),
                           fontSize: PUi.bodySp + 4,
@@ -657,7 +608,7 @@ class _TreatingScreenState extends State<TreatingScreen>
                       const Spacer(),
                       Center(
                         child: Text(
-                          '$_secondsLeft ${t['seconds']!}',
+                          t('seconds', {'seconds': _secondsLeft}),
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 112,
@@ -727,7 +678,7 @@ class _TreatingScreenState extends State<TreatingScreen>
                               ),
                             ),
                             child: Text(
-                              t['cancel']!,
+                              t('cancel'),
                               style: const TextStyle(fontSize: 28),
                             ),
                           ),

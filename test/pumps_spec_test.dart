@@ -14,11 +14,14 @@ import 'package:dry_fog_app/services/config_service.dart';
 import 'package:dry_fog_app/services/level_service.dart';
 import 'package:dry_fog_app/services/modbus_service.dart';
 import 'package:dry_fog_app/services/output_watchdog_service.dart';
+import 'package:dry_fog_app/services/i18n_service.dart';
 
 // Число насосов 4…8 берётся из spec: безопасность каналов, названия, уровни,
 // сессия, сетка выбора аромата.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  // Переводы клиентских экранов (assets/i18n) — как при старте приложения.
+  setUpAll(() => I18n.load());
   final messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
   const modbus = MethodChannel('com.carfog.dryfog/modbus');

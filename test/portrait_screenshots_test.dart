@@ -18,6 +18,7 @@ import 'package:dry_fog_app/screens/service/service_menu.dart';
 import 'package:dry_fog_app/screens/service/service_pin.dart';
 import 'package:dry_fog_app/screens/standby.dart';
 import 'package:dry_fog_app/screens/treating.dart';
+import 'package:dry_fog_app/services/i18n_service.dart';
 
 // Снимки экранов в портрете 720x1280 dp (1080x1920 px) для визуальной
 // проверки. Запуск: SCREENSHOT_DIR=/путь flutter test test/portrait_screenshots_test.dart
@@ -26,6 +27,8 @@ import 'package:dry_fog_app/screens/treating.dart';
 // умолчанию рисуются квадраты).
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  // Переводы клиентских экранов (assets/i18n) — как при старте приложения.
+  setUpAll(() => I18n.load());
   final dir = Platform.environment['SCREENSHOT_DIR'];
 
   Future<void> loadFonts() async {

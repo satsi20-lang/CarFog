@@ -18,7 +18,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # of the product and file versions while build-number is used as the build suffix.
 # С 1.8.0 версии собираются только под Syoung SY156-A510 (портрет), см.
 # docs/hardware.md и docs/releases.md.
-version: 1.9.1+24
+version: 1.10.0+25
 
 environment:
   sdk: ^3.12.2
@@ -66,6 +66,9 @@ flutter:
   uses-material-design: true
   assets:
     - assets/
+    # Переводы клиентских экранов (docs/i18n.md): каталог не входит в assets/
+    # (подкаталоги перечисляются отдельно).
+    - assets/i18n/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

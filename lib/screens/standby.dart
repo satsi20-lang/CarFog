@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
 import '../models/app_state.dart';
+import '../services/i18n_service.dart';
 import '../services/storage_service.dart';
 import '../widgets/lang_switcher.dart';
 import '../widgets/portrait_ui.dart';
@@ -87,14 +88,22 @@ class _StandbyScreenState extends State<StandbyScreen> {
   }
 
   // 30 секунд без тапа на заставке — переключаемся на видео-заставку
-  // (если на карте нашлось хоть одно видео).
+  // (если на карте нашлось хоть одно видео). Язык, выбранный ушедшим
+  // клиентом, возвращается к языку по умолчанию.
   void _armIdleTimer() {
     _idleTimer?.cancel();
     _idleTimer = Timer(_idleTimeout, _startVideo);
   }
 
+  void _setLanguage(String lang) {
+    context.read<AppNotifier>().setLanguage(lang);
+    _armIdleTimer();
+  }
+
   void _startVideo() {
-    if (!mounted || _playlist.isEmpty) return;
+    if (!mounted) return;
+    context.read<AppNotifier>().resetLanguage();
+    if (_playlist.isEmpty) return;
     setState(() => _showingVideo = true);
     _currentIndex = 0;
     _playVideo(_currentIndex);
@@ -202,9 +211,18 @@ class _StandbyScreenState extends State<StandbyScreen> {
     super.dispose();
   }
 
+  // Многоязычные строки заставки: до 3 языков — на всех показываемых
+  // (порядок spec), больше — только на текущем (остальные — через
+  // переключатель).
+  List<String> _captionLangs(AppNotifier notifier) =>
+      notifier.displayLangs.length <= 3
+      ? notifier.displayLangs
+      : [notifier.lang];
+
   @override
   Widget build(BuildContext context) {
     final notifier = context.watch<AppNotifier>();
+    final captionLangs = _captionLangs(notifier);
 
     return GestureDetector(
       onTap: _onTap,
@@ -227,24 +245,26 @@ class _StandbyScreenState extends State<StandbyScreen> {
                 ),
               )
             else
-              _buildPlaceholder(),
+              _buildPlaceholder(captionLangs),
 
-            // Переключатель языка в правом верхнем углу
-            Positioned(
-              top: 24,
-              right: 24,
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(8, 8, 16, 8),
-                decoration: BoxDecoration(
-                  color: Colors.black54,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: LangSwitcher(
-                  current: notifier.lang,
-                  onChanged: notifier.setLanguage,
+            // Переключатель языка в правом верхнем углу (один язык — нет).
+            if (notifier.displayLangs.length > 1)
+              Positioned(
+                top: 24,
+                right: 24,
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(8, 8, 16, 8),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: LangSwitcher(
+                    current: notifier.lang,
+                    langs: notifier.displayLangs,
+                    onChanged: _setLanguage,
+                  ),
                 ),
               ),
-            ),
 
             // Подсказка внизу
             Positioned(
@@ -262,14 +282,17 @@ class _StandbyScreenState extends State<StandbyScreen> {
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: PUi.accent, width: 2),
                   ),
-                  // Три строки одна под другой: в портрете одна длинная строка
+                  // Строки одна под другой: в портрете одна длинная строка
                   // на 22+ sp не помещается в ширину.
-                  child: const Column(
+                  child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text('Нажмите для начала', style: _hintStyle),
-                      Text('Tap to start', style: _hintStyle),
-                      Text('Puudutage alustamiseks', style: _hintStyle),
+                      for (final l in captionLangs)
+                        Text(
+                          I18n.tr(l, 'standby.tap_to_start'),
+                          textAlign: TextAlign.center,
+                          style: _hintStyle,
+                        ),
                     ],
                   ),
                 ),
@@ -294,7 +317,7 @@ class _StandbyScreenState extends State<StandbyScreen> {
     );
   }
 
-  Widget _buildPlaceholder() {
+  Widget _buildPlaceholder(List<String> captionLangs) {
     // Портрет 720x1280 dp: крупный QR в верхней половине, название ниже;
     // низ занимает подсказка (Positioned выше). QR масштабируется по
     // ширине экрана, но не больше доступной высоты.
@@ -326,12 +349,15 @@ class _StandbyScreenState extends State<StandbyScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: PUi.gutter),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: PUi.gutter),
                   child: Text(
-                    'СУХОЙ ТУМАН · KUIV UDU · DRY FOG',
+                    captionLangs
+                        .map((l) => I18n.tr(l, 'standby.subtitle'))
+                        .toSet()
+                        .join(' · '),
                     textAlign: TextAlign.center,
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: Colors.white70,
                       fontSize: PUi.minBodySp,
                     ),

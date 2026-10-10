@@ -1,0 +1,139 @@
+{
+  "languages": {
+    "bg": {
+      "name": "Български",
+      "status": "draft",
+      "version": 0
+    },
+    "cs": {
+      "name": "Čeština",
+      "status": "draft",
+      "version": 0
+    },
+    "da": {
+      "name": "Dansk",
+      "status": "draft",
+      "version": 0
+    },
+    "de": {
+      "name": "Deutsch",
+      "status": "draft",
+      "version": 0
+    },
+    "el": {
+      "name": "Ελληνικά",
+      "status": "draft",
+      "version": 0
+    },
+    "en": {
+      "name": "English",
+      "status": "released",
+      "version": 1
+    },
+    "es": {
+      "name": "Español",
+      "status": "draft",
+      "version": 0
+    },
+    "et": {
+      "name": "Eesti",
+      "status": "released",
+      "version": 1
+    },
+    "fi": {
+      "name": "Suomi",
+      "status": "draft",
+      "version": 0
+    },
+    "fr": {
+      "name": "Français",
+      "status": "draft",
+      "version": 0
+    },
+    "ga": {
+      "name": "Gaeilge",
+      "status": "draft",
+      "version": 0
+    },
+    "hr": {
+      "name": "Hrvatski",
+      "status": "draft",
+      "version": 0
+    },
+    "hu": {
+      "name": "Magyar",
+      "status": "draft",
+      "version": 0
+    },
+    "it": {
+      "name": "Italiano",
+      "status": "draft",
+      "version": 0
+    },
+    "lt": {
+      "name": "Lietuvių",
+      "status": "draft",
+      "version": 0
+    },
+    "lv": {
+      "name": "Latviešu",
+      "status": "draft",
+      "version": 0
+    },
+    "mt": {
+      "name": "Malti",
+      "status": "draft",
+      "version": 0
+    },
+    "nl": {
+      "name": "Nederlands",
+      "status": "draft",
+      "version": 0
+    },
+    "pl": {
+      "name": "Polski",
+      "status": "draft",
+      "version": 0
+    },
+    "pt": {
+      "name": "Português",
+      "status": "draft",
+      "version": 0
+    },
+    "ro": {
+      "name": "Română",
+      "status": "draft",
+      "version": 0
+    },
+    "ru": {
+      "name": "Русский",
+      "status": "released",
+      "version": 1
+    },
+    "sk": {
+      "name": "Slovenčina",
+      "status": "draft",
+      "version": 0
+    },
+    "sl": {
+      "name": "Slovenščina",
+      "status": "draft",
+      "version": 0
+    },
+    "sv": {
+      "name": "Svenska",
+      "status": "draft",
+      "version": 0
+    },
+    "uk": {
+      "name": "Українська",
+      "status": "draft",
+      "version": 0
+    },
+    "no": {
+      "name": "Norsk",
+      "status": "draft",
+      "version": 0
+    }
+  }
+}

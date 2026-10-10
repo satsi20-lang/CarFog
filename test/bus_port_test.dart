@@ -198,7 +198,10 @@ void main() {
       tester.view.devicePixelRatio = 1.5;
       tester.view.physicalSize = const Size(1080, 1920);
       addTearDown(tester.view.reset);
-      final n = AppNotifier()..config = AppConfig(servicePin: pin);
+      // Тексты сервисного меню в тесте — русские (язык по умолчанию теперь из spec).
+      final n = AppNotifier()
+        ..config = AppConfig(servicePin: pin)
+        ..setLanguage('ru');
       await tester.pumpWidget(
         ChangeNotifierProvider<AppNotifier>.value(
           value: n,

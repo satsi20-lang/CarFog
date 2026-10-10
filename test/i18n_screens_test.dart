@@ -15,17 +15,27 @@ import 'package:dry_fog_app/screens/preparing.dart';
 import 'package:dry_fog_app/screens/select_flavor.dart';
 import 'package:dry_fog_app/screens/standby.dart';
 import 'package:dry_fog_app/screens/treating.dart';
+import 'package:dry_fog_app/services/i18n_service.dart';
 
 // Тексты клиентских экранов на et/en/ru те же, что были до переноса таблиц в
 // assets/i18n (эталон test/fixtures/i18n_baseline.json снят на коде 1.9.1+24).
-// Сравниваются наборы строк экрана (порядок строк многоязычных заголовков
-// теперь задаёт spec, поэтому сравнение без учёта порядка).
+// Сравниваются наборы строк экрана без учёта порядка: порядок частей
+// многоязычных строк (заголовок выбора языка, подпись заставки) теперь задаёт
+// spec (et, en, ru), поэтому такие строки делятся на части по «\n» и « · ».
 // Пересъёмка эталона: I18N_CAPTURE=1 flutter test test/i18n_screens_test.dart
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   final capture = Platform.environment['I18N_CAPTURE'] == '1';
   const fixture = 'test/fixtures/i18n_baseline.json';
   final captured = <String, List<String>>{};
+
+  // Части многоязычных строк по отдельности, отсортировано.
+  List<String> normalized(Iterable<String> texts) =>
+      texts.expand((t) => t.split(RegExp(r'\n| · '))).toList()..sort();
+
+  setUpAll(() async {
+    if (!capture) await I18n.load();
+  });
 
   final messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
@@ -136,7 +146,8 @@ void main() {
           captured[name] = texts;
         } else {
           final want = (baseline![name] as List).cast<String>();
-          expect(texts, want, reason: name);
+          expect(normalized(texts), normalized(want), reason: name);
+          expect(I18n.missingKeys, isEmpty, reason: 'ключи без перевода в en');
         }
         await tester.pumpWidget(const SizedBox());
         for (var i = 0; i < 6; i++) {
