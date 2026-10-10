@@ -8,6 +8,7 @@ import '../models/bus_map.dart';
 import '../models/out_of_service.dart';
 import '../services/cloud_service.dart';
 import '../services/cycle_energy_service.dart';
+import '../services/cycle_summary_service.dart';
 import '../services/heater_safety_monitor.dart';
 import '../services/heater_shutdown_service.dart';
 import '../services/i18n_service.dart';
@@ -68,6 +69,7 @@ class _PreparingScreenState extends State<PreparingScreen> {
     final config = context.read<AppNotifier>().config;
     _meterInstalled = config.energyMeterInstalled;
     _monitor = HeaterSafetyMonitor(checkEnergy: _meterInstalled);
+    CycleSummary.enterPhase('preheat');
     if (!config.thermoInstalled) {
       // Без термопары греть нельзя: обратной связи нет вообще. ТЭН не
       // включается, услуга не оказана (деньги уже приняты — см. запись).
@@ -92,13 +94,15 @@ class _PreparingScreenState extends State<PreparingScreen> {
     final startTemp = await ModbusService.readTemperature();
     if (!mounted || _finished) return _abandonStart(heaterCommanded: false);
     if (_usable(startTemp)) {
+      CycleSummary.recordTemp(startTemp);
       _lastTempC = startTemp;
       setState(() => _currentTemp = startTemp!);
     }
     CycleEnergyService.markHeaterCommandSent();
     _heatingClock.start();
     _monitor.heaterCommanded(true, tempC: _usable(startTemp) ? startTemp : null);
-    await ModbusService.setHeater(true);
+    final heaterOnOk = await ModbusService.setHeater(true);
+    if (heaterOnOk) CycleSummary.heaterCommanded(true);
     // Экран закрыли, пока шла команда: ТЭН уже может быть включён, а
     // dispose отработал раньше — гасим здесь.
     if (!mounted || _finished) return _abandonStart(heaterCommanded: true);
@@ -116,6 +120,7 @@ class _PreparingScreenState extends State<PreparingScreen> {
   // _finished — исход уже решён другим путём (_fail/_onCancel сами гасят ТЭН
   // и закрывают цикл), здесь только страховка.
   void _abandonStart({required bool heaterCommanded}) {
+    CycleSummary.preheatAborted('preheat_abandoned');
     if (heaterCommanded) {
       unawaited(
         HeaterShutdownService.ensureOff(
@@ -209,6 +214,7 @@ class _PreparingScreenState extends State<PreparingScreen> {
     // шины) — ждём следующего тика, не принимаем решений по мусору.
     if (!_usable(temp) || _monitor.lastReadBad) return;
     _lastTempC = temp;
+    CycleSummary.recordTemp(temp);
     setState(() => _currentTemp = temp!);
 
     if (temp! >= _abortTemp) {
@@ -236,6 +242,7 @@ class _PreparingScreenState extends State<PreparingScreen> {
       _finished = true;
       _timer?.cancel();
       CycleEnergyService.markPreheatReached();
+      CycleSummary.preheatReached(temp);
       if (!mounted) return;
       context.read<AppNotifier>().transition(AppState.compressorStartup);
       return;
@@ -300,6 +307,7 @@ class _PreparingScreenState extends State<PreparingScreen> {
   }) async {
     _finished = true;
     _timer?.cancel();
+    CycleSummary.preheatAborted(logCode);
     // Захватываем сразу: вывод из обслуживания не должен зависеть от того,
     // смонтирован ли экран к концу асинхронных шагов ниже.
     final notifier = mounted ? context.read<AppNotifier>() : null;
@@ -405,6 +413,7 @@ class _PreparingScreenState extends State<PreparingScreen> {
     if (_finished) return;
     _finished = true;
     _timer?.cancel();
+    CycleSummary.preheatAborted('HEAT_USER_CANCEL');
     final notifier = context.read<AppNotifier>();
     // Подтверждённое выключение: аппарат возвращается в ожидание, и ТЭН
     // там гореть не должен; не подтвердилось — вывод из обслуживания.

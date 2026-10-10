@@ -1,9 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/bus_map.dart';
+import '../models/remote_limits.dart';
+import 'app_log_service.dart';
 import 'cloud_service.dart';
 import 'cycle_energy_service.dart';
+import 'cycle_summary_service.dart';
 import 'modbus_service.dart';
 
 // Ключи контрольной точки "счётчик энергии только что отвечал и показывал
@@ -71,6 +75,8 @@ class SessionService {
       startedAt: DateTime.now(),
     );
     _current = session;
+    // Сводка цикла (температура, ТЭН, фазы) — только запись.
+    CycleSummary.begin();
     if (readStartEnergy) {
       final energy = await ModbusService.readEnergy();
       session.startEnergyKwh = energy?['totalEnergy'];
@@ -105,6 +111,7 @@ class SessionService {
   // должно уходить, деньги ещё не были внесены до конца.
   static void discard() {
     _current = null;
+    CycleSummary.finish(); // сводка не нужна: цикла не было
   }
 
   // Идемпотентно — второй вызов complete()/interrupt() для уже
@@ -151,6 +158,9 @@ class SessionService {
     // energy_wh — интеграл мощности по отсчётам счётчика (шаг регистра
     // 10 Вт·ч слишком груб для цикла ≈20 Вт·ч); разность показаний
     // регистра остаётся контрольным полем energy_wh_counter.
+    // Сводка цикла (1.10.1): температура, прогрев, ТЭН, фазы. Ошибка сбора —
+    // полей нет, одна строка в журнал; событие уходит в любом случае.
+    _addCycleSummary(data, session.id, completed);
     final integralWh = cycleSummary?['cycle_energy_wh'] as double?;
     data.remove('cycle_energy_wh');
     if (integralWh != null) data['energy_wh'] = integralWh;
@@ -187,6 +197,43 @@ class SessionService {
 
     await CloudService.report(CloudEventType.sessionComplete, data: data);
   }
+
+  static void _addCycleSummary(
+    Map<String, dynamic> data,
+    String sessionId,
+    bool completed,
+  ) {
+    try {
+      final summary = CycleSummary.finish();
+      if (summary == null) return;
+      // preheat_s уже мог прийти от CycleEnergyService (только со счётчиком):
+      // то же определение (от команды на ТЭН до цели), сводка его заменяет.
+      data.addAll(summary);
+      if (jsonEncode(data).length > CycleSummaryLimits.maxEventDataChars) {
+        data.remove('temp_curve_c');
+        data.remove('temp_curve_step_s');
+        AppLog.log('Cycle', 'cycle_summary: кривая температуры не вошла в предел события, оставлены сводные числа');
+      }
+      final line = summary.entries
+          .where((e) => e.key != 'temp_curve_c' && e.key != 'temp_curve_step_s')
+          .map((e) => '${e.key}=${e.value}')
+          .join(' ');
+      AppLog.log('Cycle', 'cycle_summary session=$sessionId completed=$completed $line');
+    } catch (e) {
+      for (final k in _summaryKeys) {
+        data.remove(k);
+      }
+      AppLog.log('Cycle', 'cycle_summary: ошибка сбора, поля не включены: $e');
+    }
+  }
+
+  static const _summaryKeys = [
+    'start_temp_c', 'preheat_end_temp_c', 'peak_temp_c', 'final_temp_c',
+    'heater_switches', 'heater_on_s', 'phase_preheat_s',
+    'phase_compressor_startup_s', 'phase_treating_s', 'phase_purge_s',
+    'preheat_aborted', 'preheat_abort_reason', 'temp_curve_c',
+    'temp_curve_step_s',
+  ];
 
   static Future<void> _saveEnergyCheckpoint(double kwh) async {
     try {

@@ -2,6 +2,7 @@ import '../models/app_state.dart';
 import '../models/bus_map.dart';
 import '../models/out_of_service.dart';
 import 'cloud_service.dart';
+import 'cycle_summary_service.dart';
 import 'modbus_service.dart';
 import 'out_of_service_service.dart';
 
@@ -61,6 +62,8 @@ class HeaterShutdownService {
     Duration? poll,
   }) async {
     final coilOk = await (forceOff ?? ModbusService.forceHeaterOff)();
+    // Сводка цикла: катушка ТЭНа выключена (только запись).
+    if (coilOk) CycleSummary.heaterCommanded(false);
     if (!coilOk) {
       return const HeaterOffResult(
         confirmed: false,
