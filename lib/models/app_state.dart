@@ -1,4 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import '../services/app_log_service.dart';
+import '../services/cloud_service.dart';
+import '../services/session_service.dart';
 import '../services/config_service.dart';
 import '../services/modbus_service.dart';
 import 'bus_map.dart';
@@ -6,14 +10,12 @@ import 'device_spec.dart';
 import 'hardware_profile.dart';
 import 'out_of_service.dart';
 
-// Активное количество ароматов на этом конкретном аппарате: столько
-// насосов (PumpChannel.do_ 0..kFlavorCount-1, bus_map.dart) и датчиков
-// уровня (PumpChannel.sensorDI 0..kFlavorCount-1) реально распаяно и
-// показывается покупателю. Хранилище (flavorNames, уровни канистр) и
-// низкоуровневое железо всегда рассчитаны на полный PumpChannel.values —
-// так что для перехода на 6 или 8 ароматов достаточно поменять только это
-// число, ничего больше трогать не нужно.
-const int kFlavorCount = 4;
+// Число ароматов (= насосов = датчиков уровня) на конкретном аппарате берётся из
+// спецификации: AppConfig.activeFlavorCount (specPumps в пределах 4…8, при любой
+// ошибке 4). Константы нет: значение может измениться во время работы (заводская
+// запись применилась, изменили spec), поэтому читать его нужно из конфигурации.
+// Хранилище (flavorNames, уровни канистр) и низкоуровневое железо рассчитаны на
+// все 8 каналов PumpChannel.values.
 
 // ============================================================
 // КОНФИГ (редактируется через сервисное меню)
@@ -222,6 +224,9 @@ class AppConfig {
     );
   }
 
+  // Активное число ароматов/насосов: specPumps в пределах 4…8, при любой ошибке 4.
+  int get activeFlavorCount => DeviceSpec.activeFor(specPumps);
+
   // Спецификация как объект (hardwareProfile — константа профиля).
   DeviceSpec get spec => DeviceSpec(
     pumps: specPumps,
@@ -241,8 +246,8 @@ class AppConfig {
       'duration_s': treatmentDurationS,
       'compressor_purge_s': compressorPurgeS,
       'pump_after_heater_s': pumpAfterHeaterS,
-      'flavor_count': kFlavorCount,
-      'flavor_names_ru': flavorNames['ru']?.take(kFlavorCount).toList() ?? [],
+      'flavor_count': activeFlavorCount,
+      'flavor_names_ru': flavorNames['ru']?.take(activeFlavorCount).toList() ?? [],
       'kiosk_mode_enabled': kioskModeEnabled,
       'bus_port': busPort,
       'spec_pumps': specPumps,
@@ -281,7 +286,14 @@ enum AppState {
 
 class AppNotifier extends ChangeNotifier {
   // --- Конфиг ---
-  AppConfig config = AppConfig();
+  AppConfig _config = AppConfig();
+  AppConfig get config => _config;
+  // При любой смене конфигурации число активных насосов передаётся слою шины:
+  // команды на насос с номером >= активного числа отклоняются там (ModbusService).
+  set config(AppConfig c) {
+    _config = c;
+    ModbusService.activePumps = c.activeFlavorCount;
+  }
 
   // --- Текущее состояние ---
   AppState _state = AppState.selectLanguage;
@@ -487,6 +499,12 @@ class AppNotifier extends ChangeNotifier {
   // ============================================================
 
   void selectFlavor(int index) {
+    // Аромат хранится как индекс насоса: несуществующий (>= активного числа)
+    // выбрать нельзя.
+    if (index < 0 || index >= config.activeFlavorCount) {
+      AppLog.log('Flavor', 'выбор аромата вне диапазона отклонён: $index из ${config.activeFlavorCount}');
+      return;
+    }
     if (_outOfService != null) {
       transition(AppState.outOfService);
       return;
@@ -539,13 +557,40 @@ class AppNotifier extends ChangeNotifier {
   void updateConfig(AppConfig newConfig) {
     config = newConfig;
     refreshPaymentBlock();
+    _cancelSessionIfFlavorGone();
     notifyListeners();
   }
 
   Future<void> saveConfig(AppConfig newConfig) async {
     config = newConfig;
     refreshPaymentBlock();
+    _cancelSessionIfFlavorGone();
     notifyListeners();
     await ConfigService.save(newConfig);
+  }
+
+  // Число насосов уменьшили (например, 6 → 4), пока выбран/оплачен аромат, чьего
+  // канала больше нет: сессия НЕ продолжается на несуществующем канале —
+  // выходы гасятся (safeAllOff), сессия отменяется, событие уходит в журнал и в
+  // облако. Выбранный индекс остаётся только в пределах активного числа.
+  void _cancelSessionIfFlavorGone() {
+    final i = _selectedFlavor;
+    if (i == null || i < config.activeFlavorCount) return;
+    AppLog.log('Flavor', 'число насосов уменьшено до ${config.activeFlavorCount}: сессия на канале $i отменена');
+    unawaited(ModbusService.safeAllOff());
+    unawaited(SessionService.interrupt(
+      'pump_removed',
+      serviceNotDelivered: true,
+      extra: {'flavor_index': i, 'active_pumps': config.activeFlavorCount},
+    ));
+    unawaited(CloudService.report(
+      CloudEventType.hardwareError,
+      data: {
+        'code': 'session_cancelled_pump_count_changed',
+        'flavor_index': i,
+        'active_pumps': config.activeFlavorCount,
+      },
+    ));
+    resetSession();
   }
 }

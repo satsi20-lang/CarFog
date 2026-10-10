@@ -113,7 +113,7 @@ class DiagnosticsService {
       }
       reads['coils'] = await _safe(() => ModbusService.readCoils());
     }
-    reads['levels_cached'] = n.levels;
+    reads['levels_cached'] = n.levels.take(n.config.activeFlavorCount).toList();
 
     final events = (await CloudService.history())
         .reversed

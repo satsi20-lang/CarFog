@@ -1,6 +1,8 @@
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import '../models/bus_map.dart';
+import '../models/device_spec.dart';
+import 'app_log_service.dart';
 
 class ModbusService {
   static const _channel = MethodChannel('com.carfog.dryfog/modbus');
@@ -89,10 +91,30 @@ class ModbusService {
     }
   }
 
+  // Активное число насосов (из spec; выставляет AppNotifier при смене
+  // конфигурации). Включать насос с номером >= этого числа нельзя.
+  static int activePumps = DeviceSpec.defaultPumps;
+
+  // Можно ли писать в DO. Правила безопасности каналов (карта не меняется):
+  //  * вне 0..11 (в том числе DO12–DO15) не пишется НИКОГДА;
+  //  * ВКЛЮЧИТЬ насос с номером >= activePumps нельзя; выключение допускается
+  //    (безопасное действие: «залипший» неактивный канал нужно уметь погасить).
+  static bool canWriteDO(int channel, bool value) {
+    if (channel < 0 || channel > AuxOutput.ledRedDO) return false;
+    if (value && channel < PumpChannel.values.length && channel >= activePumps) {
+      return false;
+    }
+    return true;
+  }
+
   // Управляет одним DO. channel 0-based — полная карта в bus_map.dart:
   // PumpChannel.do_ (насосы), AuxOutput.compressorDO/heaterDO/ledGreenDO/
   // ledRedDO.
   static Future<bool> setDO(int channel, bool value) async {
+    if (!canWriteDO(channel, value)) {
+      AppLog.log('Modbus', 'запись в DO$channel=$value отклонена (активных насосов: $activePumps)');
+      return false;
+    }
     try {
       return await _channel.invokeMethod<bool>('setDO', {
             'channel': channel,

@@ -48,6 +48,10 @@ void main() {
     '01_language': () => const LanguageSelectScreen(),
     '02_standby': () => const StandbyScreen(),
     '03_select_flavor': () => const SelectFlavorScreen(),
+    '03b_flavor_5': () => const SelectFlavorScreen(),
+    '03c_flavor_6': () => const SelectFlavorScreen(),
+    '03d_flavor_7': () => const SelectFlavorScreen(),
+    '03e_flavor_8': () => const SelectFlavorScreen(),
     '04_payment': () => const PaymentScreen(),
     '05_preparing': () => const PreparingScreen(),
     '06_treating': () => const TreatingScreen(),
@@ -71,8 +75,10 @@ void main() {
         tester.view.devicePixelRatio = 1.5;
         tester.view.physicalSize = const Size(1080, 1920);
         addTearDown(tester.view.reset);
+        final pumps = {'03b_flavor_5': 5, '03c_flavor_6': 6, '03d_flavor_7': 7, '03e_flavor_8': 8}[e.key] ?? 4;
         final n = AppNotifier()
           ..config = AppConfig(
+              specPumps: pumps,
               thermoInstalled: true, energyMeterInstalled: e.key != '05_preparing')
           ..updateLevels([true, false, true, true, true, true, true, true]);
         n.setLanguage(lang);

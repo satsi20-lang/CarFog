@@ -11,7 +11,7 @@ tool/provision_devices.py --org-id <uuid организации-изготови
     --prefix CARFOG- --start 100 --count 20 --cloud-url https://<проект>.supabase.co
 # или список:  --list ids.txt   (по одному номеру в строке, # — комментарий)
 # кольцо раскатки (по умолчанию test):  --ring test | early | all
-# спецификация (одинакова для всей партии): --pumps 4..10  --langs et,en,ru  --default-lang et
+# спецификация (одинакова для всей партии): --pumps 4..8  --langs et,en,ru  --default-lang et
 # вторая партия в тот же день:  --batch <имя>   (по умолчанию batch_<дата>)
 ```
 
@@ -78,7 +78,7 @@ tool/provision_devices.py --org-id <uuid организации-изготови
 "spec":{"pumps":8,"langs":["ru","en","de"],"default_lang":"en","hardware_profile":"sy156-a510"}
 ```
 
-Контракт: `pumps` — целое 4…10 (по умолчанию 4); `langs` — коды в нижнем регистре,
+Контракт: `pumps` — целое 4…8 (по умолчанию 4; в базе check 4…10, верхняя граница 8 держится в приложении, генераторе и панели); `langs` — коды в нижнем регистре,
 без повторов, 1…24 шт., порядок = порядок на экране выбора (по умолчанию
 `et,en,ru`); `default_lang` — один из `langs` (по умолчанию первый);
 допустимые коды: bg cs da de el en es et fi fr ga hr hu it lt lv mt nl pl pt ro ru
