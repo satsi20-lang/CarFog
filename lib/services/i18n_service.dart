@@ -76,6 +76,16 @@ class I18n {
       }
     }
     loadFromStrings(manifest: manifest, files: files);
+    // Одна строка при старте: какие файлы загружены и их статус.
+    final drafts = [
+      for (final l in _manifest.values)
+        if (!l.isReleased && _dicts.containsKey(l.code)) l.code,
+    ];
+    AppLog.log(
+      'I18n',
+      'I18n: загружены файлы: ${_dicts.keys.join(',')}; '
+          'released: ${releasedLangs.join(',')}; draft: ${drafts.join(',')}',
+    );
   }
 
   // Разбор уже прочитанного содержимого (отдельно — для тестов). Повреждённые
