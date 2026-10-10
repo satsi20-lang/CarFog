@@ -3,7 +3,7 @@
   "standby.subtitle": "KUIV UDU",
   "language_select.title": "VALI KEEL",
   "select_flavor.title": "VALI LÕHN",
-  "select_flavor.hint": "Hallid lõhnad on ajutiselt saadaval",
+  "select_flavor.hint": "Hallid lõhnad pole ajutiselt saadaval",
   "select_flavor.unavailable": "(pole saadaval)",
   "select_flavor.cancel": "Tühista",
   "payment.title": "MAKSE",
