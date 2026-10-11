@@ -6979,8 +6979,10 @@ class _CloudTabState extends State<_CloudTab> {
                   style: const TextStyle(color: Colors.white, fontSize: 14),
                 ),
               ),
+              // Только порт 5555: беспроводная отладка — своей строкой ниже
+              // (иначе первое нажатие при включённой отладке её выключало).
               Switch(
-                value: _adb?.anyOpen == true,
+                value: _adb?.tcpListening == true,
                 onChanged: _adb == null || _adbBusy ? null : _toggleAdb,
               ),
             ],
