@@ -192,6 +192,23 @@ const Map<String, Map<String, String>> _i18n = {
     'kiosk_open_desktop_hint':
         'Нужно для обслуживания планшета, пока '
         'включён киоск-режим — без этой кнопки из приложения будет не выйти.',
+    // --- Device Owner (device-owner-spike) ---
+    'do_section': 'Device Owner (Lock Task)',
+    'do_not_assigned': 'Device Owner не назначен',
+    'do_lock_enabled': 'Блокировка включена',
+    'do_lock_hint':
+        'Шторка, навигация, Home, недавние и меню питания не выводят из приложения.',
+    'do_exit_10': 'Выйти из блокировки на 10 минут',
+    'do_settings_10': 'Открыть настройки на 10 минут',
+    'do_exit_active': 'Временный выход, блокировка вернётся через {m} мин',
+    'do_clear': 'Снять Device Owner',
+    'do_clear_confirm1':
+        'Снять Device Owner? Блокировка и все политики киоска будут отключены.',
+    'do_clear_confirm2':
+        'Подтвердите ещё раз. Назначить Device Owner снова можно только через adb.',
+    'do_clear_yes': 'Снять',
+    'do_cancel': 'Отмена',
+    'do_error': 'Ошибка',
     // --- Сканер шины (задача "сканер шины Modbus") ---
     'tab_scanner': 'Сканер',
     'scanner_scan_section': 'Поиск устройств',
@@ -535,6 +552,23 @@ const Map<String, Map<String, String>> _i18n = {
     'kiosk_open_desktop_hint':
         'Needed to service the tablet while kiosk '
         'mode is on — without this button there is no way out of the app.',
+    // --- Device Owner (device-owner-spike) ---
+    'do_section': 'Device Owner (Lock Task)',
+    'do_not_assigned': 'Device Owner not assigned',
+    'do_lock_enabled': 'Lock enabled',
+    'do_lock_hint':
+        'Status bar, navigation, Home, recents and power menu do not leave the app.',
+    'do_exit_10': 'Leave lock for 10 minutes',
+    'do_settings_10': 'Open settings for 10 minutes',
+    'do_exit_active': 'Temporary exit, lock returns in {m} min',
+    'do_clear': 'Remove Device Owner',
+    'do_clear_confirm1':
+        'Remove Device Owner? Lock and all kiosk policies will be turned off.',
+    'do_clear_confirm2':
+        'Confirm once more. Device Owner can only be assigned again via adb.',
+    'do_clear_yes': 'Remove',
+    'do_cancel': 'Cancel',
+    'do_error': 'Error',
     // --- Bus scanner ---
     'tab_scanner': 'Scanner',
     'scanner_scan_section': 'Device search',
@@ -873,6 +907,23 @@ const Map<String, Map<String, String>> _i18n = {
     'kiosk_open_desktop_hint':
         'Vajalik tahvli hooldamiseks, kui kioski '
         'režiim on sees — ilma selle nuputa ei pääse rakendusest välja.',
+    // --- Device Owner (device-owner-spike) ---
+    'do_section': 'Device Owner (Lock Task)',
+    'do_not_assigned': 'Device Owner pole määratud',
+    'do_lock_enabled': 'Lukustus sees',
+    'do_lock_hint':
+        'Olekuriba, navigeerimine, Avaleht, hiljutised ja toitemenüü ei vii rakendusest välja.',
+    'do_exit_10': 'Lukustusest välja 10 minutiks',
+    'do_settings_10': 'Ava seaded 10 minutiks',
+    'do_exit_active': 'Ajutine väljumine, lukustus taastub {m} min pärast',
+    'do_clear': 'Eemalda Device Owner',
+    'do_clear_confirm1':
+        'Eemaldada Device Owner? Lukustus ja kõik kioski reeglid lülitatakse välja.',
+    'do_clear_confirm2':
+        'Kinnita veel kord. Device Owneri saab uuesti määrata ainult adb kaudu.',
+    'do_clear_yes': 'Eemalda',
+    'do_cancel': 'Tühista',
+    'do_error': 'Viga',
     // --- Siini skanner ---
     'tab_scanner': 'Skanner',
     'scanner_scan_section': 'Seadmete otsing',
@@ -6892,11 +6943,175 @@ class _KioskTab extends StatefulWidget {
 
 class _KioskTabState extends State<_KioskTab> {
   late bool _enabled;
+  KioskPolicyState _do = KioskPolicyState.none;
+  bool _doBusy = false;
+  Timer? _doTimer;
 
   @override
   void initState() {
     super.initState();
     _enabled = context.read<AppNotifier>().config.kioskModeEnabled;
+    _refreshDo();
+    // Остаток временного выхода и возврат блокировки по таймеру.
+    _doTimer = Timer.periodic(const Duration(seconds: 5), (_) => _refreshDo());
+  }
+
+  @override
+  void dispose() {
+    _doTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _refreshDo() async {
+    final st = await SystemService.kioskPolicyState();
+    if (mounted) setState(() => _do = st);
+  }
+
+  // Действие Device Owner: результат 'ok' — тихо, иначе — сообщение.
+  Future<void> _doAction(Future<String> Function() action) async {
+    if (_doBusy) return;
+    setState(() => _doBusy = true);
+    final r = await action();
+    await _refreshDo();
+    if (!mounted) return;
+    setState(() => _doBusy = false);
+    if (r != 'ok') {
+      final t = _i18n[context.read<AppNotifier>().serviceLang]!;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('${t['do_error']}: $r')));
+    }
+  }
+
+  Future<bool> _confirm(Map<String, String> t, String text) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        content: Text(text),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(t['do_cancel']!),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(
+              t['do_clear_yes']!,
+              style: const TextStyle(color: Color(0xFFE05555)),
+            ),
+          ),
+        ],
+      ),
+    );
+    return ok == true;
+  }
+
+  Future<void> _onClearDeviceOwner(Map<String, String> t) async {
+    if (!await _confirm(t, t['do_clear_confirm1']!)) return;
+    if (!mounted || !await _confirm(t, t['do_clear_confirm2']!)) return;
+    await _doAction(SystemService.kioskClearDeviceOwner);
+  }
+
+  Widget _doButton(String label, VoidCallback? onPressed, {Color? color}) {
+    final c = color ?? const Color(0xFF00C6B2);
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: SizedBox(
+        width: double.infinity,
+        child: OutlinedButton(
+          onPressed: onPressed,
+          style: OutlinedButton.styleFrom(
+            foregroundColor: c,
+            side: BorderSide(
+              color: onPressed == null ? const Color(0xFF334455) : c,
+            ),
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+          child: Text(
+            label,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _deviceOwnerSection(Map<String, String> t) {
+    final active = _do.deviceOwner && !_doBusy;
+    final minutes = (_do.exitRemaining.inSeconds / 60).ceil();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          t['do_section']!,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        if (!_do.deviceOwner) ...[
+          const SizedBox(height: 6),
+          Text(
+            t['do_not_assigned']!,
+            style: const TextStyle(color: Color(0xFFE0A040), fontSize: 13),
+          ),
+        ],
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                t['do_lock_enabled']!,
+                style: const TextStyle(color: Colors.white, fontSize: 14),
+              ),
+            ),
+            Switch(
+              value: _do.lockEnabled,
+              onChanged: active
+                  ? (v) => _doAction(() => SystemService.kioskSetLockEnabled(v))
+                  : null,
+              activeThumbColor: const Color(0xFF00C6B2),
+            ),
+          ],
+        ),
+        Text(
+          t['do_lock_hint']!,
+          style: const TextStyle(color: Color(0xFF8899AA), fontSize: 12),
+        ),
+        if (_do.temporaryExit) ...[
+          const SizedBox(height: 6),
+          Text(
+            t['do_exit_active']!.replaceAll('{m}', '$minutes'),
+            style: const TextStyle(color: Color(0xFFE0A040), fontSize: 13),
+          ),
+        ],
+        _doButton(
+          t['do_exit_10']!,
+          active
+              ? () => _doAction(
+                  () => SystemService.kioskTemporaryExit(openSettings: false),
+                )
+              : null,
+        ),
+        _doButton(
+          t['do_settings_10']!,
+          active
+              ? () => _doAction(
+                  () => SystemService.kioskTemporaryExit(openSettings: true),
+                )
+              : null,
+        ),
+        _doButton(
+          t['do_clear']!,
+          active ? () => _onClearDeviceOwner(t) : null,
+          color: const Color(0xFFE05555),
+        ),
+      ],
+    );
   }
 
   Future<void> _onToggle(bool value) async {
@@ -6978,6 +7193,12 @@ class _KioskTabState extends State<_KioskTab> {
             t['kiosk_open_desktop_hint']!,
             style: const TextStyle(color: Color(0xFF8899AA), fontSize: 12),
           ),
+
+          const SizedBox(height: 28),
+          Container(height: 1, color: const Color(0xFF1A2233)),
+          const SizedBox(height: 28),
+
+          _deviceOwnerSection(t),
         ],
       ),
     );

@@ -1,5 +1,42 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'app_log_service.dart';
+
+// Состояние киоска через Device Owner (KioskPolicy на нативной стороне).
+class KioskPolicyState {
+  final bool deviceOwner;
+  final bool lockEnabled;
+  final bool lockTaskActive;
+  final Duration exitRemaining;
+
+  const KioskPolicyState({
+    required this.deviceOwner,
+    required this.lockEnabled,
+    required this.lockTaskActive,
+    required this.exitRemaining,
+  });
+
+  static const none = KioskPolicyState(
+    deviceOwner: false,
+    lockEnabled: false,
+    lockTaskActive: false,
+    exitRemaining: Duration.zero,
+  );
+
+  bool get temporaryExit => exitRemaining > Duration.zero;
+
+  // Ответ канала; любые отсутствующие/чужие поля — «нет Device Owner».
+  factory KioskPolicyState.fromMap(Map? m) {
+    if (m == null) return none;
+    final ms = m['exit_remaining_ms'];
+    return KioskPolicyState(
+      deviceOwner: m['device_owner'] == true,
+      lockEnabled: m['lock_enabled'] == true,
+      lockTaskActive: m['lock_task_active'] == true,
+      exitRemaining: Duration(milliseconds: ms is int && ms > 0 ? ms : 0),
+    );
+  }
+}
 
 // Мост к нативной стороне киоск-режима и причины запуска (Шаг 32,
 // задачи 3/6): включение/выключение роли домашнего экрана, системный
@@ -71,6 +108,10 @@ class SystemService {
   // Принимать вызовы нативной стороны в Dart. Вызывается один раз из main().
   static void init() {
     _channel.setMethodCallHandler((call) async {
+      if (call.method == 'kioskLog') {
+        AppLog.log('Kiosk', '${call.arguments}');
+        return null;
+      }
       if (call.method == 'isIdleForRestart') {
         final check = idleForRestartCheck;
         // Нет проверки — отказ (fail-safe): лучше не перезапускать.
@@ -101,4 +142,37 @@ class SystemService {
       debugPrint('SystemService.restartApp error: $e');
     }
   }
+
+  // ---- Киоск через Device Owner ----
+  // Действия возвращают 'ok', 'no_device_owner' или 'error: …'; события
+  // журнала пишет нативная сторона (канал kioskLog → AppLog).
+
+  static Future<KioskPolicyState> kioskPolicyState() async {
+    try {
+      return KioskPolicyState.fromMap(
+        await _channel.invokeMethod<Map>('kioskPolicyState'),
+      );
+    } catch (e) {
+      debugPrint('SystemService.kioskPolicyState error: $e');
+      return KioskPolicyState.none;
+    }
+  }
+
+  static Future<String> _kioskCall(String method, [Object? args]) async {
+    try {
+      return await _channel.invokeMethod<String>(method, args) ?? 'error: null';
+    } catch (e) {
+      AppLog.log('Kiosk', '$method: ошибка канала: $e');
+      return 'error: $e';
+    }
+  }
+
+  static Future<String> kioskSetLockEnabled(bool enabled) =>
+      _kioskCall('kioskSetLockEnabled', {'enabled': enabled});
+
+  static Future<String> kioskTemporaryExit({required bool openSettings}) =>
+      _kioskCall('kioskTemporaryExit', {'openSettings': openSettings});
+
+  static Future<String> kioskClearDeviceOwner() =>
+      _kioskCall('kioskClearDeviceOwner');
 }

@@ -142,6 +142,23 @@
             </intent-filter>
         </receiver>
 
+        <!-- Администратор устройства — цель для Device Owner (эксперимент
+             device-owner-spike, см. KioskPolicy). Назначается только вручную:
+             adb shell dpm set-device-owner
+             ee.carfog.dryfog/com.example.dry_fog_app.CarfogAdminReceiver.
+             Без назначения приёмник ни на что не влияет. -->
+        <receiver
+            android:name=".CarfogAdminReceiver"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
+
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

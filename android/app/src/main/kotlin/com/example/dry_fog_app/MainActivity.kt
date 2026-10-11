@@ -244,9 +244,20 @@ class MainActivity : FlutterActivity() {
                             "started_from_boot" to startedFromBoot,
                         )
                     )
+                    // ---- Киоск через Device Owner (KioskPolicy) ----
+                    "kioskPolicyState" -> result.success(KioskPolicy.state(this))
+                    "kioskSetLockEnabled" -> result.success(
+                        KioskPolicy.setLockEnabled(this, call.argument<Boolean>("enabled") ?: false)
+                    )
+                    "kioskTemporaryExit" -> result.success(
+                        KioskPolicy.temporaryExit(this, call.argument<Boolean>("openSettings") ?: false)
+                    )
+                    "kioskClearDeviceOwner" -> result.success(KioskPolicy.clearDeviceOwner(this))
                     else -> result.notImplemented()
                 }
             }
+        // События киоска (в т.ч. из таймера и после обновления APK) — в AppLog.
+        KioskPolicy.attachLogSink { msg -> systemChannel?.invokeMethod("kioskLog", msg) }
     }
 
     // Включает/выключает роль домашнего экрана у KioskHomeAlias
@@ -541,6 +552,8 @@ class MainActivity : FlutterActivity() {
             android.util.Log.w("MainActivity", "закрываю скрытый экземпляр (задача ${it.taskId})")
             it.finish()
         }
+        // Lock Task, если приложение — Device Owner и блокировка включена.
+        KioskPolicy.onActivityResumed(this)
     }
 
     override fun onPause() {
@@ -554,6 +567,8 @@ class MainActivity : FlutterActivity() {
         // же процессе не сможет открыть шину (см. ModbusChannel.release).
         modbusChannel?.release()
         modbusChannel = null
+        if (!duplicate) KioskPolicy.attachLogSink(null)
+        KioskPolicy.onActivityDestroyed(this)
         systemChannel = null
         super.onDestroy()
     }

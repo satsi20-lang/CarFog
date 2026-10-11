@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Device Owner для киоска (Lock Task, шторка, HOME). Политики старого
+     Device Admin API (пароль, стирание, камера и т.п.) не нужны: всё, что
+     использует KioskPolicy, доступно владельцу устройства без них. -->
+<device-admin>
+    <uses-policies />
+</device-admin>
