@@ -22,6 +22,7 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.StandardMethodCodec
+import java.lang.ref.WeakReference
 
 class MainActivity : FlutterActivity() {
 
@@ -58,6 +59,30 @@ class MainActivity : FlutterActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Второй экземпляр (задача "второй движок", 1.10.3+30). Проверено на
+        // CARFOG-100 (dumpsys activity, 10.10.2026): MainActivity, запущенная
+        // обычным intent (am start, BootReceiver, список приложений), живёт в
+        // задаче типа standard; нажатие HOME запускает KioskHomeAlias, и
+        // система кладёт его в отдельную задачу типа home — singleInstance
+        // между задачами разного типа не срабатывает, получается второй
+        // экземпляр со вторым движком Flutter в том же процессе. Здесь он
+        // сразу закрывается, а на передний план выводится прежний. finish()
+        // внутри onCreate: onStart/onResume не вызываются, поэтому Dart
+        // второго движка не запускается вовсе (точка входа Dart выполняется
+        // в onStart), порт он не открывает.
+        val existing = otherLiveInstance()
+        if (existing != null) {
+            android.util.Log.w(
+                "MainActivity",
+                "второй экземпляр (${intent?.component?.shortClassName}) закрыт, " +
+                    "на передний план — прежний (задача ${existing.taskId})"
+            )
+            duplicate = true
+            bringTaskToFront(existing.taskId)
+            finish()
+            return
+        }
+        liveInstances.add(WeakReference(this))
         startedFromBoot = intent?.getBooleanExtra(BootReceiver.EXTRA_STARTED_FROM_BOOT, false) == true
         launchAction = intent?.action
         launchCategories = intent?.categories?.toList() ?: emptyList()
@@ -508,6 +533,14 @@ class MainActivity : FlutterActivity() {
     override fun onResume() {
         super.onResume()
         isForeground = true
+        // Страховка, если второй экземпляр всё же появился: видимый движок
+        // забирает порт, прежний экземпляр закрывается — два движка не
+        // управляют выходами одновременно, скрытый не сыплет ошибками опроса.
+        modbusChannel?.claimBus()
+        otherLiveInstance()?.let {
+            android.util.Log.w("MainActivity", "закрываю скрытый экземпляр (задача ${it.taskId})")
+            it.finish()
+        }
     }
 
     override fun onPause() {
@@ -516,11 +549,39 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        liveInstances.removeAll { it.get() == null || it.get() === this }
         // Освободить порт ДО обнуления: иначе новый экземпляр Activity в том
         // же процессе не сможет открыть шину (см. ModbusChannel.release).
         modbusChannel?.release()
         modbusChannel = null
         systemChannel = null
         super.onDestroy()
+    }
+
+    // Экземпляр, закрытый в onCreate как второй (см. onCreate).
+    private var duplicate = false
+
+    private fun otherLiveInstance(): MainActivity? {
+        liveInstances.removeAll { it.get() == null }
+        return liveInstances.mapNotNull { it.get() }.firstOrNull {
+            it !== this && !it.duplicate && !it.isFinishing && !it.isDestroyed
+        }
+    }
+
+    private fun bringTaskToFront(taskId: Int) {
+        try {
+            val am = getSystemService(ActivityManager::class.java)
+            am.appTasks.firstOrNull {
+                val info = it.taskInfo
+                (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) info.taskId else info.id) == taskId
+            }?.moveToFront()
+        } catch (e: Throwable) {
+            android.util.Log.e("MainActivity", "не удалось вывести задачу $taskId вперёд: $e")
+        }
+    }
+
+    companion object {
+        // Живые экземпляры MainActivity в процессе (только главный поток).
+        private val liveInstances = mutableListOf<WeakReference<MainActivity>>()
     }
 }

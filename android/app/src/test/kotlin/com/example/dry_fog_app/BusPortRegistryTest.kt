@@ -219,6 +219,51 @@ class BusPortRegistryTest {
     }
 
     @Test
+    fun `видимый движок забирает владение без переоткрытия, выходы гасятся при передаче`() {
+        registry.open(engineA, port, 9600)
+        var handovers = 0
+        assertTrue(registry.claim(engineB) { handovers++ })
+        assertEquals("порт не пересоздаётся и не переоткрывается", 1, created.size)
+        assertEquals(1, created[0].opens)
+        assertEquals(1, handovers)
+        assertSame(created[0], registry.busFor(engineB))
+        assertNull("прежний движок без доступа к шине", registry.busFor(engineA))
+        // Прежний владелец при уничтожении порт не трогает.
+        assertFalse(registry.release(engineA) { handovers++ })
+        assertTrue(created[0].isOpen())
+        assertEquals(1, handovers)
+    }
+
+    @Test
+    fun `повторный claim тем же владельцем и первый claim — без гашения выходов`() {
+        var handovers = 0
+        assertFalse("порт ещё никому не принадлежал", registry.claim(engineA) { handovers++ })
+        registry.open(engineA, port, 9600)
+        assertFalse(registry.claim(engineA) { handovers++ })
+        assertEquals(0, handovers)
+        assertEquals(1, created[0].opens)
+    }
+
+    @Test
+    fun `claim до открытия порта - потом open того же движка открывает порт`() {
+        registry.claim(engineB) {}
+        assertEquals(ModbusRtu.OpenResult.Ok, registry.open(engineB, port, 9600))
+        assertSame(created[0], registry.busFor(engineB))
+    }
+
+    @Test
+    fun `после claim события сторожа достаются новому владельцу`() {
+        registry.open(engineA, port, 9600)
+        registry.claim(engineB) {}
+        repeat(10) { created[0].transaction(false) }
+        @Suppress("UNCHECKED_CAST")
+        assertTrue((registry.health(engineA)["events"] as List<Any>).isEmpty())
+        assertEquals(false, registry.health(engineA)["owner"])
+        @Suppress("UNCHECKED_CAST")
+        assertEquals(1, (registry.health(engineB)["events"] as List<Any>).size)
+    }
+
+    @Test
     fun `транзакции старого объекта после замены не учитываются`() {
         registry.open(engineA, port, 9600)
         val old = created[0]

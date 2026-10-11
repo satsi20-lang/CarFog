@@ -23,6 +23,7 @@ void main() {
   late BusHealth? next;
   late List<Map<String, dynamic>> reports;
   late BusWatchdogService watchdog;
+  late int detachCalls;
 
   BusHealth dead({int successes = 100, int failures = 4, bool open = true}) =>
       BusHealth(
@@ -46,11 +47,13 @@ void main() {
     notifier = readyNotifier()..transition(AppState.standby);
     reports = [];
     next = null;
+    detachCalls = 0;
     watchdog = BusWatchdogService(
       notifier,
       poll: () async => next,
       now: () => now,
       report: (data) async => reports.add(data),
+      detach: () => detachCalls++,
     );
   });
 
@@ -225,17 +228,59 @@ void main() {
     );
   });
 
-  test('уходящий движок (не владелец порта) ничего не делает', () async {
-    final foreign = BusHealth(
-      owner: false,
-      open: false,
-      failures: 9,
-      successes: 0,
+  test(
+    'уходящий движок (не владелец порта) не выводит и не шлёт событий',
+    () async {
+      final foreign = BusHealth(
+        owner: false,
+        open: false,
+        failures: 9,
+        successes: 0,
+      );
+      await tickAt(0, foreign);
+      await tickAt(120, foreign);
+      expect(codes(), isEmpty);
+      expect(notifier.isOutOfService, isFalse);
+    },
+  );
+
+  test(
+    'не владелец два опроса подряд — опрос в движке останавливается один раз',
+    () async {
+      final foreign = BusHealth(
+        owner: false,
+        open: true,
+        failures: 0,
+        successes: 50,
+      );
+      await tickAt(0, foreign);
+      expect(detachCalls, 0, reason: 'один опрос — может быть переходным');
+      expect(watchdog.isDetached, isFalse);
+      await tickAt(3, foreign);
+      expect(detachCalls, 1);
+      expect(watchdog.isDetached, isTrue);
+      // Дальше — ни повторной остановки, ни событий, ни вывода.
+      await tickAt(6, foreign);
+      await tickAt(120, dead());
+      expect(detachCalls, 1);
+      expect(codes(), isEmpty);
+      expect(notifier.isOutOfService, isFalse);
+    },
+  );
+
+  test('один опрос без владения между нормальными — не остановка', () async {
+    await tickAt(0, dead(failures: 0));
+    await tickAt(
+      3,
+      BusHealth(owner: false, open: true, failures: 0, successes: 100),
     );
-    await tickAt(0, foreign);
-    await tickAt(120, foreign);
-    expect(codes(), isEmpty);
-    expect(notifier.isOutOfService, isFalse);
+    await tickAt(6, dead(successes: 110, failures: 0));
+    await tickAt(
+      9,
+      BusHealth(owner: false, open: true, failures: 0, successes: 110),
+    );
+    expect(detachCalls, 0);
+    expect(watchdog.isDetached, isFalse);
   });
 
   test(

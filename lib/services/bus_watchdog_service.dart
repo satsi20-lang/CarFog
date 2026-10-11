@@ -6,7 +6,10 @@ import '../models/out_of_service.dart';
 import 'app_log_service.dart';
 import 'cloud_service.dart';
 import 'modbus_service.dart';
+import 'level_service.dart';
 import 'out_of_service_service.dart';
+import 'output_watchdog_service.dart';
+import 'sync_service.dart';
 
 // Снимок сторожа шины с нативной стороны (BusPortRegistry.health).
 class BusHealth {
@@ -77,6 +80,7 @@ class BusWatchdogService {
   final Future<BusHealth?> Function() _poll;
   final DateTime Function() _now;
   final Future<void> Function(Map<String, dynamic> data) _report;
+  final void Function() _detach;
 
   Timer? _timer;
   bool _running = false;
@@ -84,18 +88,38 @@ class BusWatchdogService {
   DateTime? _badSince;
   bool _downReported = false;
 
+  // Порт у другого движка этого процесса (1.10.3+30): сколько опросов подряд
+  // и остановлен ли уже опрос.
+  static const notOwnerTicksToDetach = 2;
+  int _notOwnerTicks = 0;
+  bool _detached = false;
+  bool get isDetached => _detached;
+
   @visibleForTesting
   BusWatchdogService(
     this.notifier, {
     Future<BusHealth?> Function()? poll,
     DateTime Function()? now,
     Future<void> Function(Map<String, dynamic> data)? report,
-  }) : _poll = poll ?? _defaultPoll,
+    void Function()? detach,
+  }) : _detach = detach ?? _defaultDetach,
+       _poll = poll ?? _defaultPoll,
        _now = now ?? DateTime.now,
        _report = report ?? _defaultReport;
 
   static Future<BusHealth?> _defaultPoll() async =>
       BusHealth.fromMap(await ModbusService.busHealth());
+
+  // Движок без порта (скрытый второй экземпляр) прекращает всё, что
+  // опрашивает шину или облако: иначе каждые 3 с — ошибки чтения в журнал,
+  // а удалённые команды выполнялись бы двумя движками. Нативная сторона
+  // сама закрывает такой экземпляр (MainActivity.onResume видимого).
+  static void _defaultDetach() {
+    LevelService.stop();
+    OutputWatchdogService.stop();
+    SyncService.stop();
+    stop();
+  }
 
   static Future<void> _defaultReport(Map<String, dynamic> data) =>
       CloudService.report(CloudEventType.hardwareError, data: data);
@@ -146,9 +170,22 @@ class BusWatchdogService {
     _running = true;
     try {
       final h = await _poll();
-      // Канал не ответил, либо порт у другого движка этого же процесса
-      // (этот движок — уходящий): судить не о чем.
-      if (h == null || !h.owner) return;
+      // Канал не ответил — судить не о чем.
+      if (h == null || _detached) return;
+      if (!h.owner) {
+        // Один опрос — возможно, переходный момент; два подряд — порт
+        // действительно у другого движка.
+        if (++_notOwnerTicks >= notOwnerTicksToDetach) {
+          _detached = true;
+          AppLog.log(
+            'Bus',
+            'порт шины у другого экрана этого процесса — опрос в этом движке остановлен',
+          );
+          _detach();
+        }
+        return;
+      }
+      _notOwnerTicks = 0;
 
       for (final e in h.events) {
         AppLog.log(

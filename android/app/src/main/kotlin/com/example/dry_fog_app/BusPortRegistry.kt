@@ -103,6 +103,22 @@ class BusPortRegistry<B : SerialBus>(
         return result
     }
 
+    // Видимый движок (MainActivity.onResume) забирает владение, не
+    // переоткрывая порт (задача "второй движок", 1.10.3+30). Если порт был
+    // у другого движка и открыт, beforeHandover гасит выходы — как при
+    // уничтожении прежнего владельца (release): то, что включил прежний
+    // движок, без управляющего не остаётся. true — владелец сменился.
+    @Synchronized
+    fun claim(who: Any, beforeHandover: (B) -> Unit): Boolean {
+        val previous = owner
+        if (previous === who) return false
+        owner = who
+        if (previous == null) return false
+        log("claim: владение портом передано видимому движку")
+        bus?.takeIf { it.isOpen() }?.let { beforeHandover(it) }
+        return true
+    }
+
     // Явное закрытие — только владельцем. false: вызывающий не владелец,
     // порт не тронут.
     @Synchronized

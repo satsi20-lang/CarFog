@@ -1197,6 +1197,20 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
     // видимого экрана оставалась мёртвой до ручного перезапуска. Здесь:
     // остановить опрос монет, по возможности погасить выходы (нагрузки не
     // должны остаться включёнными без управляющего), закрыть порт.
+    // Движок этого канала стал видимым (MainActivity.onResume) — забрать
+    // порт у прежнего владельца. Выходы при передаче гасятся тем же кадром,
+    // что и в release().
+    fun claimBus() {
+        val changed = registry.claim(this) { bus ->
+            try {
+                bus.scanWriteMultipleCoils(SLAVE_DIO, 0, List(10) { false }, timeoutMs = 150L)
+            } catch (e: Throwable) {
+                Log.e(TAG, "claimBus: safeAllOff не удался: $e")
+            }
+        }
+        if (changed) Log.w(TAG, "claimBus: порт забран у прежнего движка")
+    }
+
     fun release() {
         paymentPollingActive.set(false)
         coinAcceptorAutoOffHandlerCleanup()
