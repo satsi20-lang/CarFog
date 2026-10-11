@@ -41,4 +41,12 @@ class KioskDecisionTest {
         assertFalse(KioskDecision.relaunchAfterUpdate(false, true))
         assertFalse(KioskDecision.relaunchAfterUpdate(false, false))
     }
+
+    @Test
+    fun replaceInstanceOnlyWhenAliasGoesAway() {
+        assertTrue(KioskDecision.replaceInstanceOnRelease(true, false))
+        assertFalse(KioskDecision.replaceInstanceOnRelease(true, true))
+        assertFalse(KioskDecision.replaceInstanceOnRelease(false, false))
+        assertFalse(KioskDecision.replaceInstanceOnRelease(false, true))
+    }
 }

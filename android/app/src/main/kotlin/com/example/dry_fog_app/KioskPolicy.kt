@@ -29,6 +29,14 @@ object KioskDecision {
     fun relaunchAfterUpdate(deviceOwner: Boolean, lockEnabled: Boolean): Boolean =
         deviceOwner && lockEnabled
 
+    // Снятие политик выключает KioskHomeAlias (если старый тумблер киоска
+    // выключен), а вместе с ним система закрывает экземпляр активности,
+    // запущенный через алиас, — приложение пропадало с экрана (проверено на
+    // rk3568, 11.10.2026). Тогда после закрытия поднимается замена через
+    // MainActivity (см. KioskPolicy.releasePoliciesKeepingScreen).
+    fun replaceInstanceOnRelease(launchedViaAlias: Boolean, oldKioskEnabled: Boolean): Boolean =
+        launchedViaAlias && !oldKioskEnabled
+
     fun exitRemainingMs(exitUntil: Long, now: Long): Long =
         if (exitUntil <= now) 0L else exitUntil - now
 }
@@ -60,6 +68,11 @@ object KioskPolicy {
     private val relockTask = Runnable { relock() }
     // Политики уже применены в этом процессе (не повторять на каждом onResume).
     private var policiesApplied = false
+    // Снять Device Owner, когда поднимется замена экрана (см.
+    // releasePoliciesKeepingScreen). Только в памяти: если процесс умрёт
+    // раньше, Device Owner останется назначенным при выключенной блокировке —
+    // кнопку можно нажать ещё раз.
+    private var pendingClearDeviceOwner = false
     private var activityRef: WeakReference<Activity>? = null
     // Контекст приложения для таймера, если активности уже нет.
     private var appContext: Context? = null
@@ -78,12 +91,24 @@ object KioskPolicy {
         }
     }
 
-    fun attachLogSink(sink: ((String) -> Unit)?) {
+    private var logSinkOwner: Any? = null
+
+    fun attachLogSink(owner: Any, sink: (String) -> Unit) {
         handler.post {
+            logSinkOwner = owner
             logSink = sink
-            if (sink != null) {
-                pendingLog.forEach(sink)
-                pendingLog.clear()
+            pendingLog.forEach(sink)
+            pendingLog.clear()
+        }
+    }
+
+    // Отключает журнал, только если он всё ещё принадлежит owner: при замене
+    // экземпляра прежний уничтожается уже после того, как новый подключился.
+    fun detachLogSink(owner: Any) {
+        handler.post {
+            if (logSinkOwner === owner) {
+                logSinkOwner = null
+                logSink = null
             }
         }
     }
@@ -128,6 +153,11 @@ object KioskPolicy {
         activityRef = WeakReference(activity)
         val ctx = activity.applicationContext
         appContext = ctx
+        if (pendingClearDeviceOwner) {
+            pendingClearDeviceOwner = false
+            doClearDeviceOwner(ctx)
+            return
+        }
         val owner = isDeviceOwner(ctx)
         if (!KioskDecision.shouldLock(owner, isLockEnabled(ctx), exitUntil, SystemClock.elapsedRealtime())) return
         try {
@@ -159,7 +189,7 @@ object KioskPolicy {
                 log(ctx, "блокировка включена техником")
             } else {
                 stopLockTask(activity)
-                releasePolicies(ctx)
+                releasePoliciesKeepingScreen(activity, clearOwnerAfter = false)
                 log(ctx, "блокировка выключена техником")
             }
             RESULT_OK
@@ -203,10 +233,7 @@ object KioskPolicy {
             cancelExit()
             prefs(ctx).edit().putBoolean(KEY_LOCK_ENABLED, false).commit()
             stopLockTask(activity)
-            releasePolicies(ctx)
-            @Suppress("DEPRECATION")
-            dpm(ctx).clearDeviceOwnerApp(ctx.packageName)
-            log(ctx, "Device Owner снят")
+            releasePoliciesKeepingScreen(activity, clearOwnerAfter = true)
             RESULT_OK
         } catch (e: Throwable) {
             log(ctx, "ошибка снятия Device Owner: $e")
@@ -257,13 +284,78 @@ object KioskPolicy {
     }
 
     // Отмена наших политик; KioskHomeAlias возвращается к старому тумблеру
-    // «Киоск-режим».
-    private fun releasePolicies(ctx: Context) {
+    // «Киоск-режим», затем (clearOwnerAfter) снимается Device Owner.
+    //
+    // Если экран держит экземпляр, запущенный через алиас, выключение алиаса
+    // его закрывает. Поднять замену заранее нельзя: MainActivity —
+    // singleInstance, система отдаёт intent тому же экземпляру (проверено на
+    // rk3568). Поэтому: выключить алиас, дождаться, пока экземпляр исчезнет,
+    // поднять MainActivity и только из её onResume снять Device Owner — пока
+    // приложение владелец устройства, запуск активности из фона разрешён.
+    private fun releasePoliciesKeepingScreen(activity: Activity, clearOwnerAfter: Boolean) {
+        val ctx = activity.applicationContext
         val dpm = dpm(ctx)
         val admin = admin(ctx)
         dpm.setStatusBarDisabled(admin, false)
         dpm.clearPackagePersistentPreferredActivities(admin, ctx.packageName)
         dpm.setLockTaskPackages(admin, arrayOf())
+        policiesApplied = false
+        val oldKiosk = PackageUpdateReceiver.readKioskModeEnabled(ctx) ?: false
+        val replace = KioskDecision.replaceInstanceOnRelease(launchedViaAlias(activity), oldKiosk)
+        setAliasToOldKiosk(ctx)
+        if (replace) {
+            pendingClearDeviceOwner = clearOwnerAfter
+            log(ctx, "KioskHomeAlias выключен, жду закрытия экземпляра для замены")
+            relaunchWhenGone(ctx, REPLACE_ATTEMPTS)
+        } else if (clearOwnerAfter) {
+            doClearDeviceOwner(ctx)
+        }
+    }
+
+    private const val REPLACE_ATTEMPTS = 25
+    private const val REPLACE_POLL_MS = 200L
+
+    private fun relaunchWhenGone(ctx: Context, attemptsLeft: Int) {
+        handler.postDelayed({
+            if (MainActivity.hasLiveInstance() && attemptsLeft > 0) {
+                relaunchWhenGone(ctx, attemptsLeft - 1)
+                return@postDelayed
+            }
+            if (MainActivity.hasLiveInstance()) {
+                // Экземпляр так и не закрылся — замена не нужна.
+                log(ctx, "экземпляр не закрылся, замена не нужна")
+                if (pendingClearDeviceOwner) {
+                    pendingClearDeviceOwner = false
+                    doClearDeviceOwner(ctx)
+                }
+                return@postDelayed
+            }
+            try {
+                ctx.startActivity(
+                    Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+                log(ctx, "экран поднят заново через MainActivity")
+            } catch (e: Throwable) {
+                log(ctx, "ошибка подъёма экрана: $e")
+                if (pendingClearDeviceOwner) {
+                    pendingClearDeviceOwner = false
+                    doClearDeviceOwner(ctx)
+                }
+            }
+        }, REPLACE_POLL_MS)
+    }
+
+    private fun doClearDeviceOwner(ctx: Context) {
+        try {
+            @Suppress("DEPRECATION")
+            dpm(ctx).clearDeviceOwnerApp(ctx.packageName)
+            log(ctx, "Device Owner снят")
+        } catch (e: Throwable) {
+            log(ctx, "ошибка снятия Device Owner: $e")
+        }
+    }
+
+    private fun setAliasToOldKiosk(ctx: Context) {
         val oldKiosk = PackageUpdateReceiver.readKioskModeEnabled(ctx) ?: false
         ctx.packageManager.setComponentEnabledSetting(
             ComponentNames.kioskHomeAlias(ctx),
@@ -271,8 +363,10 @@ object KioskPolicy {
             else PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
             PackageManager.DONT_KILL_APP
         )
-        policiesApplied = false
     }
+
+    private fun launchedViaAlias(activity: Activity): Boolean =
+        activity.intent?.component?.className == ComponentNames.kioskAliasClass()
 
     private fun stopLockTask(activity: Activity) {
         if (lockTaskActive(activity)) activity.stopLockTask()

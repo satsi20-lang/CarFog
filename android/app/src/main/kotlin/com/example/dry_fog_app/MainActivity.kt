@@ -257,7 +257,7 @@ class MainActivity : FlutterActivity() {
                 }
             }
         // События киоска (в т.ч. из таймера и после обновления APK) — в AppLog.
-        KioskPolicy.attachLogSink { msg -> systemChannel?.invokeMethod("kioskLog", msg) }
+        KioskPolicy.attachLogSink(this) { msg -> systemChannel?.invokeMethod("kioskLog", msg) }
     }
 
     // Включает/выключает роль домашнего экрана у KioskHomeAlias
@@ -567,7 +567,7 @@ class MainActivity : FlutterActivity() {
         // же процессе не сможет открыть шину (см. ModbusChannel.release).
         modbusChannel?.release()
         modbusChannel = null
-        if (!duplicate) KioskPolicy.attachLogSink(null)
+        KioskPolicy.detachLogSink(this)
         KioskPolicy.onActivityDestroyed(this)
         systemChannel = null
         super.onDestroy()
@@ -598,5 +598,14 @@ class MainActivity : FlutterActivity() {
     companion object {
         // Живые экземпляры MainActivity в процессе (только главный поток).
         private val liveInstances = mutableListOf<WeakReference<MainActivity>>()
+
+        // Есть ли в процессе экземпляр, который держит экран (KioskPolicy ждёт
+        // его закрытия перед подъёмом замены).
+        fun hasLiveInstance(): Boolean {
+            liveInstances.removeAll { it.get() == null }
+            return liveInstances.mapNotNull { it.get() }.any {
+                !it.duplicate && !it.isFinishing && !it.isDestroyed
+            }
+        }
     }
 }
