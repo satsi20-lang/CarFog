@@ -178,6 +178,7 @@ void main() async {
   // до конца (сигнал здоровья, события, итог). Не блокирует запуск.
   unawaited(UpdateService.onStartup(notifier));
   // Сетевой adb по умолчанию закрыт: открытый вне окна тумблера закрывается.
+  SystemService.onAdbWifiChanged = AdbNetworkService.onAdbWifiChanged;
   unawaited(AdbNetworkService.onStartup());
 
   // Безопасное выключение всего при старте — не блокирует показ UI, но

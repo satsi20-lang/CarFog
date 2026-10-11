@@ -113,11 +113,19 @@ class SystemService {
   // (restart_app): "аппарат всё ещё в покое?". Подключается из main().
   static Future<bool> Function()? idleForRestartCheck;
 
+  // Изменилась настройка беспроводной отладки (adb_wifi_enabled) — сетевой
+  // adb проверяется сразу. Подключается из main().
+  static Future<void> Function()? onAdbWifiChanged;
+
   // Принимать вызовы нативной стороны в Dart. Вызывается один раз из main().
   static void init() {
     _channel.setMethodCallHandler((call) async {
       if (call.method == 'kioskLog') {
         AppLog.log('Kiosk', '${call.arguments}');
+        return null;
+      }
+      if (call.method == 'adbWifiChanged') {
+        await onAdbWifiChanged?.call();
         return null;
       }
       if (call.method == 'isIdleForRestart') {

@@ -19,7 +19,12 @@ import 'update_service.dart';
 //  * Каждое открытие, закрытие и ошибка — в журнал (тег Adb) и событием
 //    debug_mode_changed в облако.
 // Сроки окон хранятся в настройках: перезапуск приложения внутри окна
-// (adb install) окно не обрывает.
+// (adb install) окно не обрывает. Сроки — по часам устройства, поэтому при
+// каждой проверке обрезаются до «сейчас + 30 мин»: часы, переведённые назад,
+// не продлевают окно больше чем на 30 минут от момента проверки.
+// Проверка раз в минуту, пока что-то открыто или окно активно; раз в 5 минут
+// — только когда всё закрыто. Включение беспроводной отладки нативная
+// сторона сообщает сразу (наблюдатель adb_wifi_enabled), не дожидаясь опроса.
 class AdbNetworkService {
   AdbNetworkService._();
 
@@ -44,6 +49,8 @@ class AdbNetworkService {
   static bool? get adbNetwork => state?.tcpListening;
 
   static Timer? _timer;
+  // Через сколько назначена следующая проверка (для тестов).
+  static Duration? scheduledIn;
   static Future<void> _chain = Future<void>.value();
   static bool _loaded = false;
 
@@ -68,6 +75,12 @@ class AdbNetworkService {
 
   // Проверка по таймеру (и из тестов).
   static Future<void> check() => _serial(() => _check(startup: false));
+
+  // Нативная сторона: изменилась настройка беспроводной отладки.
+  static Future<void> onAdbWifiChanged() async {
+    await check();
+    _schedule();
+  }
 
   // Тумблер «вкл» (и «продлить»): открыть 5555 на adbWindow.
   static Future<bool> open() => _serial(() async {
@@ -129,6 +142,19 @@ class AdbNetworkService {
     state = s;
     final now = clock();
 
+    // Часы переведены назад: срок дальше, чем «сейчас + 30 мин», — обрезать.
+    final cap = now.add(adbWindow);
+    final tu = tcpUntil;
+    if (tu != null && tu.isAfter(cap)) {
+      AppLog.log('Adb', 'срок окна обрезан (часы назад): ${_hm(tu)} → ${_hm(cap)}');
+      await _setTcpUntil(cap);
+    }
+    final wu = wifiUntil;
+    if (wu != null && wu.isAfter(cap)) {
+      AppLog.log('Adb', 'срок беспроводной отладки обрезан (часы назад): ${_hm(wu)} → ${_hm(cap)}');
+      await _setWifiUntil(cap);
+    }
+
     // Сетевой adb без TLS.
     final tcpOpen = s.tcpListening || s.configuredPort > 0 || s.internetAdb || s.persistPort;
     if (tcpOpen) {
@@ -139,9 +165,10 @@ class AdbNetworkService {
         await _closeTcp('timer');
       }
     } else if (tcpUntil != null) {
-      // Закрылся сам (перезагрузка, холодное выключение).
+      // Закрылся сам: при старте — перезагрузка или холодное выключение.
       AppLog.log('Adb', 'порт закрыт без приложения, окно снято ($s)');
       await _setTcpUntil(null);
+      await _report('adb_network', false, startup ? 'reboot' : 'external');
     }
 
     // Беспроводная отладка: срок с момента, когда её увидели.
@@ -149,7 +176,8 @@ class AdbNetworkService {
       final until = wifiUntil;
       if (until == null) {
         await _setWifiUntil(now.add(adbWindow));
-        AppLog.log('Adb', 'беспроводная отладка включена, выключится в ${_hm(wifiUntil!)} ($s)');
+        // Состояние — после закрытия 5555 выше (state, а не s).
+        AppLog.log('Adb', 'беспроводная отладка включена, выключится в ${_hm(wifiUntil!)} ($state)');
         await _report('adb_wifi', true, startup ? 'startup' : 'detected');
       } else if (!now.isBefore(until)) {
         await _closeWifi('timer');
@@ -219,6 +247,7 @@ class AdbNetworkService {
       final left = u.difference(now) + const Duration(seconds: 1);
       if (left < d) d = left.isNegative ? Duration.zero : left;
     }
+    scheduledIn = d;
     _timer = Timer(d, () async {
       await check();
       _schedule();
@@ -254,6 +283,7 @@ class AdbNetworkService {
   static void resetForTest() {
     _timer?.cancel();
     _timer = null;
+    scheduledIn = null;
     _chain = Future<void>.value();
     _loaded = false;
     state = null;

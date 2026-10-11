@@ -358,6 +358,71 @@ if [ "$1" = put ]; then printf '%s' "$3=$4" >> "$PROPS/_log"; echo >> "$PROPS/_l
       await AdbNetworkService.onStartup();
       expect(adb.calls, ['read']);
       expect(AdbNetworkService.tcpUntil, isNull);
+      expect((await events()).last, {'code': 'adb_network', 'enabled': false, 'reason': 'reboot'});
+    });
+
+    test('порт закрыли без приложения во время работы — событие external', () async {
+      await AdbNetworkService.open();
+      adb.listening = false;
+      await AdbNetworkService.check();
+      expect(AdbNetworkService.tcpUntil, isNull);
+      expect((await events()).last, {'code': 'adb_network', 'enabled': false, 'reason': 'external'});
+    });
+
+    test('часы назад на час при открытом окне: срок обрезан до «сейчас + 30 мин» и сохранён', () async {
+      await AdbNetworkService.open(); // 12:00 → до 12:30
+      now = DateTime(2026, 10, 11, 12, 10).subtract(const Duration(hours: 1)); // 11:10
+      await AdbNetworkService.check();
+      expect(adb.listening, isTrue);
+      expect(AdbNetworkService.tcpUntil, DateTime(2026, 10, 11, 11, 40));
+      final p = await SharedPreferences.getInstance();
+      expect(p.getInt('adb_tcp_until_ms'), DateTime(2026, 10, 11, 11, 40).millisecondsSinceEpoch);
+      // После перезапуска — обрезанный срок, и порт закрывается по нему.
+      boot();
+      await AdbNetworkService.onStartup();
+      expect(AdbNetworkService.tcpUntil, DateTime(2026, 10, 11, 11, 40));
+      now = DateTime(2026, 10, 11, 11, 40);
+      await AdbNetworkService.check();
+      expect(adb.listening, isFalse);
+      expect((await events()).last['reason'], 'timer');
+    });
+
+    test('часы назад: срок беспроводной отладки тоже обрезается', () async {
+      adb.wifi = true;
+      await AdbNetworkService.onStartup(); // до 12:30
+      now = DateTime(2026, 10, 11, 10, 0);
+      await AdbNetworkService.check();
+      expect(AdbNetworkService.wifiUntil, DateTime(2026, 10, 11, 10, 30));
+    });
+
+    test('часы вперёд: порт закрывается при ближайшей проверке', () async {
+      await AdbNetworkService.open(); // до 12:30
+      now = DateTime(2026, 10, 11, 13, 0);
+      await AdbNetworkService.check();
+      expect(adb.listening, isFalse);
+      expect((await events()).last, {'code': 'adb_network', 'enabled': false, 'reason': 'timer'});
+    });
+
+    test('интервал: всё закрыто — 5 мин; беспроводная отладка при закрытом 5555 — 1 мин', () async {
+      await AdbNetworkService.onStartup();
+      expect(AdbNetworkService.scheduledIn, const Duration(minutes: 5));
+      adb.wifi = true;
+      await AdbNetworkService.onAdbWifiChanged(); // наблюдатель adb_wifi_enabled
+      expect(AdbNetworkService.wifiUntil, now.add(const Duration(minutes: 30)));
+      expect(AdbNetworkService.scheduledIn, const Duration(minutes: 1));
+      expect((await events()).last, {'code': 'adb_wifi', 'enabled': true, 'reason': 'detected'});
+      adb.wifi = false;
+      await AdbNetworkService.onAdbWifiChanged();
+      expect(AdbNetworkService.wifiUntil, isNull);
+      expect(AdbNetworkService.scheduledIn, const Duration(minutes: 5));
+    });
+
+    test('интервал: окно 5555 активно — 1 мин, у срока — к сроку', () async {
+      await AdbNetworkService.open();
+      expect(AdbNetworkService.scheduledIn, const Duration(minutes: 1));
+      now = now.add(const Duration(minutes: 29, seconds: 30));
+      await AdbNetworkService.onAdbWifiChanged();
+      expect(AdbNetworkService.scheduledIn, const Duration(seconds: 31));
     });
 
     test('открыт вне окна во время работы (системные настройки) — закрывается', () async {

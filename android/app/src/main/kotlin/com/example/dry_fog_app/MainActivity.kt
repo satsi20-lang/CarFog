@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.app.ActivityManager
 import android.content.pm.PackageManager
+import android.database.ContentObserver
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.wifi.WifiManager
@@ -14,6 +15,8 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.os.storage.StorageManager
 import android.provider.Settings
 import android.view.WindowManager
@@ -39,6 +42,9 @@ class MainActivity : FlutterActivity() {
     // Канал системных вызовов — нужен, чтобы перед завершением процесса
     // (restart_app) спросить Dart: аппарат всё ещё в покое?
     private var systemChannel: MethodChannel? = null
+    // Наблюдатель за беспроводной отладкой (adb_wifi_enabled): Dart отсчитывает
+    // 30 минут с момента обнаружения, поэтому сообщаем сразу, без опроса.
+    private var adbWifiObserver: ContentObserver? = null
     // MainActivity на переднем плане — только тогда restart_app может
     // поднять экран через RestartActivity (запуск из фона запрещён).
     private var isForeground = false
@@ -258,6 +264,21 @@ class MainActivity : FlutterActivity() {
             }
         // События киоска (в т.ч. из таймера и после обновления APK) — в AppLog.
         KioskPolicy.attachLogSink(this) { msg -> systemChannel?.invokeMethod("kioskLog", msg) }
+        // Беспроводная отладка включена или выключена (в т.ч. в системных
+        // настройках) — сразу проверить сетевой adb на стороне Dart.
+        try {
+            val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
+                override fun onChange(selfChange: Boolean) {
+                    systemChannel?.invokeMethod("adbWifiChanged", null)
+                }
+            }
+            contentResolver.registerContentObserver(
+                Settings.Global.getUriFor("adb_wifi_enabled"), false, observer
+            )
+            adbWifiObserver = observer
+        } catch (e: Exception) {
+            android.util.Log.w("MainActivity", "adb_wifi_enabled: наблюдатель не подключён: $e")
+        }
     }
 
     // Включает/выключает роль домашнего экрана у KioskHomeAlias
@@ -569,6 +590,8 @@ class MainActivity : FlutterActivity() {
         // же процессе не сможет открыть шину (см. ModbusChannel.release).
         modbusChannel?.release()
         modbusChannel = null
+        adbWifiObserver?.let { contentResolver.unregisterContentObserver(it) }
+        adbWifiObserver = null
         KioskPolicy.detachLogSink(this)
         KioskPolicy.onActivityDestroyed(this)
         systemChannel = null

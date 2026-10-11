@@ -143,7 +143,7 @@ spec без выпущенного перевода не показываетс�
 Каждое открытие и закрытие записывается в журнал приложения (тег `Adb`) и
 уходит в облако событием `debug_mode_changed` (`code`: `adb_network` или
 `adb_wifi`, `reason`: `service_menu`, `extended`, `manual`, `timer`,
-`startup`, `outside_window`, `detected`). В слепке настроек: `adb_network`
+`startup`, `outside_window`, `detected`, `reboot`, `external`). В слепке настроек: `adb_network`
 (порт без шифрования слушается), `adb_wifi`, `adb_network_detail`.
 
 **Если приложение не запускается.** Ни тумблер, ни кнопка настроек тогда
