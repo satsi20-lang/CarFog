@@ -693,15 +693,27 @@ class ModbusService {
         'guardMs': guardMs,
       });
       if (result == null) return null;
+      final line = pollTerminalErrorLog.success();
+      if (line != null) debugPrint(line);
       return TerminalPoll(
         state: result['state'] as bool,
         confirmed: result['confirmed'] as bool,
       );
     } catch (e) {
-      debugPrint('ModbusService.pollTerminal error: $e');
+      final line = pollTerminalErrorLog.error(
+        'ModbusService.pollTerminal error: $e',
+      );
+      if (line != null) debugPrint(line);
       return null;
     }
   }
+
+  // На экране "не работает" терминал опрашивается раз в 200 мс (ловит
+  // неожиданную оплату) — при мёртвой шине это ~5 строк ошибки в секунду
+  // в журнале. Опрос не трогаем, ограничиваем только запись (1.10.3+31).
+  // Сторож шины считает ошибки на нативной стороне, его это не касается.
+  @visibleForTesting
+  static final pollTerminalErrorLog = ThrottledErrorLog();
 
   // Журнал сигнала терминала — кольцевой буфер строк для калибровки
   // (вкладка "Датчики" сервисного меню).
@@ -787,4 +799,50 @@ class ChangeSlaveIdPhase2Result {
     this.oldAddrSilent,
     this.dump,
   });
+}
+
+// Запись повторяющейся ошибки не чаще раза в [interval] со счётчиком
+// пропущенных. Первая ошибка серии (в том числе первая после успешного
+// ответа) пишется сразу. Возвращает строку для журнала или null.
+class ThrottledErrorLog {
+  ThrottledErrorLog({
+    this.interval = const Duration(seconds: 30),
+    DateTime Function()? now,
+  }) : now = now ?? DateTime.now;
+
+  final Duration interval;
+  DateTime Function() now;
+
+  DateTime? _lastLogged;
+  int _suppressed = 0;
+
+  String? error(String message) {
+    final t = now();
+    final last = _lastLogged;
+    if (last != null && t.difference(last) < interval) {
+      _suppressed++;
+      return null;
+    }
+    final skipped = _suppressed;
+    _lastLogged = t;
+    _suppressed = 0;
+    return skipped > 0 ? '$message (пропущено таких же: $skipped)' : message;
+  }
+
+  // Успешный ответ закрывает серию: следующая ошибка пишется сразу.
+  String? success() {
+    if (_lastLogged == null) return null;
+    final skipped = _suppressed;
+    _lastLogged = null;
+    _suppressed = 0;
+    return skipped > 0
+        ? 'ModbusService.pollTerminal: ошибки прекратились (не записано: $skipped)'
+        : null;
+  }
+
+  @visibleForTesting
+  void reset() {
+    _lastLogged = null;
+    _suppressed = 0;
+  }
 }

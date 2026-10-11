@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -136,6 +137,11 @@ void main() {
     expect(reports.single['down_s'], 60);
     expect(reports.single['out_of_service'], isTrue);
     expect(reports.single['screen_shown'], isTrue);
+    expect(
+      reports.single['state'],
+      'standby',
+      reason: 'состояние до переключения на "не работает"',
+    );
     expect(notifier.outOfService!.code, OutOfServiceCode.busDown);
     expect(notifier.state, AppState.outOfService);
     expect(notifier.isPaymentBlocked, isTrue);
@@ -293,6 +299,7 @@ void main() {
       expect(notifier.state, AppState.treating);
       expect(reports.single['out_of_service'], isTrue);
       expect(reports.single['screen_shown'], isFalse);
+      expect(reports.single['state'], 'treating');
       // Завершение цикла приводит на экран "не работает".
       notifier.resetSession();
       expect(notifier.state, AppState.outOfService);
@@ -368,5 +375,91 @@ void main() {
     await tickAt(61, dead());
     expect(notifier.outOfService!.details['transient'], isTrue);
     expect(calls, isNot(contains('writeOutOfService')));
+  });
+
+  group('журнал ошибок опроса терминала (не чаще раза в 30 с)', () {
+    test('серия: первая сразу, дальше раз в 30 с со счётчиком пропущенных', () {
+      var t = DateTime(2026, 10, 11, 10, 33);
+      final log = ThrottledErrorLog(now: () => t);
+      expect(log.error('e'), 'e');
+      for (var i = 0; i < 149; i++) {
+        t = t.add(const Duration(milliseconds: 200));
+        expect(log.error('e'), isNull);
+      }
+      t = DateTime(2026, 10, 11, 10, 33, 30);
+      expect(log.error('e'), 'e (пропущено таких же: 149)');
+      t = t.add(const Duration(seconds: 1));
+      expect(log.error('e'), isNull);
+    });
+
+    test('после восстановления первая ошибка пишется сразу', () {
+      var t = DateTime(2026, 10, 11, 10, 33);
+      final log = ThrottledErrorLog(now: () => t);
+      log.error('e');
+      t = t.add(const Duration(seconds: 1));
+      log.error('e');
+      log.error('e');
+      expect(log.success(), contains('не записано: 2'));
+      expect(log.success(), isNull, reason: 'итог серии — один раз');
+      t = t.add(const Duration(seconds: 1));
+      expect(log.error('e'), 'e');
+    });
+
+    test(
+      'pollTerminal: опрос не меняется, в журнал — одна строка на серию',
+      () async {
+        const channel = MethodChannel('com.carfog.dryfog/modbus');
+        final messenger =
+            TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+        var calls = 0;
+        var busDead = true;
+        messenger.setMockMethodCallHandler(channel, (call) async {
+          calls++;
+          if (busDead) {
+            throw PlatformException(
+              code: 'MODBUS',
+              message: 'pollTerminal failed',
+            );
+          }
+          return {'state': false, 'confirmed': false};
+        });
+        final printed = <String>[];
+        final oldPrint = debugPrint;
+        debugPrint = (String? m, {int? wrapWidth}) => printed.add(m ?? '');
+        var t = DateTime(2026, 10, 11, 10, 33);
+        final log = ModbusService.pollTerminalErrorLog
+          ..reset()
+          ..now = () => t;
+        try {
+          Future<TerminalPoll?> poll() => ModbusService.pollTerminal(
+            channel: 10,
+            mode: 'level',
+            guardMs: 0,
+          );
+          for (var i = 0; i < 50; i++) {
+            expect(await poll(), isNull);
+            t = t.add(const Duration(milliseconds: 200));
+          }
+          expect(calls, 50, reason: 'каждый опрос доходит до канала');
+          expect(
+            printed.where((l) => l.contains('pollTerminal error')).length,
+            1,
+          );
+
+          busDead = false;
+          expect(await poll(), isNotNull);
+          expect(printed.last, contains('не записано: 49'));
+          busDead = true;
+          await poll();
+          expect(printed.last, contains('pollTerminal error'));
+        } finally {
+          debugPrint = oldPrint;
+          log
+            ..reset()
+            ..now = DateTime.now;
+          messenger.setMockMethodCallHandler(channel, null);
+        }
+      },
+    );
   });
 }

@@ -256,6 +256,9 @@ class BusWatchdogService {
           'ошибок подряд: ${h.failures}, переоткрытий: ${h.reopens}) — '
           'аппарат временно не работает',
     );
+    // Состояние экрана ДО вывода из обслуживания (иначе в событии было бы
+    // уже outOfService).
+    final stateBefore = notifier.state.name;
     final showNow = _canShowNow(notifier);
     final entered = OutOfServiceService.enterTransient(
       notifier,
@@ -270,7 +273,7 @@ class BusWatchdogService {
       'open': h.open,
       'failures': h.failures,
       'reopens': h.reopens,
-      'state': notifier.state.name,
+      'state': stateBefore,
       // Признак выставлен (false — уже стоял постоянный вывод) и показан ли
       // экран сразу (иначе — по завершении текущего цикла).
       'out_of_service': entered,
