@@ -94,11 +94,29 @@ Telegram попадают в журнал функции без токена; ф
    * Schedule: `*/5 * * * *` (каждые 5 минут)
    * Type: **HTTP Request** (или Supabase Edge Function → `notify-telegram`),
      Method: `POST`, URL: адрес функции
-   * Headers: `Content-Type: application/json` и `x-notify-secret: <секрет>`
+   * Headers — **оба обязательны**:
+     * `Content-Type: application/json`;
+     * `x-notify-secret: <значение секрета NOTIFY_WEBHOOK_SECRET>`.
+   * Заголовок `Authorization` **не нужен**: «Verify JWT» у функции выключен,
+     вызов проверяется только по `x-notify-secret`.
    * Body: `{"mode":"offline_check"}`
 
    Если в Integrations нет Cron — включить расширения `pg_cron` и `pg_net`
    (Database → Extensions), пункт появится.
+
+   **Статус «success» у Cron не значит, что функция приняла запрос** — только
+   что запрос отправлен. Без заголовка `x-notify-secret` (или с неверным
+   значением) функция отвечает `{"ok":false,"error":"auth"}` и ничего не
+   делает, а Cron всё равно показывает «success». Ответ функции смотреть в
+   её журнале: Edge Functions → notify-telegram → Logs.
+
+   **Проверка Cron.** Взять аппарат, который молчит дольше 10 минут и о
+   котором уже было «нет связи», сбросить для него запись (SQL Editor):
+   ```sql
+   delete from notify_offline_state where device_id = '<id молчащего аппарата>';
+   ```
+   и дождаться ближайшей пятиминутки: в канал должно прийти «нет связи».
+   Не пришло — проверить заголовки задачи Cron (см. выше) и журнал функции.
 
 ## Подключить канал организации
 
