@@ -209,6 +209,8 @@ const Map<String, Map<String, String>> _i18n = {
     'do_exit_10': 'Выйти из блокировки на 10 минут',
     'do_settings_10': 'Открыть настройки на 10 минут',
     'do_exit_active': 'Временный выход, блокировка вернётся через {m} мин',
+    'do_return_title': 'Временный выход из блокировки',
+    'do_return_action': 'Вернуться в приложение',
     'do_clear': 'Снять Device Owner',
     'do_clear_confirm1':
         'Снять Device Owner? Блокировка и все политики киоска будут отключены.',
@@ -575,6 +577,8 @@ const Map<String, Map<String, String>> _i18n = {
     'do_exit_10': 'Leave lock for 10 minutes',
     'do_settings_10': 'Open settings for 10 minutes',
     'do_exit_active': 'Temporary exit, lock returns in {m} min',
+    'do_return_title': 'Temporary exit from lock',
+    'do_return_action': 'Return to the app',
     'do_clear': 'Remove Device Owner',
     'do_clear_confirm1':
         'Remove Device Owner? Lock and all kiosk policies will be turned off.',
@@ -936,6 +940,8 @@ const Map<String, Map<String, String>> _i18n = {
     'do_exit_10': 'Lukustusest välja 10 minutiks',
     'do_settings_10': 'Ava seaded 10 minutiks',
     'do_exit_active': 'Ajutine väljumine, lukustus taastub {m} min pärast',
+    'do_return_title': 'Ajutine väljumine lukustusest',
+    'do_return_action': 'Tagasi rakendusse',
     'do_clear': 'Eemalda Device Owner',
     'do_clear_confirm1':
         'Eemaldada Device Owner? Lukustus ja kõik kioski reeglid lülitatakse välja.',
@@ -7176,7 +7182,11 @@ class _KioskTabState extends State<_KioskTab> {
           t['do_exit_10']!,
           active
               ? () => _doAction(
-                  () => SystemService.kioskTemporaryExit(openSettings: false),
+                  () => SystemService.kioskTemporaryExit(
+                    openSettings: false,
+                    returnTitle: t['do_return_title']!,
+                    returnAction: t['do_return_action']!,
+                  ),
                 )
               : null,
         ),
@@ -7184,7 +7194,11 @@ class _KioskTabState extends State<_KioskTab> {
           t['do_settings_10']!,
           active
               ? () => _doAction(
-                  () => SystemService.kioskTemporaryExit(openSettings: true),
+                  () => SystemService.kioskTemporaryExit(
+                    openSettings: true,
+                    returnTitle: t['do_return_title']!,
+                    returnAction: t['do_return_action']!,
+                  ),
                 )
               : null,
         ),

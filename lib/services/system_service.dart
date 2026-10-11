@@ -186,8 +186,17 @@ class SystemService {
   static Future<String> kioskSetLockEnabled(bool enabled) =>
       _kioskCall('kioskSetLockEnabled', {'enabled': enabled});
 
-  static Future<String> kioskTemporaryExit({required bool openSettings}) =>
-      _kioskCall('kioskTemporaryExit', {'openSettings': openSettings});
+  // returnTitle/returnAction — тексты уведомления «Вернуться в приложение»
+  // на языке сервисного меню (нативная сторона показывает его на всё окно).
+  static Future<String> kioskTemporaryExit({
+    required bool openSettings,
+    String? returnTitle,
+    String? returnAction,
+  }) => _kioskCall('kioskTemporaryExit', {
+    'openSettings': openSettings,
+    'returnTitle': returnTitle,
+    'returnAction': returnAction,
+  });
 
   static Future<String> kioskClearDeviceOwner() =>
       _kioskCall('kioskClearDeviceOwner');

@@ -84,6 +84,9 @@ class MainActivity : FlutterActivity() {
                     "на передний план — прежний (задача ${existing.taskId})"
             )
             duplicate = true
+            // Нажатие «Вернуться в приложение» часто приходит именно сюда:
+            // экран держит экземпляр из задачи home (KioskHomeAlias).
+            handleReturnIntent(intent)
             bringTaskToFront(existing.taskId)
             finish()
             return
@@ -105,6 +108,22 @@ class MainActivity : FlutterActivity() {
         // не все прошивки/энергосберегающие режимы.
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         requestAllFilesAccessIfNeeded()
+        // При пересоздании активности intent прежний — не закрывать новое
+        // окно выхода повторно.
+        if (savedInstanceState == null) handleReturnIntent(intent)
+    }
+
+    // singleInstance: повторный запуск того же экземпляра (в том числе из
+    // уведомления возврата) приходит сюда, перед onResume.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleReturnIntent(intent)
+    }
+
+    // Уведомление «Вернуться в приложение» (ReturnNotification): окно выхода
+    // закрывается, блокировку закрепит onResume.
+    private fun handleReturnIntent(intent: Intent?) {
+        if (intent?.action == ReturnNotification.ACTION_RETURN) KioskPolicy.returnNow(this)
     }
 
     // MANAGE_EXTERNAL_STORAGE — особое разрешение, выдаётся только через
@@ -256,7 +275,12 @@ class MainActivity : FlutterActivity() {
                         KioskPolicy.setLockEnabled(this, call.argument<Boolean>("enabled") ?: false)
                     )
                     "kioskTemporaryExit" -> result.success(
-                        KioskPolicy.temporaryExit(this, call.argument<Boolean>("openSettings") ?: false)
+                        KioskPolicy.temporaryExit(
+                            this,
+                            call.argument<Boolean>("openSettings") ?: false,
+                            call.argument<String>("returnTitle"),
+                            call.argument<String>("returnAction"),
+                        )
                     )
                     "kioskClearDeviceOwner" -> result.success(KioskPolicy.clearDeviceOwner(this))
                     else -> result.notImplemented()

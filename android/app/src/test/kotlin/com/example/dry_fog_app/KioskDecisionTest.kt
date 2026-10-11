@@ -49,4 +49,31 @@ class KioskDecisionTest {
         assertFalse(KioskDecision.replaceInstanceOnRelease(false, false))
         assertFalse(KioskDecision.replaceInstanceOnRelease(false, true))
     }
+
+    @Test
+    fun returnNotificationShownOnlyInsideExitWindow() {
+        val start = 1000L
+        val until = start + KioskPolicy.EXIT_WINDOW_MS
+        // Сразу после нажатия выхода и до последней миллисекунды окна.
+        assertTrue(KioskDecision.returnNotificationVisible(until, start))
+        assertTrue(KioskDecision.returnNotificationVisible(until, until - 1))
+        // Таймер истёк — снять.
+        assertFalse(KioskDecision.returnNotificationVisible(until, until))
+        assertFalse(KioskDecision.returnNotificationVisible(until, until + 60_000L))
+    }
+
+    @Test
+    fun returnNotificationRemovedWhenNoExit() {
+        // exitUntil = 0: старт процесса, returnNow, cancelExit, relock.
+        assertFalse(KioskDecision.returnNotificationVisible(0L, 0L))
+        assertFalse(KioskDecision.returnNotificationVisible(0L, 5000L))
+    }
+
+    @Test
+    fun returnRelocksOnlyAsDeviceOwnerWithLockEnabled() {
+        assertTrue(KioskDecision.relockOnReturn(true, true))
+        assertFalse(KioskDecision.relockOnReturn(true, false))
+        assertFalse(KioskDecision.relockOnReturn(false, true))
+        assertFalse(KioskDecision.relockOnReturn(false, false))
+    }
 }

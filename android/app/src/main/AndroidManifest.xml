@@ -27,6 +27,10 @@
          с targetSdk 34+ может понадобиться разовое подтверждение через
          системные настройки. -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- Уведомление «Вернуться в приложение» во время временного выхода из
+         блокировки (1.10.8, ReturnNotification). Выдаёт Device Owner сам
+         (KioskPolicy.grantNotificationPermission), диалога нет. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <application
         android:label="dry_fog_app"
         android:name=".DryFogApplication"

@@ -1,5 +1,6 @@
 package com.example.dry_fog_app
 
+import android.Manifest
 import android.app.Activity
 import android.app.ActivityManager
 import android.app.admin.DevicePolicyManager
@@ -8,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -39,6 +41,17 @@ object KioskDecision {
 
     fun exitRemainingMs(exitUntil: Long, now: Long): Long =
         if (exitUntil <= now) 0L else exitUntil - now
+
+    // Уведомление «Вернуться в приложение» висит только внутри окна выхода.
+    // Вне окна (истёк таймер, техник вернулся, блокировку переключили, процесс
+    // только что запущен — exitUntil = 0) его надо снять.
+    fun returnNotificationVisible(exitUntil: Long, now: Long): Boolean =
+        exitRemainingMs(exitUntil, now) > 0
+
+    // Нажатие «Вернуться в приложение» возвращает блокировку сразу, если она
+    // вообще должна действовать; иначе только поднимает приложение.
+    fun relockOnReturn(deviceOwner: Boolean, lockEnabled: Boolean): Boolean =
+        deviceOwner && lockEnabled
 }
 
 // Киоск через Device Owner (1.10.4, docs/kiosk_device_owner.md): Lock Task без
@@ -182,7 +195,7 @@ object KioskPolicy {
         if (!isDeviceOwner(ctx)) return RESULT_NO_DEVICE_OWNER
         return try {
             prefs(ctx).edit().putBoolean(KEY_LOCK_ENABLED, enabled).commit()
-            cancelExit()
+            cancelExit(ctx)
             if (enabled) {
                 applyPolicies(ctx)
                 if (!lockTaskActive(ctx)) activity.startLockTask()
@@ -200,8 +213,15 @@ object KioskPolicy {
     }
 
     // Временный выход на EXIT_WINDOW_MS; openSettings — сразу открыть
-    // системные настройки. По истечении блокировка включается сама.
-    fun temporaryExit(activity: Activity, openSettings: Boolean): String {
+    // системные настройки. По истечении блокировка включается сама. На всё
+    // окно — уведомление «Вернуться в приложение» (тексты на языке сервисного
+    // меню приходят из Dart).
+    fun temporaryExit(
+        activity: Activity,
+        openSettings: Boolean,
+        returnTitle: String? = null,
+        returnAction: String? = null,
+    ): String {
         val ctx = activity.applicationContext
         if (!isDeviceOwner(ctx)) return RESULT_NO_DEVICE_OWNER
         return try {
@@ -212,6 +232,14 @@ object KioskPolicy {
             handler.postDelayed(relockTask, EXIT_WINDOW_MS)
             val minutes = EXIT_WINDOW_MS / 60000.0
             log(ctx, "временный выход на $minutes мин" + if (openSettings) ", открыты настройки" else "")
+            grantNotificationPermission(ctx)
+            val shown = ReturnNotification.show(
+                ctx,
+                EXIT_WINDOW_MS,
+                returnTitle ?: "Временный выход из блокировки",
+                returnAction ?: "Вернуться в приложение",
+            )
+            if (!shown) log(ctx, "уведомление возврата не показано: уведомления запрещены")
             if (openSettings) {
                 activity.startActivity(
                     Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -224,13 +252,43 @@ object KioskPolicy {
         }
     }
 
+    // Техник нажал «Вернуться в приложение» (MainActivity получила
+    // ReturnNotification.ACTION_RETURN). Окно выхода закрывается сразу,
+    // политики возвращаются здесь, закрепление экрана — в onResume
+    // (onActivityResumed), который идёт следом за доставкой intent.
+    fun returnNow(context: Context) {
+        val ctx = context.applicationContext
+        appContext = ctx
+        val wasExit = exitUntil != 0L
+        handler.removeCallbacks(relockTask)
+        exitUntil = 0L
+        syncReturnNotification(ctx)
+        if (!KioskDecision.relockOnReturn(isDeviceOwner(ctx), isLockEnabled(ctx))) {
+            log(ctx, "возврат в приложение без блокировки (не владелец или блокировка выключена)")
+            return
+        }
+        try {
+            applyPolicies(ctx)
+            log(ctx, if (wasExit) "техник вернулся в приложение, блокировка возвращается"
+                else "возврат в приложение вне окна выхода, блокировка подтверждена")
+        } catch (e: Throwable) {
+            log(ctx, "ошибка возврата блокировки: $e")
+        }
+    }
+
+    // Старт процесса: окна выхода нет, уведомление от прежнего процесса
+    // (если он умер внутри окна) снимается.
+    fun onProcessStart(context: Context) {
+        syncReturnNotification(context.applicationContext)
+    }
+
     // Снятие Device Owner: сначала выход из Lock Task и отмена всех наших
     // политик, затем clearDeviceOwnerApp.
     fun clearDeviceOwner(activity: Activity): String {
         val ctx = activity.applicationContext
         if (!isDeviceOwner(ctx)) return RESULT_NO_DEVICE_OWNER
         return try {
-            cancelExit()
+            cancelExit(ctx)
             prefs(ctx).edit().putBoolean(KEY_LOCK_ENABLED, false).commit()
             stopLockTask(activity)
             releasePoliciesKeepingScreen(activity, clearOwnerAfter = true)
@@ -280,7 +338,31 @@ object KioskPolicy {
             addCategory(Intent.CATEGORY_DEFAULT)
         }
         dpm.addPersistentPreferredActivity(admin, home, alias)
+        grantNotificationPermission(ctx)
         policiesApplied = true
+    }
+
+    // POST_NOTIFICATIONS (Android 13+) для уведомления возврата: Device Owner
+    // выдаёт его сам. Ошибка не мешает остальным политикам.
+    private fun grantNotificationPermission(ctx: Context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        try {
+            val ok = dpm(ctx).setPermissionGrantState(
+                admin(ctx),
+                ctx.packageName,
+                Manifest.permission.POST_NOTIFICATIONS,
+                DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED
+            )
+            if (!ok) log(ctx, "POST_NOTIFICATIONS не выдано")
+        } catch (e: Throwable) {
+            log(ctx, "ошибка выдачи POST_NOTIFICATIONS: $e")
+        }
+    }
+
+    private fun syncReturnNotification(ctx: Context) {
+        if (!KioskDecision.returnNotificationVisible(exitUntil, SystemClock.elapsedRealtime())) {
+            ReturnNotification.cancel(ctx)
+        }
     }
 
     // Отмена наших политик; KioskHomeAlias возвращается к старому тумблеру
@@ -372,9 +454,10 @@ object KioskPolicy {
         if (lockTaskActive(activity)) activity.stopLockTask()
     }
 
-    private fun cancelExit() {
+    private fun cancelExit(ctx: Context) {
         handler.removeCallbacks(relockTask)
         exitUntil = 0L
+        syncReturnNotification(ctx)
     }
 
     // Таймер временного выхода истёк.
@@ -382,6 +465,7 @@ object KioskPolicy {
         exitUntil = 0L
         val activity = activityRef?.get()
         val ctx = activity?.applicationContext ?: appContext ?: return
+        syncReturnNotification(ctx)
         if (!isDeviceOwner(ctx) || !isLockEnabled(ctx)) return
         try {
             applyPolicies(ctx)

@@ -24,6 +24,8 @@ class DryFogApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         installCrashHandler()
+        // Уведомление возврата от умершего процесса не должно остаться.
+        KioskPolicy.onProcessStart(this)
     }
 
     private fun installCrashHandler() {

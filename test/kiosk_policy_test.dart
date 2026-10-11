@@ -94,7 +94,11 @@ void main() {
       });
       expect(await SystemService.kioskSetLockEnabled(true), 'no_device_owner');
       expect(
-        await SystemService.kioskTemporaryExit(openSettings: true),
+        await SystemService.kioskTemporaryExit(
+          openSettings: true,
+          returnTitle: 'Заголовок',
+          returnAction: 'Вернуться',
+        ),
         'no_device_owner',
       );
       expect(await SystemService.kioskClearDeviceOwner(), 'no_device_owner');
@@ -104,7 +108,11 @@ void main() {
         'kioskClearDeviceOwner',
       ]);
       expect(calls[0].arguments, {'enabled': true});
-      expect(calls[1].arguments, {'openSettings': true});
+      expect(calls[1].arguments, {
+        'openSettings': true,
+        'returnTitle': 'Заголовок',
+        'returnAction': 'Вернуться',
+      });
     });
 
     test('ошибка канала превращается в error:', () async {
