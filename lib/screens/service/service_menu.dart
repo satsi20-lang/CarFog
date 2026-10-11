@@ -13,6 +13,8 @@ import 'bus_port_section.dart';
 import 'scroll_hint_row.dart';
 import '../../models/out_of_service.dart';
 import '../../models/remote_limits.dart';
+import '../../models/adb_exposure.dart';
+import '../../services/adb_network_service.dart';
 import '../../services/cloud_service.dart';
 import '../../services/master_code_service.dart';
 import '../../services/pin_policy.dart';
@@ -152,10 +154,15 @@ const Map<String, Map<String, String>> _i18n = {
         'Приложение будет заменено резервной версией и перезапущено. Данные аппарата не стираются. Во время отката оплата не принимается.',
     'up_rollback_started': 'Откат запущен',
     'up_rollback_failed': 'Откат не запущен',
-    'up_adb': 'ADB по сети: сохранять после перезагрузки',
+    'up_adb': 'Сетевой ADB на 30 минут',
     'up_adb_warn':
-        'Любой, кто в одной сети с планшетом, сможет подключиться к нему по ADB. Включайте только на время обслуживания и в доверенной сети. Включить?',
+        'Порт 5555 откроется на 30 минут и закроется сам; перезагрузка тоже его закрывает. Ключ не проверяется: любой в одной сети с планшетом получит полный доступ. Включайте только на время обслуживания и в доверенной сети. Включить?',
     'up_adb_state': 'Состояние ADB по сети',
+    'up_adb_on': 'ВКЛ (порт {port}), закроется через {min} мин',
+    'up_adb_off': 'ВЫКЛ',
+    'up_adb_wifi': 'Беспроводная отладка: ВКЛ, выключится через {min} мин',
+    'up_adb_extend': 'Продлить: 30 минут от сейчас',
+    'up_adb_open': 'Открыть',
     'up_adb_unknown': 'не определено (нет root)',
     'up_adb_failed': 'Не удалось изменить (нет root?)',
     'rd_send': 'Отправить диагностику',
@@ -513,10 +520,15 @@ const Map<String, Map<String, String>> _i18n = {
         'The app will be replaced by the backup version and restarted. Machine data is not erased. Payments are not accepted during the rollback.',
     'up_rollback_started': 'Rollback started',
     'up_rollback_failed': 'Rollback not started',
-    'up_adb': 'ADB over network: keep after reboot',
+    'up_adb': 'Network ADB for 30 minutes',
     'up_adb_warn':
-        'Anyone on the same network as the tablet will be able to connect to it over ADB. Enable only during maintenance and on a trusted network. Enable?',
+        'Port 5555 will open for 30 minutes and close by itself; a reboot also closes it. No key is checked: anyone on the same network as the tablet gets full access. Enable only during maintenance and on a trusted network. Enable?',
     'up_adb_state': 'ADB over network state',
+    'up_adb_on': 'ON (port {port}), closes in {min} min',
+    'up_adb_off': 'OFF',
+    'up_adb_wifi': 'Wireless debugging: ON, turns off in {min} min',
+    'up_adb_extend': 'Extend: 30 minutes from now',
+    'up_adb_open': 'Open',
     'up_adb_unknown': 'unknown (no root)',
     'up_adb_failed': 'Could not change (no root?)',
     'rd_send': 'Send diagnostics',
@@ -869,10 +881,15 @@ const Map<String, Map<String, String>> _i18n = {
         'Rakendus asendatakse varuversiooniga ja käivitatakse uuesti. Seadme andmeid ei kustutata. Tagasivõtmise ajal makseid ei võeta vastu.',
     'up_rollback_started': 'Tagasivõtmine alustatud',
     'up_rollback_failed': 'Tagasivõtmist ei alustatud',
-    'up_adb': 'ADB üle võrgu: säilita pärast taaskäivitust',
+    'up_adb': 'Võrgu-ADB 30 minutiks',
     'up_adb_warn':
-        'Igaüks, kes on tahvliga samas võrgus, saab sellega ADB kaudu ühenduda. Lülita sisse ainult hoolduse ajaks ja usaldusväärses võrgus. Lülita sisse?',
+        'Port 5555 avatakse 30 minutiks ja suletakse seejärel automaatselt; taaskäivitus sulgeb selle samuti. Võtit ei kontrollita: igaüks tahvelarvutiga samas võrgus saab täieliku ligipääsu. Lülitage sisse ainult hoolduse ajaks ja usaldusväärses võrgus. Lülitada sisse?',
     'up_adb_state': 'ADB üle võrgu olek',
+    'up_adb_on': 'SEES (port {port}), suletakse {min} min pärast',
+    'up_adb_off': 'VÄLJAS',
+    'up_adb_wifi': 'Juhtmevaba silumine: SEES, lülitub välja {min} min pärast',
+    'up_adb_extend': 'Pikenda: 30 minutit alates praegusest',
+    'up_adb_open': 'Ava',
     'up_adb_unknown': 'teadmata (puudub root)',
     'up_adb_failed': 'Muutmine ebaõnnestus (root puudub?)',
     'rd_send': 'Saada diagnostika',
@@ -6359,7 +6376,10 @@ class _CloudTabState extends State<_CloudTab> {
   List<Map<String, dynamic>> _commands = const [];
   // Обновление приложения (R2): версия, резерв, итог последнего обновления.
   Map<String, dynamic> _upd = const {};
-  bool? _adb;
+  // Сетевой adb: состояние и сроки окон, обратный отсчёт раз в 15 с.
+  AdbExposure? _adb;
+  bool _adbBusy = false;
+  Timer? _adbTick;
 
   // Заводская конфигурация (без значений токена и ключа).
   bool _fcCloud = false;
@@ -6462,9 +6482,15 @@ class _CloudTabState extends State<_CloudTab> {
     if (mounted) {
       setState(() {
         _upd = st;
-        _adb = UpdateService.adbNetwork;
+        _adb = AdbNetworkService.state;
       });
     }
+  }
+
+  // Свежее чтение сетевого adb (su один раз) при открытии вкладки.
+  Future<void> _refreshAdb() async {
+    await AdbNetworkService.check();
+    if (mounted) setState(() => _adb = AdbNetworkService.state);
   }
 
   Future<void> _rollback() async {
@@ -6537,21 +6563,51 @@ class _CloudTabState extends State<_CloudTab> {
             ),
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(true),
-              child: Text(t['up_adb']!.split(':').first),
+              child: Text(t['up_adb_open']!),
             ),
           ],
         ),
       );
       if (ok != true) return;
     }
-    final done = await UpdateService.setAdbNetwork(want);
+    await _adbAction(want ? AdbNetworkService.open : AdbNetworkService.close);
+  }
+
+  Future<void> _adbAction(Future<bool> Function() action) async {
+    final t = _i18n[context.read<AppNotifier>().serviceLang]!;
+    setState(() => _adbBusy = true);
+    final done = await action();
     if (!mounted) return;
+    setState(() {
+      _adbBusy = false;
+      _adb = AdbNetworkService.state;
+    });
     if (!done) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(t['up_adb_failed']!)));
     }
-    await _loadUpdate();
+  }
+
+  // Минут до конца окна (вверх, не меньше 0).
+  static int _minutesLeft(DateTime? until) {
+    if (until == null) return 0;
+    final s = until.difference(DateTime.now()).inSeconds;
+    return s <= 0 ? 0 : (s + 59) ~/ 60;
+  }
+
+  String _adbStateText(Map<String, String> t) {
+    final a = _adb;
+    if (a == null) return '${t['up_adb_state']}: ${t['up_adb_unknown']}';
+    final tcp = a.tcpListening
+        ? t['up_adb_on']!
+              .replaceAll('{port}', '${a.configuredPort > 0 ? a.configuredPort : adbTcpPort}')
+              .replaceAll('{min}', '${_minutesLeft(AdbNetworkService.tcpUntil)}')
+        : t['up_adb_off']!;
+    final wifi = a.wifiDebug
+        ? '\n${t['up_adb_wifi']!.replaceAll('{min}', '${_minutesLeft(AdbNetworkService.wifiUntil)}')}'
+        : '';
+    return '${t['up_adb_state']}: $tcp$wifi';
   }
 
   Future<void> _loadCommands() async {
@@ -6577,6 +6633,10 @@ class _CloudTabState extends State<_CloudTab> {
     super.initState();
     unawaited(_loadCommands());
     unawaited(_loadUpdate());
+    unawaited(_refreshAdb());
+    _adbTick = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (mounted) setState(() => _adb = AdbNetworkService.state);
+    });
     unawaited(_loadFactory());
     final config = context.read<AppNotifier>().config;
     _deviceIdCtrl = TextEditingController(text: config.deviceId);
@@ -6588,6 +6648,7 @@ class _CloudTabState extends State<_CloudTab> {
 
   @override
   void dispose() {
+    _adbTick?.cancel();
     _deviceIdCtrl.dispose();
     _urlCtrl.dispose();
     _keyCtrl.dispose();
@@ -6919,15 +6980,23 @@ class _CloudTabState extends State<_CloudTab> {
                 ),
               ),
               Switch(
-                value: _adb == true,
-                onChanged: _adb == null ? null : _toggleAdb,
+                value: _adb?.anyOpen == true,
+                onChanged: _adb == null || _adbBusy ? null : _toggleAdb,
               ),
             ],
           ),
           Text(
-            '${t['up_adb_state']}: ${_adb == null ? t['up_adb_unknown'] : (_adb! ? 'ON (5555)' : 'OFF')}',
+            _adbStateText(t),
             style: const TextStyle(color: Color(0xFF8899AA), fontSize: 12),
           ),
+          if (_adb?.tcpListening == true)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                onPressed: _adbBusy ? null : () => _adbAction(AdbNetworkService.open),
+                child: Text(t['up_adb_extend']!),
+              ),
+            ),
           _factorySection(t),
         ],
       ),

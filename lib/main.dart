@@ -6,6 +6,7 @@ import 'dart:io';
 import 'models/app_state.dart';
 import 'models/bus_map.dart';
 import 'models/device_spec.dart';
+import 'services/adb_network_service.dart';
 import 'services/app_log_service.dart';
 import 'screens/language_select.dart';
 import 'screens/standby.dart';
@@ -176,7 +177,8 @@ void main() async {
   // Удалённое обновление (R2): если шло обновление или откат, довести его
   // до конца (сигнал здоровья, события, итог). Не блокирует запуск.
   unawaited(UpdateService.onStartup(notifier));
-  unawaited(UpdateService.refreshAdbNetwork());
+  // Сетевой adb по умолчанию закрыт: открытый вне окна тумблера закрывается.
+  unawaited(AdbNetworkService.onStartup());
 
   // Безопасное выключение всего при старте — не блокирует показ UI, но
   // теперь ПОВТОРЯЕТСЯ, пока не подтвердится результат (задача

@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import '../models/adb_exposure.dart';
 import 'update_script.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -60,9 +61,13 @@ abstract class PrivilegedInstaller {
     required bool kiosk,
   });
 
-  // «ADB по сети» (persist.adb.tcp.port): записать / прочитать.
+  // Сетевой adb (models/adb_exposure.dart): фактическое состояние (null —
+  // нет привилегий), открыть/закрыть 5555 до перезагрузки, выключить
+  // беспроводную отладку. true — команда выполнилась (итог проверяет
+  // вызывающий повторным чтением).
+  Future<AdbExposure?> readAdbExposure();
   Future<bool> setAdbNetwork(bool enabled);
-  Future<bool?> readAdbNetwork();
+  Future<bool> disableAdbWifi();
 }
 
 // Реализация через root (su 0 …) на стороне Kotlin (RootShell).
@@ -145,23 +150,23 @@ class RootInstaller implements PrivilegedInstaller {
     return r != null && r['exit'] == 0;
   }
 
-  // Включение: порт 5555 переживает перезагрузку (persist.*), ADB включён.
-  // Выключение: порт сбрасывается; adb_enabled не трогаем (отключить
-  // отладку под текущим подключением значило бы отрезать себя).
   @override
   Future<bool> setAdbNetwork(bool enabled) async {
-    final cmd = enabled
-        ? 'setprop persist.adb.tcp.port 5555 && settings put global adb_enabled 1'
-        : 'setprop persist.adb.tcp.port ""';
-    final r = await _exec(cmd);
+    final r = await _exec(enabled ? adbOpenCommand : adbCloseCommand);
     return r != null && r['exit'] == 0;
   }
 
   @override
-  Future<bool?> readAdbNetwork() async {
-    final r = await _exec('getprop persist.adb.tcp.port');
+  Future<bool> disableAdbWifi() async {
+    final r = await _exec(adbWifiOffCommand);
+    return r != null && r['exit'] == 0;
+  }
+
+  @override
+  Future<AdbExposure?> readAdbExposure() async {
+    final r = await _exec(adbProbeCommand);
     if (r == null || r['exit'] != 0) return null;
-    return (r['out'] as String? ?? '').trim() == '5555';
+    return AdbExposure.parse(r['out'] as String? ?? '');
   }
 }
 
@@ -190,5 +195,8 @@ class DeviceOwnerInstaller implements PrivilegedInstaller {
   Future<bool> setAdbNetwork(bool enabled) async => false;
 
   @override
-  Future<bool?> readAdbNetwork() async => null;
+  Future<bool> disableAdbWifi() async => false;
+
+  @override
+  Future<AdbExposure?> readAdbExposure() async => null;
 }

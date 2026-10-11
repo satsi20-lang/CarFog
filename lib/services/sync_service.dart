@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../models/app_state.dart';
 import '../models/update_limits.dart';
+import 'adb_network_service.dart';
 import 'cloud_service.dart';
 import 'diagnostics_service.dart';
 import 'master_code_service.dart';
@@ -210,7 +211,11 @@ class SyncService {
     snapshot['app_version_code'] = upd['version_code'];
     snapshot['rollback_available'] = upd['rollback_available'];
     snapshot['last_update_result'] = (upd['last'] as Map?)?['result'];
-    snapshot['adb_network'] = UpdateService.adbNetwork;
+    // Сетевой adb: что реально слушает (сокет), а не одно свойство.
+    final adb = AdbNetworkService.state;
+    snapshot['adb_network'] = adb?.tcpListening;
+    snapshot['adb_wifi'] = adb?.wifiDebug;
+    snapshot['adb_network_detail'] = adb?.toJson();
     snapshot['rollout_target_code'] = RolloutService.targetCode;
     // Тестовая сборка без сигнала здоровья (только для проверки отката): в
     // панели должна быть видна, в боевых аппаратах всегда false.

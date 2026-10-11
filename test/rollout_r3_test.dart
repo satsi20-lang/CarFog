@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:dry_fog_app/models/adb_exposure.dart';
 import 'package:dry_fog_app/models/app_state.dart';
 import 'package:dry_fog_app/services/cloud_service.dart';
 import 'package:dry_fog_app/services/privileged_installer.dart';
@@ -370,5 +371,7 @@ class _Installer implements PrivilegedInstaller {
   @override
   Future<bool> setAdbNetwork(bool enabled) async => true;
   @override
-  Future<bool?> readAdbNetwork() async => false;
+  Future<bool> disableAdbWifi() async => true;
+  @override
+  Future<AdbExposure?> readAdbExposure() async => null;
 }

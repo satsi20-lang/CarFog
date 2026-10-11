@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:dry_fog_app/models/adb_exposure.dart';
 import 'package:dry_fog_app/models/app_state.dart';
 import 'package:dry_fog_app/models/update_limits.dart';
 import 'package:dry_fog_app/services/cloud_service.dart';
@@ -876,24 +877,12 @@ if [ "$FAKE_HEALTH" = "1" ]; then echo "ok $FAKE_CODE" > "$FAKE_HEALTH_FILE"; fi
       expect(n.isMaintenance, isFalse);
     });
 
-    test('ADB по сети: переключение через интерфейс, событие, кэш состояния', () async {
-      setup();
-      expect(await UpdateService.setAdbNetwork(true), isTrue);
-      expect(UpdateService.adbNetwork, isTrue);
-      expect(installer.adb, isTrue);
-      final ev = (await CloudService.history()).lastWhere((e) => e.type == CloudEventType.debugModeChanged);
-      expect(ev.data['code'], 'adb_network');
-      expect(ev.data['enabled'], isTrue);
-      installer.adbOk = false;
-      expect(await UpdateService.setAdbNetwork(false), isFalse);
-      expect(UpdateService.adbNetwork, isTrue); // не изменилось, раз не удалось
-    });
-
     test('заглушка Device Owner: всё not_supported', () async {
       final d = DeviceOwnerInstaller();
       expect(await d.isAvailable(const Duration(seconds: 1)), isFalse);
       expect(await d.setAdbNetwork(true), isFalse);
-      expect(await d.readAdbNetwork(), isNull);
+      expect(await d.disableAdbWifi(), isFalse);
+      expect(await d.readAdbExposure(), isNull);
     });
   });
 
@@ -1141,8 +1130,6 @@ if [ "$FAKE_HEALTH" = "1" ]; then echo "ok $FAKE_CODE" > "$FAKE_HEALTH_FILE"; fi
 class _FakeInstaller implements PrivilegedInstaller {
   bool available = true;
   bool startOk = true;
-  bool adbOk = true;
-  bool adb = false;
   final List<InstallRequest> started = [];
   final List<String> scriptTexts = [];
 
@@ -1174,12 +1161,11 @@ class _FakeInstaller implements PrivilegedInstaller {
   }
 
   @override
-  Future<bool> setAdbNetwork(bool enabled) async {
-    if (!adbOk) return false;
-    adb = enabled;
-    return true;
-  }
+  Future<bool> setAdbNetwork(bool enabled) async => false;
 
   @override
-  Future<bool?> readAdbNetwork() async => adb;
+  Future<bool> disableAdbWifi() async => false;
+
+  @override
+  Future<AdbExposure?> readAdbExposure() async => null;
 }

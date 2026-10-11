@@ -153,27 +153,6 @@ class UpdateService {
 
   static Timer? _watchTimer;
 
-  // «ADB по сети» (persist.adb.tcp.port == 5555): читается при старте и после
-  // переключения тумблера; в отчёт идёт закэшированное значение — su на
-  // каждый опрос облака не дёргается. null — не определено (нет root).
-  static bool? adbNetwork;
-
-  static Future<void> refreshAdbNetwork() async {
-    adbNetwork = await installer.readAdbNetwork();
-  }
-
-  static Future<bool> setAdbNetwork(bool enabled) async {
-    final ok = await installer.setAdbNetwork(enabled);
-    if (ok) {
-      adbNetwork = enabled;
-      await CloudService.report(
-        CloudEventType.debugModeChanged,
-        data: {'code': 'adb_network', 'enabled': enabled},
-      );
-    }
-    return ok;
-  }
-
   // ============================================================ update_app
 
   // Часы для меток лимита (в тестах подменяются).
@@ -1003,6 +982,5 @@ class UpdateService {
     apkVerifier = _nativeVerify;
     appInfoProvider = _nativeAppInfo;
     diskFreeProvider = _nativeDiskFree;
-    adbNetwork = null;
   }
 }
