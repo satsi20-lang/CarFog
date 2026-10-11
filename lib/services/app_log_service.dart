@@ -188,7 +188,10 @@ class AppLog {
       await File('${dir.path}/$fileName').writeAsString(
         '${batch.join('\n')}\n',
         mode: FileMode.append,
-        flush: false,
+        // fsync: при внезапном обесточивании (короткое нажатие кнопки
+        // питания CARFOG-100 обесточивает планшет) без него терялись бы
+        // секунды журнала из кэша страниц. Пачка раз в flushInterval.
+        flush: true,
       );
     } catch (e) {
       // Диск недоступен: строки возвращаются в начало очереди (в пределах

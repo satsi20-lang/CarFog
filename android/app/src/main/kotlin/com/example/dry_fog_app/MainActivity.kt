@@ -244,9 +244,20 @@ class MainActivity : FlutterActivity() {
                             "started_from_boot" to startedFromBoot,
                         )
                     )
+                    // ---- Киоск через Device Owner (KioskPolicy) ----
+                    "kioskPolicyState" -> result.success(KioskPolicy.state(this))
+                    "kioskSetLockEnabled" -> result.success(
+                        KioskPolicy.setLockEnabled(this, call.argument<Boolean>("enabled") ?: false)
+                    )
+                    "kioskTemporaryExit" -> result.success(
+                        KioskPolicy.temporaryExit(this, call.argument<Boolean>("openSettings") ?: false)
+                    )
+                    "kioskClearDeviceOwner" -> result.success(KioskPolicy.clearDeviceOwner(this))
                     else -> result.notImplemented()
                 }
             }
+        // События киоска (в т.ч. из таймера и после обновления APK) — в AppLog.
+        KioskPolicy.attachLogSink(this) { msg -> systemChannel?.invokeMethod("kioskLog", msg) }
     }
 
     // Включает/выключает роль домашнего экрана у KioskHomeAlias
@@ -306,7 +317,9 @@ class MainActivity : FlutterActivity() {
         )
         val crashed = prefs.getBoolean(DryFogApplication.KEY_RECOVERED_FROM_CRASH, false)
         if (crashed) {
-            prefs.edit().putBoolean(DryFogApplication.KEY_RECOVERED_FROM_CRASH, false).apply()
+            // commit: при обесточивании сразу после старта apply() мог не
+            // дойти до диска, и следующий запуск снова показал бы «после сбоя».
+            prefs.edit().putBoolean(DryFogApplication.KEY_RECOVERED_FROM_CRASH, false).commit()
             return "crash"
         }
         return if (startedFromBoot) "boot" else "normal"
@@ -541,6 +554,8 @@ class MainActivity : FlutterActivity() {
             android.util.Log.w("MainActivity", "закрываю скрытый экземпляр (задача ${it.taskId})")
             it.finish()
         }
+        // Lock Task, если приложение — Device Owner и блокировка включена.
+        KioskPolicy.onActivityResumed(this)
     }
 
     override fun onPause() {
@@ -554,6 +569,8 @@ class MainActivity : FlutterActivity() {
         // же процессе не сможет открыть шину (см. ModbusChannel.release).
         modbusChannel?.release()
         modbusChannel = null
+        KioskPolicy.detachLogSink(this)
+        KioskPolicy.onActivityDestroyed(this)
         systemChannel = null
         super.onDestroy()
     }
@@ -583,5 +600,14 @@ class MainActivity : FlutterActivity() {
     companion object {
         // Живые экземпляры MainActivity в процессе (только главный поток).
         private val liveInstances = mutableListOf<WeakReference<MainActivity>>()
+
+        // Есть ли в процессе экземпляр, который держит экран (KioskPolicy ждёт
+        // его закрытия перед подъёмом замены).
+        fun hasLiveInstance(): Boolean {
+            liveInstances.removeAll { it.get() == null }
+            return liveInstances.mapNotNull { it.get() }.any {
+                !it.duplicate && !it.isFinishing && !it.isDestroyed
+            }
+        }
     }
 }

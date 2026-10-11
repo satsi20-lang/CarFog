@@ -734,7 +734,7 @@ class UpdateService {
       t.cancel();
       try {
         await File('${dir.path}/${UpdateLimits.healthName}')
-            .writeAsString('ok ${current.versionCode}\n');
+            .writeAsString('ok ${current.versionCode}\n', flush: true);
       } catch (e) {
         AppLog.log('UpdateService', 'не удалось записать сигнал здоровья: ${e.runtimeType}');
       }
@@ -825,7 +825,7 @@ class UpdateService {
   }
 
   static Future<void> _writeJson(Directory dir, String name, Map<String, dynamic> j) =>
-      File('${dir.path}/$name').writeAsString(jsonEncode(j));
+      File('${dir.path}/$name').writeAsString(jsonEncode(j), flush: true);
 
   static Future<void> _deleteQuietly(File f) async {
     try {

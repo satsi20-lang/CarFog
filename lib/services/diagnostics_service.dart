@@ -315,7 +315,7 @@ class DiagnosticsService {
     try {
       final f = await _pendingFile();
       if (f == null) return;
-      await f.writeAsString(jsonEncode({'id': id, 'text': text}));
+      await f.writeAsString(jsonEncode({'id': id, 'text': text}), flush: true);
     } catch (e) {
       AppLog.log('Diagnostics', 'не удалось сохранить отложенный пакет: $e');
     }

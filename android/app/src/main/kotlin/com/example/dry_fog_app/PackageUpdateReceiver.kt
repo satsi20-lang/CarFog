@@ -40,17 +40,21 @@ class PackageUpdateReceiver : BroadcastReceiver() {
             // что можно, техник переключит тумблер вручную при следующем
             // визите в сервисное меню.
         }
+        // Киоск через Device Owner (если назначен и блокировка включена).
+        KioskPolicy.onPackageReplaced(context)
     }
 
-    // Читает kioskModeEnabled напрямую из файла плагина shared_preferences —
-    // движок Flutter в момент MY_PACKAGE_REPLACED ещё не запущен.
-    private fun readKioskModeEnabled(context: Context): Boolean? {
-        return try {
-            val prefs = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-            val json = prefs.getString("flutter.app_config", null) ?: return null
-            JSONObject(json).optBoolean("kioskModeEnabled", false)
-        } catch (e: Exception) {
-            null
+    companion object {
+        // Читает kioskModeEnabled напрямую из файла плагина shared_preferences —
+        // движок Flutter в момент MY_PACKAGE_REPLACED ещё не запущен.
+        fun readKioskModeEnabled(context: Context): Boolean? {
+            return try {
+                val prefs = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+                val json = prefs.getString("flutter.app_config", null) ?: return null
+                JSONObject(json).optBoolean("kioskModeEnabled", false)
+            } catch (e: Exception) {
+                null
+            }
         }
     }
 }

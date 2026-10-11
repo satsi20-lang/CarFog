@@ -971,7 +971,9 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
                 .putLong("monthly_baseline", java.lang.Double.doubleToRawLongBits(baseline))
                 .putInt("baseline_month", currentMonth)
                 .putInt("baseline_year", currentYear)
-                .apply()
+                // commit (синхронно, с fsync): переход месяца бывает раз в
+                // месяц, а потеря при обесточивании сбила бы учёт расхода.
+                .commit()
         }
 
         return totalEnergy - baseline
@@ -999,7 +1001,7 @@ class ModbusChannel(private val channel: MethodChannel, private val context: Con
             trimmed.put(array.get(i))
         }
 
-        prefs.edit().putString("monthly_history", trimmed.toString()).apply()
+        prefs.edit().putString("monthly_history", trimmed.toString()).commit()
     }
 
     // Запускает фоновый поток, опрашивающий DI8 (монетоприёмник) на время
