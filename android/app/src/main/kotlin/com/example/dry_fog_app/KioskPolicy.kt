@@ -23,6 +23,12 @@ object KioskDecision {
     fun shouldLock(deviceOwner: Boolean, lockEnabled: Boolean, exitUntil: Long, now: Long): Boolean =
         deviceOwner && lockEnabled && now >= exitUntil
 
+    // После замены APK Android процесс приложения не перезапускает: без
+    // явного запуска на экране остаётся системный интерфейс, пока кто-то
+    // не нажмёт HOME (проверено на rk3568, 11.10.2026).
+    fun relaunchAfterUpdate(deviceOwner: Boolean, lockEnabled: Boolean): Boolean =
+        deviceOwner && lockEnabled
+
     fun exitRemainingMs(exitUntil: Long, now: Long): Long =
         if (exitUntil <= now) 0L else exitUntil - now
 }
@@ -209,15 +215,22 @@ object KioskPolicy {
     }
 
     // После замены APK: Android возвращает KioskHomeAlias к состоянию из
-    // манифеста (выключен) — восстановить роль HOME, если блокировка включена.
+    // манифеста (выключен) — восстановить роль HOME, если блокировка включена,
+    // и поднять приложение.
     fun onPackageReplaced(context: Context) {
-        if (!isDeviceOwner(context) || !isLockEnabled(context)) return
+        if (!KioskDecision.relaunchAfterUpdate(isDeviceOwner(context), isLockEnabled(context))) return
         try {
             val aliasState = context.packageManager
                 .getComponentEnabledSetting(ComponentNames.kioskHomeAlias(context))
             log(context, "обновление APK: состояние KioskHomeAlias до восстановления = $aliasState")
             applyPolicies(context)
             log(context, "обновление APK: политики киоска восстановлены")
+            // Device Owner не подпадает под запрет запуска активности из
+            // фона; onResume закрепит экран.
+            context.startActivity(
+                Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+            log(context, "обновление APK: приложение запущено")
         } catch (e: Throwable) {
             log(context, "ошибка восстановления после обновления: $e")
         }

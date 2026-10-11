@@ -33,4 +33,12 @@ class KioskDecisionTest {
     fun exitWindowIsTenMinutes() {
         assertEquals(10 * 60 * 1000L, KioskPolicy.EXIT_WINDOW_MS)
     }
+
+    @Test
+    fun relaunchAfterUpdateOnlyWithActiveLock() {
+        assertTrue(KioskDecision.relaunchAfterUpdate(true, true))
+        assertFalse(KioskDecision.relaunchAfterUpdate(true, false))
+        assertFalse(KioskDecision.relaunchAfterUpdate(false, true))
+        assertFalse(KioskDecision.relaunchAfterUpdate(false, false))
+    }
 }

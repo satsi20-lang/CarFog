@@ -36,6 +36,27 @@ void main() {
       expect(st.exitRemaining, const Duration(milliseconds: 125000));
     });
 
+    test('обратный отсчёт только при включённой блокировке', () {
+      final off = KioskPolicyState.fromMap({
+        'device_owner': true,
+        'lock_enabled': false,
+        'exit_remaining_ms': 60000,
+      });
+      expect(off.temporaryExit, isTrue);
+      expect(off.showExitCountdown, isFalse);
+      final on = KioskPolicyState.fromMap({
+        'device_owner': true,
+        'lock_enabled': true,
+        'exit_remaining_ms': 60000,
+      });
+      expect(on.showExitCountdown, isTrue);
+      final noExit = KioskPolicyState.fromMap({
+        'device_owner': true,
+        'lock_enabled': true,
+      });
+      expect(noExit.showExitCountdown, isFalse);
+    });
+
     test('чужие типы не считаются истиной', () {
       final st = KioskPolicyState.fromMap({
         'device_owner': 'true',

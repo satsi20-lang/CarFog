@@ -25,6 +25,10 @@ class KioskPolicyState {
 
   bool get temporaryExit => exitRemaining > Duration.zero;
 
+  // Обратный отсчёт имеет смысл, только когда блокировка включена: при
+  // выключенной таймер ничего не возвращает.
+  bool get showExitCountdown => lockEnabled && temporaryExit;
+
   // Ответ канала; любые отсутствующие/чужие поля — «нет Device Owner».
   factory KioskPolicyState.fromMap(Map? m) {
     if (m == null) return none;

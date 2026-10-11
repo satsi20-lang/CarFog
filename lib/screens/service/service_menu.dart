@@ -7082,7 +7082,7 @@ class _KioskTabState extends State<_KioskTab> {
           t['do_lock_hint']!,
           style: const TextStyle(color: Color(0xFF8899AA), fontSize: 12),
         ),
-        if (_do.temporaryExit) ...[
+        if (_do.showExitCountdown) ...[
           const SizedBox(height: 6),
           Text(
             t['do_exit_active']!.replaceAll('{m}', '$minutes'),
