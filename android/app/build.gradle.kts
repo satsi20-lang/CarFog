@@ -86,6 +86,10 @@ flutter {
 }
 
 dependencies {
+    // USB-serial для стенда терминала MDB (1.10.9, адаптер Wafer MDB-RS232):
+    // FTDI, CH34x, CP210x, PL2303, CDC ACM. MIT. Только с JitPack (см.
+    // android/build.gradle.kts — JitPack разрешён лишь для com.github.mik3y).
+    implementation("com.github.mik3y:usb-serial-for-android:3.11.0")
     // Юнит-тесты CRC16 (задача "смена Slave ID CWT-BK-1616T-S") — обычные
     // локальные JVM-тесты (src/test), не требуют эмулятора/устройства.
     testImplementation("junit:junit:4.13.2")

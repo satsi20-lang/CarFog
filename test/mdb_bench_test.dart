@@ -1,0 +1,101 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:dry_fog_app/screens/service/mdb_bench_tab.dart';
+import 'package:dry_fog_app/services/mdb_bench_service.dart';
+
+// Стенд терминала MDB (1.10.9): Dart-сторона без железа — проверка hex-ввода
+// и то, что вкладка не шлёт vend без ответа на setup. Протокол и цикл
+// чтения проверяются Kotlin-тестами (MdbCashlessProtocolTest, MdbFrameReaderTest).
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  const channel = MethodChannel('com.carfog.dryfog/mdb_bench');
+  final messenger =
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+
+  test('проверка hex-ввода', () {
+    expect(MdbBenchService.validateHex('14 01'), isNull);
+    expect(MdbBenchService.validateHex('0a'), isNull);
+    expect(MdbBenchService.validateHex(''), isNotNull);
+    expect(MdbBenchService.validateHex('140'), isNotNull);
+    expect(MdbBenchService.validateHex('GG'), isNotNull);
+    expect(MdbBenchService.validateHex('14-01'), isNotNull);
+  });
+
+  group('вкладка стенда', () {
+    final calls = <MethodCall>[];
+    var hasSetup = false;
+
+    setUp(() {
+      calls.clear();
+      hasSetup = false;
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        switch (call.method) {
+          case 'status':
+            return {
+              'open': true,
+              'device': '/dev/bus/usb/001/002',
+              'setupScale': hasSetup ? 1 : null,
+              'setupDecimals': hasSetup ? 2 : null,
+              'logFile': null,
+            };
+          case 'getLog':
+            return <Map>[];
+          case 'command':
+            return '13 00 00 0A 00 01';
+        }
+        return null;
+      });
+    });
+    tearDown(() => messenger.setMockMethodCallHandler(channel, null));
+
+    Future<void> pumpTab(WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 1.5;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(const MaterialApp(
+        home: Scaffold(backgroundColor: Colors.black, body: MdbBenchTab()),
+      ));
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+
+    Future<void> tapVend(WidgetTester tester) async {
+      final btn = find.widgetWithText(ElevatedButton, 'Запрос оплаты');
+      await tester.ensureVisible(btn);
+      await tester.tap(btn);
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+
+    testWidgets('без ответа на setup vend не отправляется', (tester) async {
+      await pumpTab(tester);
+      expect(find.textContaining('Тестовый режим: реальное списание'), findsOneWidget);
+      await tapVend(tester);
+      expect(calls.where((c) => c.method == 'command'), isEmpty);
+      expect(find.textContaining('Нет ответа на setup'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('после setup vend уходит с суммой', (tester) async {
+      hasSetup = true;
+      await pumpTab(tester);
+      await tapVend(tester);
+      final vend = calls.where((c) => c.method == 'command').single;
+      expect(vend.arguments['name'], 'vend');
+      expect(vend.arguments['amount'], '0.10');
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('неверный raw не отправляется', (tester) async {
+      await pumpTab(tester);
+      final field = find.widgetWithText(TextField, 'hex, например 14 01');
+      await tester.ensureVisible(field);
+      await tester.enterText(field, '14 0');
+      await tester.tap(find.widgetWithText(ElevatedButton, 'Отправить'));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(calls.where((c) => c.method == 'raw'), isEmpty);
+      expect(find.text('нужна чётная длина'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    });
+  });
+}

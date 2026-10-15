@@ -39,6 +39,8 @@ class MainActivity : FlutterActivity() {
     // инициализируется только после attachBaseContext, поэтому lazy.
     private val outOfServiceStore by lazy { OutOfServiceStore(filesDir) }
     private var modbusChannel: ModbusChannel? = null
+    // Стенд терминала MDB через USB-адаптер (1.10.9) — отдельно от шины.
+    private var mdbBench: MdbUsbBench? = null
     // Канал системных вызовов — нужен, чтобы перед завершением процесса
     // (restart_app) спросить Dart: аппарат всё ещё в покое?
     private var systemChannel: MethodChannel? = null
@@ -167,6 +169,19 @@ class MainActivity : FlutterActivity() {
             taskQueue
         )
         modbusChannel = ModbusChannel(channel, this)
+
+        // Стенд «Терминал (стенд)» (1.10.9): свой канал и своя фоновая
+        // очередь — запись в USB-порт блокирует до 500 мс и не должна
+        // задерживать вызовы шины Modbus.
+        mdbBench = MdbUsbBench(this).also { bench ->
+            MethodChannel(
+                flutterEngine.dartExecutor.binaryMessenger,
+                MdbUsbBench.CHANNEL,
+                StandardMethodCodec.INSTANCE,
+                flutterEngine.dartExecutor.binaryMessenger
+                    .makeBackgroundTaskQueue(BinaryMessenger.TaskQueueOptions())
+            ).setMethodCallHandler(bench)
+        }
 
         // Корневые пути всех примонтированных томов (внутренняя память +
         // SD-карта) через официальный Android API. Нужен, потому что
@@ -614,6 +629,8 @@ class MainActivity : FlutterActivity() {
         // же процессе не сможет открыть шину (см. ModbusChannel.release).
         modbusChannel?.release()
         modbusChannel = null
+        mdbBench?.release()
+        mdbBench = null
         adbWifiObserver?.let { contentResolver.unregisterContentObserver(it) }
         adbWifiObserver = null
         KioskPolicy.detachLogSink(this)

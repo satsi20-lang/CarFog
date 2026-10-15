@@ -2,6 +2,11 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        // usb-serial-for-android публикуется только на JitPack. Фильтр не даёт
+        // подтянуть оттуда ничего, кроме этой группы.
+        maven("https://jitpack.io") {
+            content { includeGroup("com.github.mik3y") }
+        }
     }
 }
 

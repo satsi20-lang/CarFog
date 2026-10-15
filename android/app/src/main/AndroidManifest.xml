@@ -31,6 +31,12 @@
          блокировки (1.10.8, ReturnNotification). Выдаёт Device Owner сам
          (KioskPolicy.grantNotificationPermission), диалога нет. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Стенд терминала MDB через USB-адаптер (1.10.9). required=false:
+         без USB-хоста приложение ставится и работает, стенд просто не
+         найдёт устройств. intent-filter USB_DEVICE_ATTACHED намеренно не
+         добавлен: он поднимал бы активность и системный диалог при каждом
+         подключении адаптера, разрешение стенд запрашивает сам по кнопке. -->
+    <uses-feature android:name="android.hardware.usb.host" android:required="false" />
     <application
         android:label="dry_fog_app"
         android:name=".DryFogApplication"
