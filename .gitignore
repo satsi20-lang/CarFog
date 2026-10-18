@@ -38,4 +38,9 @@ key.properties
 
 # Заводской генератор: коды привязки и токены — только оффлайн
 provisioning_out/
+# то же, если генератор запущен с --out в другой каталог
+**/configs/*.json
+batch.sql
+labels.csv
+issued_ids.txt
 __pycache__/

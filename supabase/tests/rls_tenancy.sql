@@ -266,7 +266,7 @@ begin
   select string_agg(column_name, ',') into cols
     from information_schema.columns
    where table_schema = 'public' and table_name = 'customer_devices'
-     and column_name in ('token','app_version','rollback_available','adb_network','debug_modes',
+     and column_name in ('token','token_hash','app_version','rollback_available','adb_network','debug_modes',
                          'last_update_result','skip_health_signal_build','ring','timezone','org_id',
                          'reported_config','rollout_target_code');
   if cols is null then raise notice 'ok: в customer_devices нет запрещённых полей';
@@ -441,6 +441,12 @@ begin
   exception when insufficient_privilege then
     raise notice 'ok: token для чтения закрыт (даже изготовителю)';
   end;
+  begin
+    perform token_hash from public.devices limit 1;
+    raise notice 'ОШИБКА: изготовитель смог прочитать token_hash';
+  exception when insufficient_privilege then
+    raise notice 'ok: token_hash для чтения закрыт (даже изготовителю)';
+  end;
   select count(*) into n from public.events;
   if n >= 1 then raise notice 'ok: изготовитель читает events'; else raise notice 'ОШИБКА: events пуст'; end if;
   select count(*) into n from public.commands;
@@ -491,6 +497,10 @@ begin
   if has_column_privilege('authenticated', 'public.devices', 'token', 'UPDATE') then bad := bad || ' devices.token.UPDATE'; end if;
   if has_column_privilege('authenticated', 'public.devices', 'token', 'REFERENCES') then bad := bad || ' devices.token.REFERENCES'; end if;
   if has_column_privilege('authenticated', 'public.devices', 'token', 'SELECT') then bad := bad || ' devices.token.SELECT'; end if;
+  if has_column_privilege('authenticated', 'public.devices', 'token_hash', 'INSERT') then bad := bad || ' devices.token_hash.INSERT'; end if;
+  if has_column_privilege('authenticated', 'public.devices', 'token_hash', 'UPDATE') then bad := bad || ' devices.token_hash.UPDATE'; end if;
+  if has_column_privilege('authenticated', 'public.devices', 'token_hash', 'REFERENCES') then bad := bad || ' devices.token_hash.REFERENCES'; end if;
+  if has_column_privilege('authenticated', 'public.devices', 'token_hash', 'SELECT') then bad := bad || ' devices.token_hash.SELECT'; end if;
   if has_table_privilege('authenticated', 'public.commands', 'UPDATE') then bad := bad || ' commands.UPDATE'; end if;
   if has_table_privilege('authenticated', 'public.commands', 'DELETE') then bad := bad || ' commands.DELETE'; end if;
   if has_table_privilege('authenticated', 'public.events', 'INSERT') then bad := bad || ' events.INSERT'; end if;
