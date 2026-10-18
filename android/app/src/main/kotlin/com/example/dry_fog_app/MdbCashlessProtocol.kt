@@ -58,29 +58,37 @@ object MdbCashlessProtocol {
 
     // Сумма → единицы терминала: amount / (scale * 10^-decimals). Сумма — строка
     // («0.10» или «0,10»), чтобы не терять точность на double. Если сумма не
-    // делится на единицу терминала нацело, это ошибка, а не округление.
+    // делится на шаг терминала нацело или выходит за 0..65535 единиц — ошибка
+    // с цифрами, а не округление. Наружу только IllegalArgumentException
+    // (деление точное, через остаток — ArithmeticException не бывает).
     fun priceUnits(amount: String, scale: Int, decimals: Int): Int {
-        require(scale in 1..255) { "масштаб вне диапазона 1..255" }
-        require(decimals in 0..9) { "число знаков вне диапазона 0..9" }
-        val value = try {
-            BigDecimal(amount.trim().replace(',', '.'))
-        } catch (e: NumberFormatException) {
-            throw IllegalArgumentException("сумма не число: \"$amount\"")
+        require(scale in 1..255) { "масштаб $scale вне диапазона 1..255 (ответ на setup)" }
+        require(decimals in 0..9) { "число знаков $decimals вне диапазона 0..9 (ответ на setup)" }
+        val text = amount.trim().replace(',', '.')
+        require(AMOUNT_RE.matches(text)) {
+            "сумма должна быть числом вида 0.10, введено: \"${amount.trim()}\""
         }
-        require(value.signum() >= 0) { "сумма отрицательная" }
-        val minor = value.movePointRight(decimals)
-        val units = minor.divide(BigDecimal(scale))
-            .let { if (it.stripTrailingZeros().scale() > 0) null else it }
-            ?: throw IllegalArgumentException("сумма не кратна единице терминала")
-        require(units <= BigDecimal(MAX_UNITS)) { "цена вне диапазона 0..65535 единиц" }
+        val value = BigDecimal(text)
+        val step = BigDecimal(scale).movePointLeft(decimals)
+        val stepText = "шаг терминала ${euro(step, decimals)} € (масштаб $scale, знаков $decimals)"
+        val (units, rest) = value.divideAndRemainder(step)
+        require(rest.signum() == 0) { "сумма $text € не делится на $stepText" }
+        require(units <= BigDecimal(MAX_UNITS)) {
+            "сумма $text € = ${units.toBigInteger()} ед. — вне диапазона 0..$MAX_UNITS ед.; " +
+                "$stepText, максимум ${formatAmount(MAX_UNITS, scale, decimals)} €"
+        }
         return units.toInt()
     }
+
+    private val AMOUNT_RE = Regex("""\d{1,7}(\.\d{1,9})?""")
+
+    private fun euro(v: BigDecimal, decimals: Int): String =
+        v.setScale(maxOf(decimals, 2)).toPlainString()
 
     // Единицы терминала → сумма в евро (units × масштаб × 10^-знаков), не
     // меньше двух знаков после точки: 10 ед. при масштабе 1 и 2 знаках = "0.10".
     fun formatAmount(units: Int, scale: Int, decimals: Int): String {
-        val v = BigDecimal(units.toLong() * scale).movePointLeft(decimals)
-        return v.setScale(maxOf(decimals, 2)).toPlainString()
+        return euro(BigDecimal(units.toLong() * scale).movePointLeft(decimals), decimals)
     }
 
     // Проверка hex-ввода: пробелы допускаются, длина чётная, только 0-9 A-F.

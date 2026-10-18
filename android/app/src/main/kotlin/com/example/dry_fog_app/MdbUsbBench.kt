@@ -134,6 +134,9 @@ class MdbUsbBench(private val context: Context) : MethodChannel.MethodCallHandle
                 else -> result.notImplemented()
             }
         } catch (e: Exception) {
+            // Любая ошибка (сумма не кратна шагу, нет порта, нет setup) — в
+            // журнал стенда и на экран, приложение не падает.
+            log.info(now(), "ошибка ${call.method}: ${e.message ?: e}")
             result.error("MDB", e.message ?: e.toString(), null)
         }
     }
