@@ -20,6 +20,9 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 import java.io.IOException
+import java.util.concurrent.Future
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.TimeUnit
 
 // Стенд «Терминал (стенд)» (1.10.9): терминал Nayax по MDB через адаптер
 // Wafer MDB-RS232 с USB-выходом. Только ручная проверка из сервисного меню —
@@ -38,6 +41,8 @@ class MdbUsbBench(private val context: Context) : MethodChannel.MethodCallHandle
     )
 
     private val lock = Any()
+    // Закрытие порта — на своём фоновом потоке (главный поток не ждёт USB).
+    private val closer = MdbPortCloser()
     private var port: UsbSerialPort? = null
     private var portDevice: String? = null
     private var reader: MdbFrameReader? = null
@@ -98,8 +103,10 @@ class MdbUsbBench(private val context: Context) : MethodChannel.MethodCallHandle
         }
     }
 
+    // Из onDestroy (главный поток): закрытие уходит в фон, не ждём.
     fun release() {
         closePort("приложение закрывает экран")
+        closer.shutdown()
         try {
             context.unregisterReceiver(receiver)
         } catch (e: IllegalArgumentException) {
@@ -115,7 +122,9 @@ class MdbUsbBench(private val context: Context) : MethodChannel.MethodCallHandle
                     open(call.argument<String>("device") ?: "", call.argument<String>("driver") ?: "auto")
                 )
                 "close" -> {
-                    closePort("кнопка «Закрыть порт»")
+                    // Фоновая очередь канала, не главный поток — здесь можно
+                    // дождаться закрытия, чтобы статус на экране был точным.
+                    closePort("кнопка «Закрыть порт»")?.get(CLOSE_WAIT_MS, TimeUnit.MILLISECONDS)
                     result.success(null)
                 }
                 "status" -> result.success(status())
@@ -183,8 +192,12 @@ class MdbUsbBench(private val context: Context) : MethodChannel.MethodCallHandle
         return "opened"
     }
 
+    // Только с фонового потока (канал или поток после разрешения).
     private fun openNow(deviceName: String, driverName: String) {
         try {
+            // Закрытие прежнего сеанса могло ещё не доработать — не открываем
+            // то же устройство поверх него.
+            closer.drain()
             val device = usb.deviceList[deviceName] ?: throw IOException("устройство $deviceName пропало")
             val driver = pickDriver(device, driverName)
                 ?: throw IOException("нет драйвера для ${describe(device)} (выберите драйвер вручную)")
@@ -228,9 +241,12 @@ class MdbUsbBench(private val context: Context) : MethodChannel.MethodCallHandle
         else -> UsbSerialProber.getDefaultProber().probeDevice(device)
     }
 
-    // Вызывается из потока чтения при ошибке, из приёмника при отключении,
-    // кнопкой и при уничтожении активности — повторный вызов безопасен.
-    private fun closePort(reason: String) {
+    // Вызывается из потока чтения при ошибке, из приёмника при отключении
+    // и из onDestroy (главный поток), кнопкой (фоновая очередь канала) —
+    // повторный вызов безопасен. Состояние сбрасывается сразу, а закрытие USB
+    // и ожидание потока чтения (не дольше 1 с) идут на потоке MdbPortCloser:
+    // вызывающий поток не блокируется. null — порт и так был закрыт.
+    private fun closePort(reason: String): Future<Boolean>? {
         val (p, r, t) = synchronized(lock) {
             val snapshot = Triple(port, reader, readerThread)
             port = null
@@ -241,15 +257,23 @@ class MdbUsbBench(private val context: Context) : MethodChannel.MethodCallHandle
             session++
             snapshot
         }
-        if (p == null) return
-        r?.stop()
-        try {
-            p.close()
-        } catch (e: Exception) {
-            // Адаптер уже выдернут — закрывать нечего.
+        if (p == null) return null
+        return try {
+            closer.close(
+                stop = { r?.stop() },
+                closePort = { p.close() },
+                reader = t,
+                onDone = { stopped ->
+                    log.info(now(), "порт закрыт: $reason" +
+                        if (stopped) "" else " (поток чтения не остановился за 1 с)")
+                },
+            )
+        } catch (e: RejectedExecutionException) {
+            // release() уже был: закрыть прямо здесь, без ожидания потока.
+            r?.stop()
+            try { p.close() } catch (ignored: Exception) {}
+            null
         }
-        if (t != null && t !== Thread.currentThread()) t.join(500)
-        log.info(now(), "порт закрыт: $reason")
     }
 
     private fun onFrame(data: ByteArray, firstMs: Long, lastMs: Long, frameSession: Long) {
@@ -386,6 +410,8 @@ class MdbUsbBench(private val context: Context) : MethodChannel.MethodCallHandle
         private const val ACTION_PERMISSION = "ee.carfog.dryfog.MDB_USB_PERMISSION"
         private const val BAUD = 9600
         private const val WRITE_TIMEOUT_MS = 500
+        // Ожидание закрытия по кнопке: join потока чтения (1 с) + запас.
+        private const val CLOSE_WAIT_MS = 2000L
 
         // Данные для 17 00 (передача ID автомата). Какие значения ждёт Nayax,
         // не подтверждено — только для проверки, что команда проходит.
