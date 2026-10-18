@@ -135,3 +135,26 @@ usb-serial-for-android 3.11.0 (MIT, JitPack).
   CARFOG-100: она может отключить USB-хост.
 * Не гонять лишние запросы оплаты: каждое одобрение списывает деньги.
 * Не оставлять терминал включённым (`enable`) без присмотра.
+
+## Проверка зависимостей Gradle (с 1.10.9+45)
+
+Файл `android/gradle/verification-metadata.xml` хранит sha256 всех
+артефактов сборки Android, включая usb-serial-for-android 3.11.0 с JitPack:
+
+* `usb-serial-for-android-3.11.0.aar`:
+  `f74032134a4ded3276ccc02bec0d278015bc3c93ef04473b98fbda2771d7e439`
+* `usb-serial-for-android-3.11.0.module`:
+  `388b212a7e75b46ef6f409a5b715ed76522c9a4e30d0e21b39b4da00afdb2280`
+
+Если артефакт не совпадает с записью, сборка падает с ошибкой «Dependency
+verification failed». Проверка включается сразу для всех зависимостей, по
+одной её включить нельзя. Поэтому после обновления Flutter, AGP, Kotlin или
+любой библиотеки файл нужно пересоздать (из папки `android/`, с JAVA_HOME
+Android Studio):
+
+```
+./gradlew --write-verification-metadata sha256 :app:assembleDebug :app:assembleRelease :app:testDebugUnitTest
+```
+
+Затем посмотрите `git diff` файла: новые хеши должны относиться только к тем
+библиотекам, которые вы меняли.
