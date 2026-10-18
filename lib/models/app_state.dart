@@ -95,6 +95,11 @@ class AppConfig {
 
   Map<String, List<String>> flavorNames;
 
+  // Звук видео режима ожидания (SD-карта). По умолчанию ВЫКЛЮЧЕН: после
+  // перезагрузки видео играло со звуком, а убрать звук было нечем.
+  // Включается тумблером на вкладке «Настройки» сервисного меню.
+  bool standbyVideoSound;
+
   AppConfig({
     this.treatmentPriceCents = 200,
     this.treatmentDurationS = 40,
@@ -124,6 +129,7 @@ class AppConfig {
     this.specPumps = DeviceSpec.defaultPumps,
     this.specLangs = DeviceSpec.defaultLangs,
     this.specDefaultLang = 'et',
+    this.standbyVideoSound = false,
     Map<String, List<String>>? flavorNames,
   }) : flavorNames =
            flavorNames ??
@@ -186,6 +192,7 @@ class AppConfig {
     int? specPumps,
     List<String>? specLangs,
     String? specDefaultLang,
+    bool? standbyVideoSound,
     Map<String, List<String>>? flavorNames,
   }) {
     return AppConfig(
@@ -220,12 +227,16 @@ class AppConfig {
       specPumps: specPumps ?? this.specPumps,
       specLangs: specLangs ?? this.specLangs,
       specDefaultLang: specDefaultLang ?? this.specDefaultLang,
+      standbyVideoSound: standbyVideoSound ?? this.standbyVideoSound,
       flavorNames: flavorNames ?? this.flavorNames,
     );
   }
 
   // Активное число ароматов/насосов: specPumps в пределах 4…8, при любой ошибке 4.
   int get activeFlavorCount => DeviceSpec.activeFor(specPumps);
+
+  // Громкость видео ожидания: 0 — без звука (по умолчанию), 1 — как раньше.
+  double get standbyVideoVolume => standbyVideoSound ? 1.0 : 0.0;
 
   // Название аромата для показа клиенту на любом языке. Названия вносит техник
   // по языкам (вкладка «Ароматы»: ru/en/et); для языка без своего списка —

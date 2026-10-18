@@ -1,12 +1,16 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:dry_fog_app/models/app_state.dart';
+import 'package:dry_fog_app/screens/service/service_menu.dart';
 import 'package:dry_fog_app/screens/service/service_pin.dart';
+import 'package:dry_fog_app/services/config_service.dart';
 
-// 1.10.10: компактная клавиатура PIN, введённые цифры — точками.
+// 1.10.10: компактная клавиатура PIN, введённые цифры — точками; видео
+// ожидания по умолчанию без звука, тумблер «Звук видео ожидания».
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -119,5 +123,94 @@ void main() {
     await tester.pump();
     expect(dots(tester), (4, 1));
     await dispose(tester);
+  });
+
+  group('звук видео ожидания', () {
+    test('по умолчанию выключен, громкость 0', () {
+      final c = AppConfig();
+      expect(c.standbyVideoSound, isFalse);
+      expect(c.standbyVideoVolume, 0.0);
+      expect(c.copyWith(standbyVideoSound: true).standbyVideoVolume, 1.0);
+      // copyWith без поля значение не теряет.
+      expect(
+        c
+            .copyWith(standbyVideoSound: true)
+            .copyWith(deviceId: 'X')
+            .standbyVideoSound,
+        isTrue,
+      );
+    });
+
+    test('без сохранённых настроек (чистая установка) — громкость 0', () async {
+      final c = await ConfigService.load();
+      expect(c.standbyVideoVolume, 0.0);
+    });
+
+    test('сохраняется и читается', () async {
+      await ConfigService.save(AppConfig(standbyVideoSound: true));
+      final on = await ConfigService.load();
+      expect(on.standbyVideoSound, isTrue);
+      expect(on.standbyVideoVolume, 1.0);
+
+      await ConfigService.save(on.copyWith(standbyVideoSound: false));
+      expect((await ConfigService.load()).standbyVideoSound, isFalse);
+    });
+
+    test('настройки старых версий (1.7.0, 1.8.0) читаются без звука, '
+        'остальное не теряется', () async {
+      for (final f in ['app_config_1_7_0.json', 'app_config_1_8_0.json']) {
+        final json = File('test/fixtures/$f').readAsStringSync();
+        SharedPreferences.setMockInitialValues({'app_config': json});
+        final c = await ConfigService.load();
+        expect(c.standbyVideoSound, isFalse, reason: f);
+        expect(c.standbyVideoVolume, 0.0, reason: f);
+        expect(c.treatmentPriceCents, 350, reason: f);
+        expect(c.kioskModeEnabled, isTrue, reason: f);
+      }
+    });
+
+    testWidgets('тумблер на вкладке «Настройки» сохраняет значение', (
+      tester,
+    ) async {
+      // Окно мастер-кода при первом входе в меню здесь не нужно.
+      SharedPreferences.setMockInitialValues({'master_code_ack': true});
+      tester.view.devicePixelRatio = 1.5;
+      tester.view.physicalSize = const Size(1080, 1920);
+      addTearDown(tester.view.reset);
+      final n = AppNotifier()..setLanguage('ru');
+      await tester.pumpWidget(
+        ChangeNotifierProvider<AppNotifier>.value(
+          value: n,
+          child: const MaterialApp(home: ServiceMenuScreen()),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 600));
+
+      final row = find.byKey(const ValueKey('standby_video_sound'));
+      expect(find.text('Звук видео ожидания'), findsOneWidget);
+      final sw = find.descendant(of: row, matching: find.byType(Switch));
+      expect(tester.widget<Switch>(sw).value, isFalse);
+
+      await tester.ensureVisible(sw);
+      await tester.tap(sw);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(tester.widget<Switch>(sw).value, isTrue);
+      expect(n.config.standbyVideoSound, isTrue);
+      await tester.runAsync(() async {
+        expect((await ConfigService.load()).standbyVideoSound, isTrue);
+      });
+
+      await tester.tap(sw);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(n.config.standbyVideoSound, isFalse);
+      await tester.runAsync(() async {
+        expect((await ConfigService.load()).standbyVideoSound, isFalse);
+      });
+
+      await tester.pumpWidget(const SizedBox());
+      for (var i = 0; i < 6; i++) {
+        await tester.pump(const Duration(seconds: 1));
+      }
+    });
   });
 }
