@@ -11,8 +11,8 @@
 Выход (каталог provisioning_out/<партия>/, он в .gitignore, в git не попадает;
 по умолчанию партия называется batch_<дата>):
   batch.sql           вставки в devices (с явным кольцом --ring, по умолчанию
-                      test) и device_claims (токены и ХЭШИ кодов; открытых кодов
-                      нет);
+                      test) и device_claims (ХЭШИ токенов и ХЭШИ кодов; открытых
+                      токенов и кодов нет);
   labels.csv          device_id, ОТКРЫТЫЙ код и «подпись» (например «4 насоса ·
                       ET/EN/RU», только текст для печати) — для наклеек;
   configs/<ID>.json   по ОДНОМУ файлу на аппарат (формат 1: config_id, device_id,
@@ -20,8 +20,10 @@
                       (tool/provision_push.sh); config_id у каждого свой
                       (<дата>-<8 hex>), при смене токена выдаётся новый;
   devices.txt         список номеров партии (без секретов).
-Файлы с кодами и токенами — ЧУВСТВИТЕЛЬНЫЕ: права 600 (каталоги 700), хранить
-оффлайн.
+Открытый токен есть ТОЛЬКО в configs/<ID>.json: в базу пишется token_hash =
+sha256(токен) в hex (supabase/migrations/20261018000000_token_hash_phase_a.sql),
+столбец token не заполняется. Файлы с кодами и токенами — ЧУВСТВИТЕЛЬНЫЕ: права
+600 (каталоги 700), хранить оффлайн.
 
 Спецификация аппарата (одинакова для всей партии): --pumps 4…8 (по умолчанию 4),
 --langs через запятую (по умолчанию et,en,ru; порядок = порядок на экране выбора),
@@ -140,6 +142,11 @@ def new_token() -> str:
     return base64.urlsafe_b64encode(secrets.token_bytes(TOKEN_BYTES)).decode("ascii").rstrip("=")
 
 
+def token_hash(token: str) -> str:
+    """sha256(utf8(токен)), hex — как encode(sha256(convert_to(token,'UTF8')),'hex') в БД."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
 def new_config_id(today=None) -> str:
     """Идентификатор файла конфигурации: <дата>-<8 hex>. Новый при каждой смене токена."""
     d = (today or datetime.date.today()).isoformat()
@@ -224,16 +231,16 @@ def render_sql(items, org_id: str, stamp: str, ring: str = DEFAULT_RING, spec=No
     spec = spec or parse_spec()
     langs_sql = "array[" + ", ".join(sql_str(c) for c in spec["langs"]) + "]::text[]"
     lines = [
-        f"-- Партия аппаратов {stamp}. Токены и ХЭШИ кодов; открытых кодов здесь нет.",
-        "-- Файл чувствителен (токены): хранить оффлайн, в git не добавлять.",
+        f"-- Партия аппаратов {stamp}. ХЭШИ токенов и ХЭШИ кодов; открытых токенов и кодов здесь нет.",
+        "-- Файл не публиковать: хранить оффлайн, в git не добавлять.",
         "-- Выполняет владелец в Supabase SQL Editor.",
         "begin;",
     ]
     for it in items:
         lines.append(
-            "insert into public.devices (id, org_id, token, name, ring, spec_pumps, "
+            "insert into public.devices (id, org_id, token_hash, name, ring, spec_pumps, "
             "spec_langs, spec_default_lang, hardware_profile) values "
-            f"({sql_str(it['id'])}, {sql_str(org_id)}, {sql_str(it['token'])}, "
+            f"({sql_str(it['id'])}, {sql_str(org_id)}, {sql_str(token_hash(it['token']))}, "
             f"{sql_str(it['id'])}, {sql_str(ring)}, {spec['pumps']}, {langs_sql}, "
             f"{sql_str(spec['default_lang'])}, {sql_str(spec['hardware_profile'])});"
         )
@@ -344,8 +351,8 @@ def main(argv=None) -> int:
     for f in res["files"]:
         print(f"  {f}")
     print(f"  configs/<ID>.json: {len(res['configs'])} файлов")
-    print("ВНИМАНИЕ: batch.sql, labels.csv и configs/*.json содержат коды и токены "
-          "(права 600). Храните оффлайн, в git и в чаты не отправляйте.")
+    print("ВНИМАНИЕ: labels.csv содержит коды, configs/*.json — токены; batch.sql — только "
+          "хеши (права 600). Храните оффлайн, в git и в чаты не отправляйте.")
     return 0
 
 

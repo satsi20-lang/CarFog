@@ -56,6 +56,15 @@ class ProvisionTest(unittest.TestCase):
             self.assertGreaterEqual(len(t), 43)  # 32 байта в base64url
             self.assertRegex(t, r"^[A-Za-z0-9_-]+$")
 
+    def test_token_hash_matches_db_formula(self):
+        # encode(sha256(convert_to(token,'UTF8')),'hex'): sha256 от UTF-8, hex нижним регистром
+        import hashlib
+        t = "YOUR_TOKEN_HERE"
+        h = pd.token_hash(t)
+        self.assertEqual(h, hashlib.sha256(t.encode("utf-8")).hexdigest())
+        self.assertRegex(h, r"^[0-9a-f]{64}$")
+        self.assertNotEqual(h, pd.token_hash(t + "x"))
+
     def test_batch_files_and_no_plaintext_codes_in_sql(self):
         with tempfile.TemporaryDirectory() as tmp:
             res = run(tmp, "--prefix", "CARFOG-", "--start", "100", "--count", "20")
@@ -101,7 +110,14 @@ class ProvisionTest(unittest.TestCase):
                 self.assertTrue(c["config_id"].startswith("2026-10-07-"))
                 self.assertEqual(c["cloud_url"], URL)
                 self.assertEqual(c["anon_key"], KEY)
-                self.assertIn(c["token"], sql)             # токен в SQL = токен в файле
+                # в SQL только хеш токена из файла; открытого токена нет
+                self.assertNotIn(c["token"], sql)
+                self.assertIn(pd.token_hash(c["token"]), sql)
+            devs = [ln for ln in sql.splitlines() if ln.startswith("insert into public.devices")]
+            self.assertEqual(len(devs), 20)
+            for ln in devs:
+                self.assertNotIn(" token,", ln)            # столбец token не пишется
+                self.assertRegex(ln, r"^insert into public\.devices \(id, org_id, token_hash, .* values \('[^']+', '[^']+', '[0-9a-f]{64}', ")
             by_id = {r["device_id"]: r["claim_code"] for r in rows}
             for m in re.finditer(r"insert into public\.device_claims .* values \('([^']+)', '([0-9a-f]{32})', '([0-9a-f]{64})'\);", sql):
                 dev, salt, h = m.groups()
@@ -165,7 +181,7 @@ class ProvisionTest(unittest.TestCase):
             devs = [ln for ln in sql.splitlines() if ln.startswith("insert into public.devices")]
             self.assertEqual(len(devs), 3)
             for ln in devs:
-                self.assertIn("(id, org_id, token, name, ring, spec_pumps, spec_langs, "
+                self.assertIn("(id, org_id, token_hash, name, ring, spec_pumps, spec_langs, "
                               "spec_default_lang, hardware_profile)", ln)
                 self.assertIn(", 'test', ", ln)  # кольцо по умолчанию test
         with tempfile.TemporaryDirectory() as tmp:
@@ -345,7 +361,7 @@ class SpecTest(unittest.TestCase):
         self.assertNotIn("spec", j)
         self.assertEqual(j["format"], 1)
 
-    def test_sql_has_no_secrets_besides_token_and_matches_db_catalog(self):
+    def test_sql_matches_db_catalog(self):
         # каталог кодов генератора совпадает с каталогом в миграции R5
         here = os.path.dirname(os.path.abspath(__file__))
         with open(os.path.join(here, "..", "supabase", "migrations", "20261008000000_r5_spec.sql"),
@@ -496,6 +512,47 @@ class ScriptsTest(unittest.TestCase):
         r = self.run_script("provision_finish.sh", "CARFOG-7", FAKE_RM_FAIL="1")
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("не удалён", r.stderr)
+
+
+class NewDeviceTokenTest(unittest.TestCase):
+    """tool/new_device_token.sh: токен на экран, в SQL только хеш, файлов нет."""
+
+    SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "new_device_token.sh")
+
+    def run_script(self, *args):
+        import subprocess
+        with tempfile.TemporaryDirectory() as cwd:
+            r = subprocess.run(["bash", self.SCRIPT, *args], cwd=cwd,
+                               capture_output=True, text=True, timeout=30)
+            self.assertEqual(os.listdir(cwd), [])          # ничего не пишет в файлы
+        return r
+
+    def test_prints_token_and_hash_sql(self):
+        import hashlib
+        r = self.run_script("CARFOG-7")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        toks = re.findall(r"^([A-Za-z0-9_-]{43})$", r.stdout, re.M)
+        self.assertEqual(len(toks), 1)
+        tok = toks[0]
+        m = re.search(r"^update public\.devices set token_hash = '([0-9a-f]{64})' where id = 'CARFOG-7';$",
+                      r.stdout, re.M)
+        self.assertIsNotNone(m)
+        self.assertEqual(m.group(1), hashlib.sha256(tok.encode("utf-8")).hexdigest())
+        self.assertEqual(m.group(1), pd.token_hash(tok))
+        sql = [ln for ln in r.stdout.splitlines() if ln.startswith("update ")]
+        self.assertNotIn(tok, "\n".join(sql))               # в SQL токена нет
+        self.assertNotIn("set token =", r.stdout)
+
+    def test_tokens_differ(self):
+        a = self.run_script("A-1").stdout
+        b = self.run_script("A-1").stdout
+        self.assertNotEqual(a, b)
+
+    def test_rejects_bad_id(self):
+        for bad in ("", "X'; drop table devices; --", "a b"):
+            r = self.run_script(bad)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertNotIn("update public.devices", r.stdout)
 
 
 if __name__ == "__main__":
