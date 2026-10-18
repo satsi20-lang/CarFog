@@ -141,4 +141,66 @@ class MdbCashlessProtocolTest {
             assertTrue(s, MdbCashlessProtocol.parseEvent(s) is Event.Unrecognized)
         }
     }
+
+    private fun priceError(amount: String, scale: Int, decimals: Int = 2): String = try {
+        MdbCashlessProtocol.priceUnits(amount, scale, decimals)
+        throw AssertionError("ожидалась ошибка для $amount")
+    } catch (e: IllegalArgumentException) {
+        e.message!!
+    }
+
+    @Test
+    fun notDivisibleMessageNamesAmountAndStep() {
+        val msg = priceError("0.12", 5)
+        assertTrue(msg, msg.contains("0.12 €"))
+        assertTrue(msg, msg.contains("шаг терминала 0.05 €"))
+        assertTrue(msg, msg.contains("масштаб 5, знаков 2"))
+    }
+
+    @Test
+    fun outOfRangeMessageNamesUnitsAndMaximum() {
+        val msg = priceError("700", 1)
+        assertTrue(msg, msg.contains("70000 ед."))
+        assertTrue(msg, msg.contains("0..65535"))
+        assertTrue(msg, msg.contains("максимум 655.35 €"))
+    }
+
+    @Test
+    fun scaleWithInfiniteFractionGivesReadableErrorNotArithmeticException() {
+        // Прежний BigDecimal.divide бросал здесь ArithmeticException.
+        assertEquals(10, MdbCashlessProtocol.priceUnits("0.30", 3, 2))
+        val msg = priceError("0.10", 3)
+        assertTrue(msg, msg.contains("шаг терминала 0.03 €"))
+    }
+
+    @Test
+    fun amountInputIsChecked() {
+        for (s in listOf("", " ", "1e3", "0.1.0", "12345678", "1,2,3")) {
+            assertTrue(s, priceError(s, 1).contains("числом вида 0.10"))
+        }
+    }
+
+    @Test
+    fun formatAmountIsInverseOfPriceUnits() {
+        assertEquals("0.10", MdbCashlessProtocol.formatAmount(10, 1, 2))
+        assertEquals("0.10", MdbCashlessProtocol.formatAmount(2, 5, 2))
+        assertEquals("655.35", MdbCashlessProtocol.formatAmount(65535, 1, 2))
+        assertEquals("5.00", MdbCashlessProtocol.formatAmount(5, 1, 0))
+        assertEquals("0.010", MdbCashlessProtocol.formatAmount(10, 1, 3))
+    }
+
+    @Test
+    fun vendSuccessOtherItemAndRequestBounds() {
+        assertArrayEquals(hex("13 02 00 02"), MdbCashlessProtocol.vendSuccess(2))
+        assertArrayEquals(hex("13 00 FF FF 01 00"), MdbCashlessProtocol.vendRequest(0xFFFF, 0x100))
+    }
+
+    @Test
+    fun eventsWithChecksum() {
+        assertEquals(Event.BeginSession(0xFFFE, true), MdbCashlessProtocol.parseEvent("03FFFE00"))
+        assertEquals(Event.VendDenied(true), MdbCashlessProtocol.parseEvent("0606"))
+        assertEquals(Event.Cancelled(true), MdbCashlessProtocol.parseEvent("0808"))
+        // неверная контрольная сумма — не догадываемся
+        assertTrue(MdbCashlessProtocol.parseEvent("03FFFE01") is Event.Unrecognized)
+    }
 }
