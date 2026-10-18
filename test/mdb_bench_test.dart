@@ -42,6 +42,14 @@ void main() {
             };
           case 'getLog':
             return <Map>[];
+          case 'vendPreview':
+            return {
+              'units': 10,
+              'scale': 1,
+              'decimals': 2,
+              'amount': '0.10',
+              'hex': '13 00 00 0A 00 01',
+            };
           case 'command':
             return '13 00 00 0A 00 01';
         }
@@ -76,13 +84,32 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets('после setup vend уходит с суммой', (tester) async {
+    testWidgets('«Отмена» в окне подтверждения — vend не уходит', (tester) async {
       hasSetup = true;
       await pumpTab(tester);
       await tapVend(tester);
+      expect(find.text('Списать 0.10 € с карты? Это реальная оплата.'), findsOneWidget);
+      await tester.tap(find.widgetWithText(TextButton, 'Отмена'));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(calls.where((c) => c.method == 'command'), isEmpty);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('«Списать» отправляет ровно показанные единицы', (tester) async {
+      hasSetup = true;
+      await pumpTab(tester);
+      await tapVend(tester);
+      expect(calls.where((c) => c.method == 'command'), isEmpty,
+          reason: 'до нажатия «Списать» ничего не уходит');
+      await tester.tap(find.widgetWithText(TextButton, 'Списать'));
+      await tester.pump(const Duration(milliseconds: 300));
+      final preview = calls.where((c) => c.method == 'vendPreview').single;
+      expect(preview.arguments['amount'], '0.10');
       final vend = calls.where((c) => c.method == 'command').single;
       expect(vend.arguments['name'], 'vend');
-      expect(vend.arguments['amount'], '0.10');
+      expect(vend.arguments['units'], 10);
+      expect(vend.arguments['scale'], 1);
+      expect(vend.arguments['decimals'], 2);
       await tester.pumpWidget(const SizedBox());
     });
 

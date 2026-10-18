@@ -113,6 +113,7 @@ class MdbUsbBench(private val context: Context) : MethodChannel.MethodCallHandle
                 }
                 "status" -> result.success(status())
                 "command" -> result.success(command(call))
+                "vendPreview" -> result.success(vendPreview(call.argument<String>("amount") ?: ""))
                 "raw" -> result.success(sendRaw(call.argument<String>("hex") ?: ""))
                 "getLog" -> {
                     val since = (call.argument<Number>("since") ?: 0).toLong()
@@ -282,21 +283,49 @@ class MdbUsbBench(private val context: Context) : MethodChannel.MethodCallHandle
             "ok" -> MdbCashlessProtocol.vendSuccess(item)
             "id" -> MdbCashlessProtocol.requestId(ID_MANUFACTURER, ID_SERIAL, ID_MODEL, ID_VERSION)
             "vend" -> {
-                // Без ответа на setup масштаб и знаки неизвестны — сумма ушла
-                // бы неверной. Не догадываемся, а отказываем.
-                val s = setupReply ?: throw IllegalStateException(
-                    "нет ответа на setup — сначала нажмите setup и дождитесь ответа"
-                )
-                val amount = call.argument<String>("amount") ?: ""
-                MdbCashlessProtocol.vendRequest(
-                    MdbCashlessProtocol.priceUnits(amount, s.scale, s.decimals), item
-                )
+                // Сумма уже подтверждена в окне по ответу vendPreview: сюда
+                // приходят те самые единицы и масштаб/знаки, по которым они
+                // посчитаны. Если ответ на setup с тех пор сменился или
+                // пропал — не отправляем.
+                val s = requireSetup()
+                val units = call.argument<Int>("units") ?: throw IllegalArgumentException("нет суммы в единицах")
+                if (call.argument<Int>("scale") != s.scale || call.argument<Int>("decimals") != s.decimals) {
+                    throw IllegalStateException(
+                        "ответ на setup изменился после подтверждения — запросите оплату заново"
+                    )
+                }
+                MdbCashlessProtocol.vendRequest(units, item)
             }
             else -> throw IllegalArgumentException("неизвестная команда $name")
         }
-        val label = if (name == "vend") "vend ${call.argument<String>("amount")} €" else name
+        val label = if (name == "vend") {
+            "vend " + MdbCashlessProtocol.formatAmount(
+                call.argument<Int>("units") ?: 0, call.argument<Int>("scale") ?: 1,
+                call.argument<Int>("decimals") ?: 2,
+            ) + " €"
+        } else name
         send(data, label)
         return MdbCashlessProtocol.toHex(data)
+    }
+
+    // Без ответа на setup масштаб и знаки неизвестны — сумма ушла бы
+    // неверной. Не догадываемся, а отказываем.
+    private fun requireSetup(): MdbCashlessProtocol.SetupReply = setupReply
+        ?: throw IllegalStateException("нет ответа на setup — сначала нажмите setup и дождитесь ответа")
+
+    // Расчёт запроса оплаты БЕЗ отправки — для окна подтверждения. В окне
+    // показывается сумма, обратно пересчитанная из единиц, которые уйдут в
+    // адаптер, а не введённый текст.
+    private fun vendPreview(amount: String): Map<String, Any> {
+        val s = requireSetup()
+        val units = MdbCashlessProtocol.priceUnits(amount, s.scale, s.decimals)
+        return mapOf(
+            "units" to units,
+            "scale" to s.scale,
+            "decimals" to s.decimals,
+            "amount" to MdbCashlessProtocol.formatAmount(units, s.scale, s.decimals),
+            "hex" to MdbCashlessProtocol.toHex(MdbCashlessProtocol.vendRequest(units, 1)),
+        )
     }
 
     private fun sendRaw(hex: String): String {

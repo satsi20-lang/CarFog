@@ -150,9 +150,42 @@ class _MdbBenchTabState extends State<MdbBenchTab> {
               '(масштаб и знаки нужны для суммы).', error: true);
           return;
         }
-        final amount = _amount.text.trim();
-        final hex = await MdbBenchService.command('vend', amount: amount);
-        _say('Запрос оплаты $amount €: $hex');
+        // Сумму считает стенд — в окне то, что уйдёт в адаптер.
+        final p = await MdbBenchService.vendPreview(_amount.text.trim());
+        if (!mounted) return;
+        final ok = await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: _bg,
+            title: Text(
+              'Списать ${p.amount} € с карты? Это реальная оплата.',
+              style: const TextStyle(color: Colors.white, fontSize: 20),
+            ),
+            content: Text(
+              '${p.units} ед. терминала (масштаб ${p.scale}, знаков ${p.decimals})\n'
+              'Байты: ${p.hex}',
+              style: const TextStyle(color: _dim, fontSize: 16),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Отмена', style: TextStyle(fontSize: 18)),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Списать',
+                    style: TextStyle(color: _red, fontSize: 18, fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
+        );
+        if (ok != true) {
+          _say('Запрос оплаты отменён, ничего не отправлено');
+          return;
+        }
+        final hex = await MdbBenchService.sendVend(p);
+        _say('Запрос оплаты ${p.amount} €: $hex');
       });
 
   Future<void> _sendRaw() async {

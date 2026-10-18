@@ -76,6 +76,13 @@ object MdbCashlessProtocol {
         return units.toInt()
     }
 
+    // Единицы терминала → сумма в евро (units × масштаб × 10^-знаков), не
+    // меньше двух знаков после точки: 10 ед. при масштабе 1 и 2 знаках = "0.10".
+    fun formatAmount(units: Int, scale: Int, decimals: Int): String {
+        val v = BigDecimal(units.toLong() * scale).movePointLeft(decimals)
+        return v.setScale(maxOf(decimals, 2)).toPlainString()
+    }
+
     // Проверка hex-ввода: пробелы допускаются, длина чётная, только 0-9 A-F.
     fun parseHex(text: String): ByteArray {
         val s = text.filterNot { it.isWhitespace() }.uppercase()

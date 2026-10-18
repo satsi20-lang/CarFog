@@ -60,6 +60,23 @@ class MdbBenchStatus {
   bool get hasSetup => setupScale != null && setupDecimals != null;
 }
 
+// Запрос оплаты, посчитанный стендом: amount — сумма, обратно пересчитанная
+// из единиц терминала (то, что реально уйдёт в адаптер).
+class MdbVendPreview {
+  final int units;
+  final int scale;
+  final int decimals;
+  final String amount;
+  final String hex;
+
+  MdbVendPreview.fromMap(Map<dynamic, dynamic> m)
+      : units = m['units'] as int,
+        scale = m['scale'] as int,
+        decimals = m['decimals'] as int,
+        amount = m['amount'] as String,
+        hex = m['hex'] as String;
+}
+
 class MdbBenchService {
   MdbBenchService._();
 
@@ -86,12 +103,31 @@ class MdbBenchService {
     return r == null ? const MdbBenchStatus() : MdbBenchStatus.fromMap(r);
   }
 
-  // Возвращает отправленные байты в hex.
-  static Future<String> command(String name, {String? amount, int item = 1}) async =>
+  // Возвращает отправленные байты в hex. vend — только через vendPreview и
+  // sendVend (сумма подтверждается в окне).
+  static Future<String> command(String name, {int item = 1}) async =>
       await _channel.invokeMethod<String>('command', {
         'name': name,
-        'amount': ?amount,
         'item': item,
+      }) ??
+      '';
+
+  // Расчёт запроса оплаты без отправки. Ошибка суммы (не кратна шагу, вне
+  // диапазона, нет ответа на setup) — PlatformException с текстом.
+  static Future<MdbVendPreview> vendPreview(String amount) async {
+    final r = await _channel.invokeMethod<Map>('vendPreview', {'amount': amount});
+    if (r == null) throw PlatformException(code: 'MDB', message: 'нет ответа стенда');
+    return MdbVendPreview.fromMap(r);
+  }
+
+  // Отправка ровно того, что показано в окне подтверждения.
+  static Future<String> sendVend(MdbVendPreview p) async =>
+      await _channel.invokeMethod<String>('command', {
+        'name': 'vend',
+        'units': p.units,
+        'scale': p.scale,
+        'decimals': p.decimals,
+        'item': 1,
       }) ??
       '';
 
