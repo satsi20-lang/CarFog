@@ -44,9 +44,16 @@ class MdbUsbBench(private val context: Context) : MethodChannel.MethodCallHandle
     private var readerThread: Thread? = null
     // Ожидающее открытие после диалога разрешения: имя устройства и драйвер.
     private var pendingOpen: Pair<String, String>? = null
-    // Последний разобранный ответ на setup (масштаб/знаки для vend).
+    // Последний разобранный ответ на setup (масштаб/знаки для vend). Живёт
+    // только пока открыт порт: closePort сбрасывает, и после повторного
+    // открытия vend не работает до нового ответа на setup.
     @Volatile
     private var setupReply: MdbCashlessProtocol.SetupReply? = null
+    // Номер сеанса порта. Поток чтения при остановке отдаёт недочитанное
+    // сообщение — ответ на setup из закрытого сеанса не должен вернуть
+    // setupReply после сброса.
+    @Volatile
+    private var session = 0L
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context, intent: Intent) {
@@ -187,9 +194,10 @@ class MdbUsbBench(private val context: Context) : MethodChannel.MethodCallHandle
                 try { p.close() } catch (ignored: Exception) {}
                 throw e
             }
+            val mySession = synchronized(lock) { ++session }
             val r = MdbFrameReader(
                 port = { buf, t -> p.read(buf, t) },
-                onFrame = ::onFrame,
+                onFrame = { d, f, l -> onFrame(d, f, l, mySession) },
                 onError = { e -> closePort("ошибка чтения: ${e.message ?: e}") },
             )
             synchronized(lock) {
@@ -226,6 +234,8 @@ class MdbUsbBench(private val context: Context) : MethodChannel.MethodCallHandle
             portDevice = null
             reader = null
             readerThread = null
+            setupReply = null
+            session++
             snapshot
         }
         if (p == null) return
@@ -239,12 +249,15 @@ class MdbUsbBench(private val context: Context) : MethodChannel.MethodCallHandle
         log.info(now(), "порт закрыт: $reason")
     }
 
-    private fun onFrame(data: ByteArray, firstMs: Long, lastMs: Long) {
+    private fun onFrame(data: ByteArray, firstMs: Long, lastMs: Long, frameSession: Long) {
         val text = String(data, Charsets.US_ASCII)
         val setup = MdbCashlessProtocol.parseSetupReply(text)
         val note = if (setup != null) {
-            setupReply = setup
-            "ответ на setup: уровень ${setup.level}, масштаб ${setup.scale}, знаков ${setup.decimals}" +
+            val accepted = synchronized(lock) {
+                (frameSession == session).also { if (it) setupReply = setup }
+            }
+            (if (accepted) "" else "[порт уже закрыт, не принят] ") +
+                "ответ на setup: уровень ${setup.level}, масштаб ${setup.scale}, знаков ${setup.decimals}" +
                 when (setup.checksumOk) {
                     true -> ", контрольная сумма верна"
                     false -> ", КОНТРОЛЬНАЯ СУММА НЕ СОШЛАСЬ"
