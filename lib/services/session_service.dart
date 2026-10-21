@@ -30,6 +30,11 @@ class SessionService {
   // том числе duplicate_payment). null — сессии нет.
   static String? get currentSessionId => _current?.id;
 
+  // Итог цикла для оплаты картой (1.11.0): успех → 13 02/13 04, сбой → возврат
+  // в окне или ручной возврат. Вызывается сразу, до чтения счётчика по шине —
+  // окно возврата считается секундами.
+  static void Function(String sessionId, bool completed, String? reason)? onFinished;
+
   // Вызывается с payment.dart в момент, когда внесённой суммы достаточно,
   // до перехода к подготовке. Отдельно снимает базовое показание общего
   // счётчика энергии — из него в конце вычитается финальное для расхода
@@ -126,6 +131,11 @@ class SessionService {
     if (session == null || session.ended) return;
     session.ended = true;
     _current = null;
+    try {
+      onFinished?.call(session.id, completed, reason);
+    } catch (e) {
+      debugPrint('SessionService.onFinished error: $e');
+    }
 
     final durationS = DateTime.now().difference(session.startedAt).inSeconds;
     final data = <String, dynamic>{

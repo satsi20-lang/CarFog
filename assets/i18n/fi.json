@@ -62,5 +62,17 @@
   "error.returning": "Palataan alkuun",
   "error.countdown": "{seconds} s",
   "out_of_service.title": "Tilapäisesti poissa käytöstä",
-  "out_of_service.detail": "Maksuja ei vastaanoteta. Pahoittelemme häiriötä."
+  "out_of_service.detail": "Maksuja ei vastaanoteta. Pahoittelemme häiriötä.",
+  "payment.card_waiting": "Näytä korttia",
+  "payment.card_processing": "Maksua käsitellään…",
+  "payment.card_declined": "Maksu hylättiin, kokeile toista korttia",
+  "payment.card_insufficient": "Kate ei riitä",
+  "payment.card_unavailable": "Korttimaksu ei ole tilapäisesti käytettävissä",
+  "payment.card_busy_service": "Pääte on huoltotilassa",
+  "payment.card_error": "Tapahtui virhe, ota yhteyttä ylläpitäjään",
+  "payment.machine_unavailable": "Laite ei ole tilapäisesti käytettävissä",
+  "select_flavor.card_hint": "Valitse ensin tuoksu",
+  "standby.card_hint": "Valitse ensin tuoksu",
+  "error.card_refunded": "Maksu peruttiin, sinua ei veloitettu",
+  "error.card_operator": "Tapahtui virhe, ota yhteyttä ylläpitäjään"
 }

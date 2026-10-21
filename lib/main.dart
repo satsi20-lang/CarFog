@@ -29,6 +29,7 @@ import 'services/out_of_service_service.dart';
 import 'services/output_watchdog_service.dart';
 import 'services/startup_service.dart';
 import 'services/bus_watchdog_service.dart';
+import 'services/card_payment_service.dart';
 import 'services/card_terminal_service.dart';
 import 'services/sync_service.dart';
 import 'services/update_service.dart';
@@ -201,6 +202,7 @@ void main() async {
   // Терминал Nayax по MDB (1.11.0): связь, опрос, восстановление — в Kotlin;
   // здесь включение по типу терминала и события в журнал/облако.
   CardTerminalService.start(notifier);
+  CardPaymentService.install();
 
   // Возврат на передний план: заводской файл мог появиться/смениться уже при
   // работающем приложении (запись adb во время наладки).

@@ -62,5 +62,17 @@
   "error.returning": "Powrót do początku",
   "error.countdown": "{seconds} s",
   "out_of_service.title": "Chwilowo nieczynne",
-  "out_of_service.detail": "Płatności nie są przyjmowane. Przepraszamy za utrudnienia."
+  "out_of_service.detail": "Płatności nie są przyjmowane. Przepraszamy za utrudnienia.",
+  "payment.card_waiting": "Zbliż kartę",
+  "payment.card_processing": "Przetwarzanie płatności…",
+  "payment.card_declined": "Płatność odrzucona, spróbuj innej karty",
+  "payment.card_insufficient": "Niewystarczające środki",
+  "payment.card_unavailable": "Płatność kartą chwilowo niedostępna",
+  "payment.card_busy_service": "Terminal jest w trybie serwisowym",
+  "payment.card_error": "Wystąpił błąd, skontaktuj się z operatorem",
+  "payment.machine_unavailable": "Urządzenie jest chwilowo niedostępne",
+  "select_flavor.card_hint": "Najpierw wybierz zapach",
+  "standby.card_hint": "Najpierw wybierz zapach",
+  "error.card_refunded": "Płatność anulowana, środki nie zostały pobrane",
+  "error.card_operator": "Wystąpił błąd, skontaktuj się z operatorem"
 }

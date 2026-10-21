@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../models/app_state.dart';
 import 'app_log_service.dart';
+import 'card_payment_service.dart';
 import 'cloud_service.dart';
 
 // Терминал Nayax по MDB в основном потоке оплаты (1.11.0, ТЗ раздел 7) —
@@ -127,6 +128,11 @@ class CardTerminalService {
     final t = now ?? DateTime.now();
     if (e['kind'] == 'log') {
       AppLog.log('CardTerminal', '${e['text']}');
+      return;
+    }
+    // Оплата картой (автомат MdbCardPayment) — своя обработка.
+    if (e['kind'] == 'payment') {
+      unawaited(CardPaymentService.handlePaymentEvent(e, now: now));
       return;
     }
     final type = e['type'] as String? ?? '';

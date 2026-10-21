@@ -62,5 +62,17 @@
   "error.returning": "Zurück zum Start",
   "error.countdown": "{seconds} s",
   "out_of_service.title": "Vorübergehend außer Betrieb",
-  "out_of_service.detail": "Zahlungen werden nicht angenommen. Wir bitten um Entschuldigung."
+  "out_of_service.detail": "Zahlungen werden nicht angenommen. Wir bitten um Entschuldigung.",
+  "payment.card_waiting": "Karte bitte hinhalten",
+  "payment.card_processing": "Zahlung wird verarbeitet…",
+  "payment.card_declined": "Zahlung abgelehnt, bitte andere Karte versuchen",
+  "payment.card_insufficient": "Unzureichendes Guthaben",
+  "payment.card_unavailable": "Kartenzahlung vorübergehend nicht verfügbar",
+  "payment.card_busy_service": "Terminal im Servicemodus",
+  "payment.card_error": "Ein Fehler ist aufgetreten, bitte an den Betreiber wenden",
+  "payment.machine_unavailable": "Das Gerät ist vorübergehend nicht verfügbar",
+  "select_flavor.card_hint": "Bitte zuerst einen Duft wählen",
+  "standby.card_hint": "Bitte zuerst einen Duft wählen",
+  "error.card_refunded": "Zahlung storniert, es wurde nichts abgebucht",
+  "error.card_operator": "Ein Fehler ist aufgetreten, bitte an den Betreiber wenden"
 }

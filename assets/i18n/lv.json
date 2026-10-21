@@ -62,5 +62,17 @@
   "error.returning": "Atgriešanās sākumā",
   "error.countdown": "{seconds} s",
   "out_of_service.title": "Īslaicīgi nedarbojas",
-  "out_of_service.detail": "Maksājumi netiek pieņemti. Atvainojamies par neērtībām."
+  "out_of_service.detail": "Maksājumi netiek pieņemti. Atvainojamies par neērtībām.",
+  "payment.card_waiting": "Pietuviniet karti",
+  "payment.card_processing": "Maksājums tiek apstrādāts…",
+  "payment.card_declined": "Maksājums noraidīts, mēģiniet citu karti",
+  "payment.card_insufficient": "Nepietiek līdzekļu",
+  "payment.card_unavailable": "Maksājums ar karti īslaicīgi nav pieejams",
+  "payment.card_busy_service": "Terminālis ir apkopes režīmā",
+  "payment.card_error": "Radās kļūda, sazinieties ar operatoru",
+  "payment.machine_unavailable": "Iekārta īslaicīgi nav pieejama",
+  "select_flavor.card_hint": "Vispirms izvēlieties aromātu",
+  "standby.card_hint": "Vispirms izvēlieties aromātu",
+  "error.card_refunded": "Maksājums atcelts, nauda netika noņemta",
+  "error.card_operator": "Radās kļūda, sazinieties ar operatoru"
 }

@@ -62,5 +62,17 @@
   "error.returning": "Возврат к началу",
   "error.countdown": "{seconds}с",
   "out_of_service.title": "Аппарат временно не работает",
-  "out_of_service.detail": "Оплата не принимается. Приносим извинения за неудобство."
+  "out_of_service.detail": "Оплата не принимается. Приносим извинения за неудобство.",
+  "payment.card_waiting": "Приложите карту",
+  "payment.card_processing": "Обработка платежа…",
+  "payment.card_declined": "Платёж отклонён, попробуйте другую карту",
+  "payment.card_insufficient": "Недостаточно средств",
+  "payment.card_unavailable": "Оплата картой временно недоступна",
+  "payment.card_busy_service": "Терминал занят сервисным режимом",
+  "payment.card_error": "Произошла ошибка, обратитесь к оператору",
+  "payment.machine_unavailable": "Аппарат временно недоступен",
+  "select_flavor.card_hint": "Сначала выберите запах",
+  "standby.card_hint": "Сначала выберите запах",
+  "error.card_refunded": "Платёж отменён, деньги не списаны",
+  "error.card_operator": "Произошла ошибка, обратитесь к оператору"
 }

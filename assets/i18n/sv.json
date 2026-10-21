@@ -62,5 +62,17 @@
   "error.returning": "Återgår till start",
   "error.countdown": "{seconds} s",
   "out_of_service.title": "Tillfälligt ur funktion",
-  "out_of_service.detail": "Betalningar tas inte emot. Vi ber om ursäkt för besväret."
+  "out_of_service.detail": "Betalningar tas inte emot. Vi ber om ursäkt för besväret.",
+  "payment.card_waiting": "Håll fram ditt kort",
+  "payment.card_processing": "Betalningen behandlas…",
+  "payment.card_declined": "Betalningen nekades, försök med ett annat kort",
+  "payment.card_insufficient": "Otillräckligt saldo",
+  "payment.card_unavailable": "Kortbetalning är tillfälligt otillgänglig",
+  "payment.card_busy_service": "Terminalen är i serviceläge",
+  "payment.card_error": "Ett fel uppstod, kontakta operatören",
+  "payment.machine_unavailable": "Maskinen är tillfälligt otillgänglig",
+  "select_flavor.card_hint": "Välj en doft först",
+  "standby.card_hint": "Välj en doft först",
+  "error.card_refunded": "Betalningen avbröts, du har inte debiterats",
+  "error.card_operator": "Ett fel uppstod, kontakta operatören"
 }

@@ -61,8 +61,12 @@ class MdbLinkSupervisor(
     var unexpectedFrames = 0
         private set
 
-    // Поток оплаты (этап 3) держит сессию сам — тогда 10 03/10 04 не наши.
+    // Поток оплаты держит сессию сам — тогда 10 03/10 04 не наши.
     var paymentOwnsSession = false
+
+    // Связь упала (порт потерян, неудача, выключение) — вызывается ДО очистки
+    // очереди, чтобы оплата успела отметить, что сессию уже не закрыть.
+    var onLinkDown: (String) -> Unit = {}
 
     private var portOpen = false
     private var nextAttemptAt = 0L
@@ -106,6 +110,7 @@ class MdbLinkSupervisor(
     fun onPortLost(reason: String) {
         if (!portOpen) return
         portOpen = false
+        onLinkDown(reason)
         // Снятые с очереди команды текущей настройки не считаются отдельными неудачами.
         initToken++
         queue.clear()
@@ -249,6 +254,7 @@ class MdbLinkSupervisor(
         note("связь с терминалом: $why (неудач подряд: $consecutiveFailures)")
         if (portOpen) {
             portOpen = false
+            onLinkDown(why)
             queue.clear()
             io.closePort(why)
         }
@@ -272,6 +278,7 @@ class MdbLinkSupervisor(
         if (closer.active) closer.abandon()
         if (portOpen) {
             portOpen = false
+            onLinkDown(why)
             queue.clear()
             io.closePort(why)
         }

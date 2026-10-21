@@ -62,5 +62,17 @@
   "error.returning": "Retour à l'accueil",
   "error.countdown": "{seconds} s",
   "out_of_service.title": "Temporairement hors service",
-  "out_of_service.detail": "Les paiements ne sont pas acceptés. Veuillez nous excuser pour la gêne occasionnée."
+  "out_of_service.detail": "Les paiements ne sont pas acceptés. Veuillez nous excuser pour la gêne occasionnée.",
+  "payment.card_waiting": "Présentez votre carte",
+  "payment.card_processing": "Paiement en cours…",
+  "payment.card_declined": "Paiement refusé, essayez une autre carte",
+  "payment.card_insufficient": "Solde insuffisant",
+  "payment.card_unavailable": "Paiement par carte temporairement indisponible",
+  "payment.card_busy_service": "Le terminal est en mode maintenance",
+  "payment.card_error": "Une erreur s'est produite, contactez l'opérateur",
+  "payment.machine_unavailable": "L'appareil est temporairement indisponible",
+  "select_flavor.card_hint": "Choisissez d’abord un parfum",
+  "standby.card_hint": "Choisissez d’abord un parfum",
+  "error.card_refunded": "Paiement annulé, vous n'avez pas été débité",
+  "error.card_operator": "Une erreur s'est produite, contactez l'opérateur"
 }

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
+import '../services/card_payment_service.dart';
 import '../services/i18n_service.dart';
 import '../widgets/fog_background.dart';
 import '../widgets/lang_switcher.dart';
@@ -210,6 +211,34 @@ class _ErrorScreenState extends State<ErrorScreen>
                           height: 1.5,
                         ),
                         textAlign: TextAlign.center,
+                      ),
+
+                      // Оплата картой (1.11.0): итог по деньгам — приходит от
+                      // терминала через секунды после сбоя цикла.
+                      ValueListenableBuilder<CardCustomerNotice?>(
+                        valueListenable: CardPaymentService.customerNotice,
+                        builder: (context, notice, _) => notice == null
+                            ? const SizedBox.shrink()
+                            : Padding(
+                                padding: const EdgeInsets.only(top: 20),
+                                child: Text(
+                                  I18n.tr(
+                                    lang,
+                                    notice == CardCustomerNotice.refunded
+                                        ? 'error.card_refunded'
+                                        : 'error.card_operator',
+                                  ),
+                                  key: const ValueKey('card_notice'),
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: notice == CardCustomerNotice.refunded
+                                        ? const Color(0xFF2EC4B6)
+                                        : const Color(0xFFFFB020),
+                                    fontSize: PUi.bodySp + 4,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
                       ),
 
                       const SizedBox(height: 64),

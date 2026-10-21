@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../services/i18n_service.dart';
+import '../widgets/card_hint_banner.dart';
 import '../widgets/fog_background.dart';
 import '../widgets/lang_switcher.dart';
 import '../widgets/portrait_ui.dart';
@@ -66,6 +67,8 @@ class SelectFlavorScreen extends StatelessWidget {
                     fontSize: PUi.minBodySp,
                   ),
                 ),
+                // Карту приложили до выбора запаха (1.11.0).
+                CardHintBanner(text: t('card_hint')),
                 const SizedBox(height: 28),
                 // Сетка: 2 колонки; число карточек = число насосов из spec (4…8):
                 // 4 → 2 ряда, 5–6 → 3, 7–8 → 4. Нечётная последняя карточка

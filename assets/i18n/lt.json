@@ -62,5 +62,17 @@
   "error.returning": "Grįžtama į pradžią",
   "error.countdown": "{seconds} s",
   "out_of_service.title": "Laikinai neveikia",
-  "out_of_service.detail": "Mokėjimai nepriimami. Atsiprašome už nepatogumus."
+  "out_of_service.detail": "Mokėjimai nepriimami. Atsiprašome už nepatogumus.",
+  "payment.card_waiting": "Priglauskite kortelę",
+  "payment.card_processing": "Mokėjimas apdorojamas…",
+  "payment.card_declined": "Mokėjimas atmestas, bandykite kitą kortelę",
+  "payment.card_insufficient": "Nepakanka lėšų",
+  "payment.card_unavailable": "Mokėjimas kortele laikinai negalimas",
+  "payment.card_busy_service": "Terminalas veikia aptarnavimo režimu",
+  "payment.card_error": "Įvyko klaida, kreipkitės į operatorių",
+  "payment.machine_unavailable": "Įrenginys laikinai nepasiekiamas",
+  "select_flavor.card_hint": "Pirmiausia pasirinkite kvapą",
+  "standby.card_hint": "Pirmiausia pasirinkite kvapą",
+  "error.card_refunded": "Mokėjimas atšauktas, pinigai nenuskaityti",
+  "error.card_operator": "Įvyko klaida, kreipkitės į operatorių"
 }

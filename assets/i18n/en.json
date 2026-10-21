@@ -62,5 +62,17 @@
   "error.returning": "Returning to start",
   "error.countdown": "{seconds}s",
   "out_of_service.title": "Temporarily out of service",
-  "out_of_service.detail": "Payments are not being accepted. We apologise for the inconvenience."
+  "out_of_service.detail": "Payments are not being accepted. We apologise for the inconvenience.",
+  "payment.card_waiting": "Tap your card",
+  "payment.card_processing": "Processing payment…",
+  "payment.card_declined": "Payment declined, please try another card",
+  "payment.card_insufficient": "Insufficient funds",
+  "payment.card_unavailable": "Card payment is temporarily unavailable",
+  "payment.card_busy_service": "The terminal is in service mode",
+  "payment.card_error": "An error occurred, please contact the operator",
+  "payment.machine_unavailable": "The machine is temporarily unavailable",
+  "select_flavor.card_hint": "Please choose a fragrance first",
+  "standby.card_hint": "Please choose a fragrance first",
+  "error.card_refunded": "Payment cancelled, you have not been charged",
+  "error.card_operator": "An error occurred, please contact the operator"
 }

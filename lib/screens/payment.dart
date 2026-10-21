@@ -2,6 +2,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
+import 'package:flutter/services.dart';
+import '../services/app_log_service.dart';
+import '../services/card_payment_service.dart';
+import '../services/card_terminal_service.dart';
 import '../services/cloud_service.dart';
 import '../services/i18n_service.dart';
 import '../services/modbus_service.dart';
@@ -20,8 +24,29 @@ class PaymentScreen extends StatefulWidget {
 class _PaymentScreenState extends State<PaymentScreen> {
   int _priceCents = 200;
   int _balanceCents = 0;
-  static const int _timeoutS = 120;
-  int _secondsLeft = _timeoutS;
+  // Окно оплаты: 120 с монетами; с картой MDB — 60 с ожидания карты (ТЗ 6.5),
+  // каждая монета продлевает его заново.
+  static const int _coinTimeoutS = 120;
+  static const int _cardTimeoutS = 60;
+  int _timeoutS = _coinTimeoutS;
+  int _secondsLeft = _coinTimeoutS;
+
+  // ---- Оплата картой Nayax по MDB (1.11.0, ТЗ раздел 6) ----
+  bool _cardMode = false;
+  // Ждём карту (автомат в Kotlin ждёт 10 03).
+  bool _cardArmed = false;
+  // 10 03 пришло и vend отправлен — до итога: «Отмена» скрыта, таймер стоит,
+  // монеты записываются как duplicate_payment (решения владельца 21.10.2026).
+  bool _cardProcessing = false;
+  // Сумма не совпала (13 03 уже отправлен) — карта на этом экране больше не
+  // предлагается.
+  bool _cardOff = false;
+  // Pre-flight не прошёл: «Аппарат временно недоступен», ни монет, ни карты.
+  bool _machineUnavailable = false;
+  // Ключ сообщения клиенту (payment.card_*).
+  String? _cardMsg;
+  StreamSubscription<CardPaymentEvent>? _cardSub;
+  Timer? _unavailableTimer;
   // Переход к прогреву уже запущен: монета и карта одновременно не должны
   // запустить его дважды (двойная сессия, двойной прогрев).
   bool _proceeding = false;
@@ -69,6 +94,19 @@ class _PaymentScreenState extends State<PaymentScreen> {
     _priceCents = cfg.priceForFlavor(
       context.read<AppNotifier>().selectedFlavor ?? 0,
     );
+    // Карта по MDB: сначала pre-flight, и только потом монеты и карта.
+    _cardMode = cfg.paymentTerminalType == PaymentTerminalType.mdb;
+    if (_cardMode) {
+      _timeoutS = _cardTimeoutS;
+      _secondsLeft = _cardTimeoutS;
+      _cardSub = CardPaymentService.events.listen(_onCardEvent);
+      unawaited(_startCardMode());
+      return;
+    }
+    _startPaymentLoops(cfg);
+  }
+
+  void _startPaymentLoops(AppConfig cfg) {
     ModbusService.startPaymentCoinCounting();
     _coinTimer = Timer.periodic(
       const Duration(milliseconds: 100),
@@ -97,8 +135,128 @@ class _PaymentScreenState extends State<PaymentScreen> {
     }
   }
 
+  // ---- карта MDB ----
+
+  Future<void> _startCardMode() async {
+    final n = context.read<AppNotifier>();
+    final flavorIndex = n.selectedFlavor ?? 0;
+    // Pre-flight (ТЗ раздел 5): аппарат должен суметь выдать услугу.
+    final reason = await CardPaymentService.preflight(n, flavorIndex);
+    if (!mounted) return;
+    if (reason != null) {
+      AppLog.log(
+        'CardPayment',
+        'pre-flight не прошёл: $reason — оплата не начинается',
+      );
+      unawaited(
+        CloudService.report(
+          CloudEventType.hardwareError,
+          data: {'code': 'card_preflight', 'reason': reason},
+        ),
+      );
+      setState(() => _machineUnavailable = true);
+      _unavailableTimer = Timer(const Duration(seconds: 8), () {
+        if (mounted) context.read<AppNotifier>().resetSession();
+      });
+      return;
+    }
+    _startPaymentLoops(n.config);
+    await _armCard();
+  }
+
+  Future<void> _armCard() async {
+    if (!mounted || _proceeding || _cardOff || _cardArmed || _cardProcessing) {
+      return;
+    }
+    final remaining = _priceCents - _balanceCents;
+    if (remaining <= 0) return;
+    final st = CardTerminalService.status.value;
+    if (st.busyService || !st.cardAvailable) {
+      setState(
+        () => _cardMsg = st.busyService
+            ? 'card_busy_service'
+            : 'card_unavailable',
+      );
+      return;
+    }
+    final n = context.read<AppNotifier>();
+    try {
+      await CardPaymentService.arm(
+        notifier: n,
+        cents: remaining,
+        flavorIndex: n.selectedFlavor ?? 0,
+        coinsCents: _balanceCents,
+      );
+      if (!mounted) return;
+      setState(() {
+        _cardArmed = true;
+        _cardMsg = 'card_waiting';
+      });
+    } on PlatformException catch (e) {
+      AppLog.log('CardPayment', 'карта не включена: ${e.message}');
+      if (mounted) setState(() => _cardMsg = 'card_unavailable');
+    }
+  }
+
+  void _onCardEvent(CardPaymentEvent e) {
+    if (!mounted || _proceeding) return;
+    switch (e.type) {
+      case 'vend_sent':
+        setState(() {
+          _cardProcessing = true;
+          _cardMsg = 'card_processing';
+        });
+      case 'approved':
+        _cardArmed = false;
+        _proceedToTreatment(
+          paymentMethod: _balanceCents > 0 ? 'mixed' : 'card',
+          coinsCents: _balanceCents > 0 ? _balanceCents : null,
+          cardRemainder: true,
+        );
+      case 'amount_mismatch':
+      case 'approved_after_cancel':
+        setState(() {
+          _cardArmed = false;
+          _cardProcessing = false;
+          _cardOff = true;
+          _cardMsg = 'card_error';
+          _secondsLeft = _timeoutS;
+        });
+      case 'insufficient_funds':
+      case 'declined':
+      case 'vend_failed':
+      case 'cancelled_by_terminal':
+      case 'vend_timeout':
+      case 'session_ended':
+      case 'payment_aborted':
+        setState(() {
+          _cardArmed = false;
+          _cardProcessing = false;
+          _cardMsg = e.type == 'insufficient_funds'
+              ? 'card_insufficient'
+              : e.type == 'payment_aborted'
+              ? 'card_unavailable'
+              : 'card_declined';
+          _secondsLeft = _timeoutS;
+        });
+        // Можно приложить другую карту: ждём её снова (сообщение остаётся,
+        // пока не придёт новая карта).
+        final msg = _cardMsg;
+        Future.delayed(const Duration(seconds: 1), () async {
+          await _armCard();
+          if (mounted && _cardArmed) setState(() => _cardMsg = msg);
+        });
+    }
+  }
+
   @override
   void dispose() {
+    _cardSub?.cancel();
+    _unavailableTimer?.cancel();
+    // Ушли без карты (до 10 03) — снять ожидание, команд терминалу нет.
+    if (_cardArmed && !_proceeding) {
+      unawaited(CardPaymentService.disarm('screen_closed').catchError((_) {}));
+    }
     _coinTimer?.cancel();
     _countdownTimer?.cancel();
     _terminalTimer?.cancel();
@@ -114,10 +272,22 @@ class _PaymentScreenState extends State<PaymentScreen> {
     try {
       final status = await ModbusService.getCoinAcceptorStatus();
       _coinFailureCount = status.failureCount;
-      if (status.cents > 0 && _proceeding) {
+      if (status.cents > 0 && _cardProcessing && !_proceeding) {
+        // Монета после vend: оплату не меняем, только запись (решение
+        // владельца 21.10.2026).
+        _reportDuplicate(
+          method: 'coins',
+          cents: status.cents,
+          reason: 'after_vend',
+        );
+      } else if (status.cents > 0 && _proceeding) {
         // Монета пришла уже ПОСЛЕ защёлки перехода к прогреву — раньше она
         // пропадала без записи.
-        _reportDuplicate(method: 'coins', cents: status.cents, reason: 'after_latch');
+        _reportDuplicate(
+          method: 'coins',
+          cents: status.cents,
+          reason: 'after_latch',
+        );
       } else if (status.cents > 0 && mounted) {
         setState(() {
           _balanceCents += status.cents;
@@ -131,8 +301,26 @@ class _PaymentScreenState extends State<PaymentScreen> {
         await _handleCoinAcceptorDown();
         return;
       }
+      if (_cardProcessing) return;
       if (_balanceCents >= _priceCents) {
+        // Монеты набрали цену — ожидание карты снимается (до 10 03).
+        if (_cardArmed) {
+          _cardArmed = false;
+          unawaited(
+            CardPaymentService.disarm('coins_reached_price').catchError((_) {}),
+          );
+        }
         _proceedToTreatment(paymentMethod: 'coins');
+      } else if (_cardArmed && status.cents > 0) {
+        // Монета до карты — vend пойдёт на новый остаток.
+        unawaited(
+          CardPaymentService.updateAmount(
+            _priceCents - _balanceCents,
+            _balanceCents,
+          ).catchError(
+            (Object e) => AppLog.log('CardPayment', 'остаток не обновлён: $e'),
+          ),
+        );
       }
     } finally {
       _checkingCoin = false;
@@ -192,7 +380,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
     if (poll != null && poll.confirmed && _proceeding) {
       // Второй платёж картой после защёлки (монета и карта почти
       // одновременно, либо повторное касание).
-      _reportDuplicate(method: 'card', cents: _priceCents, reason: 'after_latch');
+      _reportDuplicate(
+        method: 'card',
+        cents: _priceCents,
+        reason: 'after_latch',
+      );
     } else if (poll != null && poll.confirmed) {
       _proceedToTreatment(
         paymentMethod: _balanceCents > 0 ? 'mixed' : 'card',
@@ -202,13 +394,28 @@ class _PaymentScreenState extends State<PaymentScreen> {
   }
 
   void _tickCountdown() {
+    // Идёт оплата картой (vend отправлен) — таймер стоит до итога.
+    if (_cardProcessing) return;
     setState(() => _secondsLeft--);
+    // Терминал стал доступен, пока клиент на экране, — предложить карту.
+    if (_cardMode &&
+        !_cardArmed &&
+        !_cardOff &&
+        (_cardMsg == 'card_unavailable' || _cardMsg == 'card_busy_service')) {
+      unawaited(_armCard());
+    }
     if (_secondsLeft <= 0) {
       _cancel(reason: 'timeout');
     }
   }
 
-  void _proceedToTreatment({required String paymentMethod, int? coinsCents}) {
+  // cardRemainder — карта MDB списала остаток (цена минус монеты): это не
+  // переплата, запись coins_then_card не нужна.
+  void _proceedToTreatment({
+    required String paymentMethod,
+    int? coinsCents,
+    bool cardRemainder = false,
+  }) {
     if (ModbusService.paymentBlocked || _proceeding) return;
     _proceeding = true;
     _firstMethod = paymentMethod;
@@ -219,11 +426,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
     if (!mounted) return;
     final notifier = context.read<AppNotifier>();
     final flavorIndex = notifier.selectedFlavor ?? 0;
-    // Оплата картой всегда идёт на полную цену (так настроен терминал) —
-    // если до этого уже были внесены монеты, они добавляются поверх, а не
-    // вычитаются: клиент фактически переплатил (задача 4.3).
+    // Импульсный терминал всегда списывает полную цену (так настроен
+    // эквайером) — монеты сверху это переплата (задача 4.3). Карта MDB
+    // списывает остаток: вместе с монетами ровно цена.
     final paidCents = paymentMethod == 'coins'
         ? _balanceCents
+        : cardRemainder
+        ? _priceCents
         : _priceCents + (coinsCents ?? 0);
     // Начинаем сессию (Шаг 33, задача 1/2) именно здесь — сумма уже
     // набрана, деньги приняты монетоприёмником/терминалом безвозвратно.
@@ -244,7 +453,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
     // Монетами внесено, а завершила карта — клиент переплатил (карта идёт на
     // полную цену поверх монет): оператору нужна запись для возврата. Сессия
     // создаётся синхронно в start(), идентификатор уже доступен.
-    if (paymentMethod == 'mixed') {
+    if (cardRemainder) {
+      CardPaymentService.attachSession(SessionService.currentSessionId);
+    } else {
+      // Новая сессия без карты — прежний итог карты на экране ошибки не нужен.
+      CardPaymentService.customerNotice.value = null;
+    }
+    if (paymentMethod == 'mixed' && !cardRemainder) {
       _reportDuplicate(
         method: 'coins_then_card',
         cents: coinsCents ?? 0,
@@ -295,7 +510,18 @@ class _PaymentScreenState extends State<PaymentScreen> {
   }
 
   void _cancel({String reason = 'cancelled'}) {
-    if (_proceeding) return;
+    if (_proceeding || _cardProcessing) return;
+    if (_cardArmed) {
+      _cardArmed = false;
+      // Кнопка «Отмена» — сброс читателя 14 02; таймаут — без команд (enable
+      // остаётся включён, ТЗ 9.2 и решение владельца 21.10.2026).
+      unawaited(
+        (reason == 'timeout'
+                ? CardPaymentService.disarm('timeout')
+                : CardPaymentService.cancel())
+            .catchError((_) {}),
+      );
+    }
     _coinTimer?.cancel();
     _countdownTimer?.cancel();
     _terminalTimer?.cancel();
@@ -341,6 +567,32 @@ class _PaymentScreenState extends State<PaymentScreen> {
     final progress = _priceCents == 0
         ? 0.0
         : (_balanceCents / _priceCents).clamp(0.0, 1.0);
+
+    // Pre-flight не прошёл: ни монет, ни карты (ТЗ раздел 5).
+    if (_machineUnavailable) {
+      return Scaffold(
+        backgroundColor: const Color(0xFF1A1A1A),
+        body: FogBackground(
+          child: SafeArea(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(PUi.gutter),
+                child: Text(
+                  t('machine_unavailable'),
+                  key: const ValueKey('machine_unavailable'),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: PUi.titleSp,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: const Color(0xFF1A1A1A),
@@ -410,18 +662,26 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     ),
                   ),
                   const Spacer(),
-                  Text(
-                    _coinAcceptorDown && _terminalEnabled
-                        ? t('instruction_coin_down_with_card')
-                        : _terminalEnabled
-                        ? t('instruction_with_card')
-                        : t('instruction'),
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: PUi.bodySp + 4,
+                  if (_cardMode && _cardMsg != null)
+                    _CardPrompt(
+                      key: const ValueKey('card_prompt'),
+                      text: t(_cardMsg!),
+                      processing: _cardProcessing,
+                      warning: !_cardArmed && !_cardProcessing,
+                    )
+                  else
+                    Text(
+                      _coinAcceptorDown && _terminalEnabled
+                          ? t('instruction_coin_down_with_card')
+                          : _terminalEnabled
+                          ? t('instruction_with_card')
+                          : t('instruction'),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: PUi.bodySp + 4,
+                      ),
                     ),
-                  ),
                   const SizedBox(height: 28),
                   ClipRRect(
                     borderRadius: BorderRadius.circular(12),
@@ -458,29 +718,79 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     ),
                   ),
                   const SizedBox(height: 20),
-                  SizedBox(
-                    height: PUi.buttonH,
-                    child: OutlinedButton(
-                      onPressed: _cancel,
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white70,
-                        side: const BorderSide(color: Colors.white38, width: 2),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
+                  // После 10 03 и vend отмены нет — деньги в обработке.
+                  if (!_cardProcessing)
+                    SizedBox(
+                      height: PUi.buttonH,
+                      child: OutlinedButton(
+                        key: const ValueKey('payment_cancel'),
+                        onPressed: _cancel,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white70,
+                          side: const BorderSide(
+                            color: Colors.white38,
+                            width: 2,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        child: Text(
+                          t('cancel'),
+                          style: const TextStyle(fontSize: 28),
                         ),
                       ),
-                      child: Text(
-                        t('cancel'),
-                        style: const TextStyle(fontSize: 28),
-                      ),
                     ),
-                  ),
                 ],
               ),
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+// «Приложите карту» с рисунком и сообщения оплаты картой (ТЗ 9.2–9.3).
+class _CardPrompt extends StatelessWidget {
+  final String text;
+  final bool processing;
+  final bool warning;
+
+  const _CardPrompt({
+    super.key,
+    required this.text,
+    required this.processing,
+    required this.warning,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = warning ? const Color(0xFFFFB020) : const Color(0xFF2EC4B6);
+    return Column(
+      children: [
+        if (processing)
+          const SizedBox(
+            width: 72,
+            height: 72,
+            child: CircularProgressIndicator(
+              strokeWidth: 6,
+              color: Color(0xFF2EC4B6),
+            ),
+          )
+        else
+          Icon(Icons.contactless, size: 96, color: color),
+        const SizedBox(height: 16),
+        Text(
+          text,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: warning ? color : Colors.white,
+            fontSize: PUi.bodySp + 8,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -504,7 +814,10 @@ class _InfoRow extends StatelessWidget {
         Flexible(
           child: Text(
             label,
-            style: const TextStyle(color: Colors.white60, fontSize: PUi.bodySp + 4),
+            style: const TextStyle(
+              color: Colors.white60,
+              fontSize: PUi.bodySp + 4,
+            ),
           ),
         ),
         Text(

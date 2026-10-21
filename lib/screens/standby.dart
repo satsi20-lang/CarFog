@@ -6,6 +6,7 @@ import 'package:video_player/video_player.dart';
 import '../models/app_state.dart';
 import '../services/i18n_service.dart';
 import '../services/storage_service.dart';
+import '../widgets/card_hint_banner.dart';
 import '../widgets/lang_switcher.dart';
 import '../widgets/portrait_ui.dart';
 
@@ -305,6 +306,21 @@ class _StandbyScreenState extends State<StandbyScreen> {
                         ),
                     ],
                   ),
+                ),
+              ),
+            ),
+
+            // Карту приложили, не выбрав запах (1.11.0): терминал закрыл
+            // сессию без списания — подсказка на языках заставки.
+            Positioned(
+              top: 120,
+              left: PUi.gutter,
+              right: PUi.gutter,
+              child: Center(
+                child: CardHintBanner(
+                  text: {
+                    for (final l in captionLangs) I18n.tr(l, 'standby.card_hint'),
+                  }.join('\n'),
                 ),
               ),
             ),

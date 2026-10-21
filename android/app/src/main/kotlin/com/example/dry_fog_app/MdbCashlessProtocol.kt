@@ -91,6 +91,18 @@ object MdbCashlessProtocol {
     private fun euro(v: BigDecimal, decimals: Int): String =
         v.setScale(maxOf(decimals, 2)).toPlainString()
 
+    // Центы → единицы терминала (ТЗ оплаты картой, раздел 4.4):
+    // units = cents × 10^знаков / (100 × масштаб). Не целое или больше 65535 —
+    // null: платёж не начинать (без округления).
+    fun unitsFromCents(cents: Int, scale: Int, decimals: Int): Int? {
+        if (cents < 0 || scale !in 1..255 || decimals !in 0..9) return null
+        val (q, r) = BigDecimal(cents).movePointLeft(2).movePointRight(decimals)
+            .divideAndRemainder(BigDecimal(scale))
+        if (r.signum() != 0 || q.stripTrailingZeros().scale() > 0) return null
+        if (q > BigDecimal(MAX_UNITS)) return null
+        return q.toInt()
+    }
+
     // Единицы терминала → сумма в евро (units × масштаб × 10^-знаков), не
     // меньше двух знаков после точки: 10 ед. при масштабе 1 и 2 знаках = "0.10".
     fun formatAmount(units: Int, scale: Int, decimals: Int): String {

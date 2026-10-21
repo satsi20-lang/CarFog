@@ -62,5 +62,17 @@
   "error.returning": "Naaseb algusesse",
   "error.countdown": "{seconds}s",
   "out_of_service.title": "Seade on ajutiselt hooldusel",
-  "out_of_service.detail": "Makseid ei võeta vastu. Vabandame ebamugavuse pärast."
+  "out_of_service.detail": "Makseid ei võeta vastu. Vabandame ebamugavuse pärast.",
+  "payment.card_waiting": "Puudutage kaardiga",
+  "payment.card_processing": "Makse töötlemine…",
+  "payment.card_declined": "Makse lükati tagasi, proovige teist kaarti",
+  "payment.card_insufficient": "Kaardil pole piisavalt raha",
+  "payment.card_unavailable": "Kaardimakse on ajutiselt kättesaamatu",
+  "payment.card_busy_service": "Terminal on hooldusrežiimis",
+  "payment.card_error": "Tekkis viga, pöörduge operaatori poole",
+  "payment.machine_unavailable": "Seade pole ajutiselt saadaval",
+  "select_flavor.card_hint": "Valige kõigepealt lõhn",
+  "standby.card_hint": "Valige kõigepealt lõhn",
+  "error.card_refunded": "Makse tühistati, raha ei võetud",
+  "error.card_operator": "Tekkis viga, pöörduge operaatori poole"
 }

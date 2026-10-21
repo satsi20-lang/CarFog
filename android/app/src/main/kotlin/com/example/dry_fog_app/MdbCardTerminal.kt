@@ -70,6 +70,14 @@ class MdbCardTerminal(private val context: Context) : MethodChannel.MethodCallHa
         emit = { type, data -> outbox.add(mapOf("kind" to "event", "type" to type, "data" to data, "ts" to now())) },
         clock = ::now,
     )
+    // Одна оплата картой (ТЗ раздел 6) — на той же очереди.
+    private val payment = MdbCardPayment(
+        queue = queue,
+        note = ::note,
+        emit = { type, data -> outbox.add(mapOf("kind" to "payment", "type" to type, "data" to data, "ts" to now())) },
+        clock = ::now,
+        setOwnsSession = { supervisor.paymentOwnsSession = it },
+    ).also { p -> supervisor.onLinkDown = { p.portLost(it) } }
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context, intent: Intent) {
@@ -98,7 +106,7 @@ class MdbCardTerminal(private val context: Context) : MethodChannel.MethodCallHa
             @Suppress("UnspecifiedRegisterReceiverFlag")
             context.registerReceiver(receiver, filter)
         }
-        logic.scheduleWithFixedDelay({ guarded { supervisor.tick(); queue.tick() } }, TICK_MS, TICK_MS, TimeUnit.MILLISECONDS)
+        logic.scheduleWithFixedDelay({ guarded { supervisor.tick(); payment.tick(); queue.tick() } }, TICK_MS, TICK_MS, TimeUnit.MILLISECONDS)
     }
 
     fun release() {
@@ -138,6 +146,38 @@ class MdbCardTerminal(private val context: Context) : MethodChannel.MethodCallHa
                     result.success(null)
                 }
                 "poll" -> result.success(onLogic { status() } + mapOf("events" to drainOutbox()))
+                // Экран «Приложите карту»: ждать 10 03 и сразу vend на сумму.
+                "arm" -> result.success(onLogic {
+                    check(supervisor.cardAvailable) { "card_unavailable:${supervisor.state.name}" }
+                    val units = unitsOf(call.argument<Int>("cents") ?: 0)
+                    payment.arm(
+                        units,
+                        (call.argument<Int>("flavorIndex") ?: 0) + 1,
+                        (call.argument<Int>("refundWindowS") ?: 30) * 1000L,
+                        call.argument<Boolean>("confirmEnabled") ?: true,
+                    )
+                    units
+                })
+                "updateAmount" -> result.success(onLogic {
+                    val units = unitsOf(call.argument<Int>("cents") ?: 0)
+                    payment.updateUnits(units)
+                    units
+                })
+                "cancel" -> {
+                    onLogic { payment.cancelByCustomer() }
+                    result.success(null)
+                }
+                "disarm" -> {
+                    onLogic { payment.disarm(call.argument<String>("reason") ?: "") }
+                    result.success(null)
+                }
+                // Итог цикла после одобрения: 13 02 / 13 03 / ручной возврат.
+                "finish" -> {
+                    val ok = call.argument<Boolean>("success") ?: false
+                    val reason = call.argument<String>("reason") ?: ""
+                    onLogic { if (ok) payment.finishSuccess() else payment.finishFailure(reason) }
+                    result.success(null)
+                }
                 else -> result.notImplemented()
             }
         } catch (e: Exception) {
@@ -155,7 +195,17 @@ class MdbCardTerminal(private val context: Context) : MethodChannel.MethodCallHa
         "unexpectedFrames" to supervisor.unexpectedFrames,
         "setupScale" to supervisor.setupReply?.scale,
         "setupDecimals" to supervisor.setupReply?.decimals,
+        "paymentState" to payment.state.name,
+        "customerCanCancel" to payment.customerCanCancel,
     )
+
+    // Центы → единицы терминала по ответу setup (ТЗ 4.4); не целое или
+    // больше 65535 — платёж не начинать.
+    private fun unitsOf(cents: Int): Int {
+        val s = supervisor.setupReply ?: throw IllegalStateException("bad_amount:нет ответа setup")
+        return MdbCashlessProtocol.unitsFromCents(cents, s.scale, s.decimals)
+            ?: throw IllegalArgumentException("bad_amount:$cents центов не переводятся в единицы (масштаб ${s.scale}, знаков ${s.decimals})")
+    }
 
     private fun drainOutbox(): List<Map<String, Any?>> {
         val out = mutableListOf<Map<String, Any?>>()
@@ -236,6 +286,7 @@ class MdbCardTerminal(private val context: Context) : MethodChannel.MethodCallHa
             if (frameSession != portSession) return@post
             queue.onEvent(e)
             supervisor.onEvent(e)
+            payment.onEvent(e)
         }
     }
 
