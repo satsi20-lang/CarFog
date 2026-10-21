@@ -18,6 +18,11 @@ class SelectFlavorScreen extends StatelessWidget {
     final names = [
       for (var i = 0; i < count; i++) notifier.config.flavorNameFor(lang, i),
     ];
+    // Цена каждого запаха (1.11.0), в том же виде, что на экране оплаты.
+    final prices = [
+      for (var i = 0; i < count; i++)
+        '${(notifier.config.priceForFlavor(i) / 100).toStringAsFixed(2)} €',
+    ];
     String t(String key) => I18n.tr(lang, 'select_flavor.$key');
 
     return Scaffold(
@@ -69,6 +74,7 @@ class SelectFlavorScreen extends StatelessWidget {
                   child: _FlavorGrid(
                     count: count,
                     names: names,
+                    prices: prices,
                     levels: levels,
                     unavailable: t('unavailable'),
                     onSelect: (i) =>
@@ -108,6 +114,7 @@ class SelectFlavorScreen extends StatelessWidget {
 class _FlavorGrid extends StatelessWidget {
   final int count;
   final List<String> names;
+  final List<String> prices;
   final List<bool> levels;
   final String unavailable;
   final void Function(int) onSelect;
@@ -115,6 +122,7 @@ class _FlavorGrid extends StatelessWidget {
   const _FlavorGrid({
     required this.count,
     required this.names,
+    required this.prices,
     required this.levels,
     required this.unavailable,
     required this.onSelect,
@@ -138,6 +146,7 @@ class _FlavorGrid extends StatelessWidget {
           height: cellH,
           child: _FlavorCard(
             name: names.length > i ? names[i] : '',
+            price: prices.length > i ? prices[i] : '',
             available: levels.length > i ? levels[i] : false,
             unavailable: unavailable,
             onTap: () => onSelect(i),
@@ -172,12 +181,14 @@ class _FlavorGrid extends StatelessWidget {
 
 class _FlavorCard extends StatelessWidget {
   final String name;
+  final String price;
   final bool available;
   final String unavailable;
   final VoidCallback onTap;
 
   const _FlavorCard({
     required this.name,
+    required this.price,
     required this.available,
     required this.unavailable,
     required this.onTap,
@@ -225,6 +236,24 @@ class _FlavorCard extends StatelessWidget {
                     ),
                   ),
                 ),
+                if (price.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        price,
+                        key: const ValueKey('flavor_price'),
+                        style: TextStyle(
+                          color: available
+                              ? const Color(0xFF2EC4B6)
+                              : Colors.grey,
+                          fontSize: PUi.bodySp + 4,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
                 if (!available)
                   Padding(
                     padding: const EdgeInsets.only(top: 8),

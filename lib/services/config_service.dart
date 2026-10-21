@@ -5,6 +5,7 @@ import '../models/app_state.dart';
 import '../models/bus_map.dart';
 import '../models/device_spec.dart';
 import '../models/hardware_profile.dart';
+import '../models/remote_limits.dart';
 import 'app_log_service.dart';
 
 class ConfigService {
@@ -54,7 +55,12 @@ class ConfigService {
     'paymentTerminalChannel': c.paymentTerminalChannel,
     'paymentTerminalMode': c.paymentTerminalMode,
     'paymentTerminalGuardMs': c.paymentTerminalGuardMs,
+    // Прежний флаг (= pulse) пишется для отката на версию до 1.11.0.
     'paymentTerminalEnabled': c.paymentTerminalEnabled,
+    'paymentTerminalType': c.paymentTerminalType,
+    'flavorPricesCents': c.flavorPricesCents,
+    'cardRefundWindowS': c.cardRefundWindowS,
+    'cardConfirmEnabled': c.cardConfirmEnabled,
     'outputWatchdogEnabled': c.outputWatchdogEnabled,
     'dioInstalled': c.dioInstalled,
     'thermoInstalled': c.thermoInstalled,
@@ -116,10 +122,34 @@ class ConfigService {
     return out;
   }
 
+  // Цены по запахам (1.11.0): старые настройки без списка — все цены равны
+  // treatmentPriceCents; мусор в отдельных позициях — тоже цена по умолчанию
+  // (AppConfig.normalizeFlavorPrices).
+  static List<int>? _pricesFromJson(Object? raw) {
+    if (raw is! List) return null;
+    return [for (final v in raw) v is int ? v : -1];
+  }
+
+  // Окно возврата вне 10–38 с (или не число) — значение по умолчанию.
+  static int _refundWindowFromJson(Object? raw) {
+    final r = ConfigLimits.range('cardRefundWindowS')!;
+    return raw is int && raw >= r.min && raw <= r.max
+        ? raw
+        : CardPaymentLimits.refundWindowDefaultS;
+  }
+
   static AppConfig _fromJson(Map<String, dynamic> j) {
     final spec = _specFromJson(j);
     return AppConfig(
       treatmentPriceCents: (j['treatmentPriceCents'] as int?) ?? 200,
+      // Тип терминала: старые настройки без поля — из прежнего флага
+      // (true → pulse, false → off); неизвестное значение — тоже из флага.
+      paymentTerminalType: j['paymentTerminalType'] is String
+          ? j['paymentTerminalType'] as String
+          : null,
+      flavorPricesCents: _pricesFromJson(j['flavorPricesCents']),
+      cardRefundWindowS: _refundWindowFromJson(j['cardRefundWindowS']),
+      cardConfirmEnabled: (j['cardConfirmEnabled'] as bool?) ?? true,
       treatmentDurationS: (j['treatmentDurationS'] as int?) ?? 40,
       servicePin: (j['servicePin'] as String?) ?? '1234',
       compressorPurgeS: (j['compressorPurgeS'] as int?) ?? 5,

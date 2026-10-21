@@ -133,6 +133,11 @@ class ConfigLimits {
         return (min: compressorPurgeMinS, max: compressorPurgeMaxS);
       case 'pumpAfterHeaterS':
         return (min: pumpAfterHeaterMinS, max: pumpAfterHeaterMaxS);
+      case 'cardRefundWindowS':
+        return (
+          min: CardPaymentLimits.refundWindowMinS,
+          max: CardPaymentLimits.refundWindowMaxS,
+        );
     }
     return null;
   }
@@ -142,7 +147,24 @@ class ConfigLimits {
     'treatmentPriceCents',
     'compressorPurgeS',
     'pumpAfterHeaterS',
+    'cardRefundWindowS',
   ];
+}
+
+// ------------------------------------------------------------
+// ОПЛАТА КАРТОЙ (Nayax по MDB, 1.11.0)
+// ------------------------------------------------------------
+class CardPaymentLimits {
+  CardPaymentLimits._();
+
+  // Окно автоматического возврата (13 03) после 10 05, с. 30 по умолчанию —
+  // ЗАДАНО владельцем (ТЗ, раздел 4.2), НЕ ПРОВЕРЕНО на железе: возврат
+  // проверен только через 1 с после 10 05, ждём теста раздела 11.1 ТЗ.
+  // Верх 38 с: терминал сам списывает деньги на ~40-й секунде после 10 05
+  // (стенд 1.10.13, тест А).
+  static const int refundWindowDefaultS = 30;
+  static const int refundWindowMinS = 10;
+  static const int refundWindowMaxS = 38;
 }
 
 // ------------------------------------------------------------

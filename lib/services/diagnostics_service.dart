@@ -155,6 +155,7 @@ class DiagnosticsService {
         ...cfg.reportedSnapshot(),
         'price_cents': cfg.treatmentPriceCents,
         'terminal_enabled': cfg.paymentTerminalEnabled,
+        'terminal_type': cfg.paymentTerminalType,
         'terminal_channel': cfg.paymentTerminalChannel,
         'terminal_mode': cfg.paymentTerminalMode,
         'terminal_guard_ms': cfg.paymentTerminalGuardMs,

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../models/app_state.dart';
+import '../models/bus_map.dart';
 import '../models/remote_limits.dart';
 import '../models/update_limits.dart';
 import 'app_log_service.dart';
@@ -187,6 +188,12 @@ class RemoteCommands {
           return CommandOutcome(false, bad);
         }
         final updated = _applyConfig(notifier.config, command.params);
+        // Импульсный терминал списывает одну сумму: разные цены запахов при
+        // pulse не сохраняются (решение владельца 21.10.2026).
+        if (updated.pulsePricesConflict) {
+          AppLog.log('RemoteCommands', 'update_config отклонён: pulse_prices_differ');
+          return const CommandOutcome(false, 'pulse_prices_differ');
+        }
         await notifier.saveConfig(updated);
         return const CommandOutcome(true, 'настройки применены');
 
@@ -293,6 +300,26 @@ class RemoteCommands {
       final r = ConfigLimits.range(field)!;
       if (v < r.min || v > r.max) return 'out_of_range:$field';
     }
+    // Цены по запахам (1.11.0): список 1…8 целых в пределах цены; заменяет
+    // первые N цен, остальные не трогает.
+    final prices = params['flavorPricesCents'];
+    if (prices != null) {
+      if (prices is! List || prices.isEmpty || prices.length > PumpChannel.values.length) {
+        return 'bad_type:flavorPricesCents';
+      }
+      for (final v in prices) {
+        if (v is! num || v != v.toInt()) return 'bad_type:flavorPricesCents';
+        if (v < ConfigLimits.priceMinCents || v > ConfigLimits.priceMaxCents) {
+          return 'out_of_range:flavorPricesCents';
+        }
+      }
+    }
+    final type = params['paymentTerminalType'];
+    if (type != null && !PaymentTerminalType.all.contains(type)) {
+      return 'invalid:paymentTerminalType';
+    }
+    final confirm = params['cardConfirmEnabled'];
+    if (confirm != null && confirm is! bool) return 'bad_type:cardConfirmEnabled';
     final pin = params['servicePin'];
     if (pin != null) {
       final s = pin.toString().trim();
@@ -313,8 +340,22 @@ class RemoteCommands {
       );
     }
 
+    List<int>? prices;
+    final rawPrices = params['flavorPricesCents'];
+    if (rawPrices is List) {
+      prices = List<int>.from(current.flavorPricesCents);
+      for (var i = 0; i < rawPrices.length; i++) {
+        prices[i] = (rawPrices[i] as num).toInt();
+      }
+    }
+
     return current.copyWith(
+      // Цена по умолчанию; уже заданные цены запахов не перезаписывает.
       treatmentPriceCents: (params['treatmentPriceCents'] as num?)?.toInt(),
+      flavorPricesCents: prices,
+      paymentTerminalType: params['paymentTerminalType'] as String?,
+      cardRefundWindowS: (params['cardRefundWindowS'] as num?)?.toInt(),
+      cardConfirmEnabled: params['cardConfirmEnabled'] as bool?,
       treatmentDurationS: (params['treatmentDurationS'] as num?)?.toInt(),
       compressorPurgeS: (params['compressorPurgeS'] as num?)?.toInt(),
       pumpAfterHeaterS: (params['pumpAfterHeaterS'] as num?)?.toInt(),

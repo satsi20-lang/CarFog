@@ -9,6 +9,7 @@ import 'bus_map.dart';
 import 'device_spec.dart';
 import 'hardware_profile.dart';
 import 'out_of_service.dart';
+import 'remote_limits.dart';
 
 // Число ароматов (= насосов = датчиков уровня) на конкретном аппарате берётся из
 // спецификации: AppConfig.activeFlavorCount (specPumps в пределах 4…8, при любой
@@ -21,7 +22,20 @@ import 'out_of_service.dart';
 // КОНФИГ (редактируется через сервисное меню)
 // ============================================================
 
+// Тип платёжного терминала (1.11.0): выключен, импульсный (старый, вход DI),
+// MDB (Nayax через адаптер Wafer, этапы 2–4).
+class PaymentTerminalType {
+  PaymentTerminalType._();
+  static const String off = 'off';
+  static const String pulse = 'pulse';
+  static const String mdb = 'mdb';
+  static const List<String> all = [off, pulse, mdb];
+}
+
 class AppConfig {
+  // Цена по умолчанию (1.11.0): для миграции к ценам по запахам и для новых
+  // запахов. Изменение НЕ перезаписывает уже заданные flavorPricesCents
+  // (решение владельца 21.10.2026). Старое поле сохраняется для отката.
   int treatmentPriceCents;
   int treatmentDurationS;
   String servicePin;
@@ -49,9 +63,23 @@ class AppConfig {
   // Мс — защита от того, что дребезг контакта или длинный импульс
   // превратится в две оплаты подряд.
   int paymentTerminalGuardMs;
-  // Пока мастер не установил терминал физически, приложение не должно
-  // реагировать на этот вход вообще — по умолчанию выключено.
-  bool paymentTerminalEnabled;
+  // Тип терминала (PaymentTerminalType). Заменяет прежний флаг
+  // paymentTerminalEnabled: тот теперь вычисляется (= pulse) и по-прежнему
+  // пишется на диск, чтобы откат на старую версию читал его как раньше.
+  // Пока мастер не установил терминал физически — off.
+  String paymentTerminalType;
+  bool get paymentTerminalEnabled =>
+      paymentTerminalType == PaymentTerminalType.pulse;
+
+  // Цена каждого запаха в центах (1.11.0), всегда 8 значений (по числу
+  // каналов PumpChannel; активны первые activeFlavorCount).
+  List<int> flavorPricesCents;
+  // Окно автоматического возврата картой после 10 05, с. 30 по умолчанию —
+  // НЕ ПРОВЕРЕНО на железе (возврат 13 03 проверен только через 1 с), ждём
+  // теста раздела 11.1 ТЗ. Допустимо 10–38 (терминал сам списывает на ~40 с).
+  int cardRefundWindowS;
+  // Служебный: отправлять 13 02 по окончании цикла (этап 3). По умолчанию да.
+  bool cardConfirmEnabled;
 
   // Сторож выходов (задача "сторож выходов", шаг 37) — по умолчанию
   // ВКЛЮЧЁН (доработка 03.10.2026): подтверждён живыми тестами, штатная
@@ -115,7 +143,12 @@ class AppConfig {
     this.paymentTerminalChannel = IoModuleInputs.defaultPaymentTerminalDI,
     this.paymentTerminalMode = 'edge',
     this.paymentTerminalGuardMs = 3000,
-    this.paymentTerminalEnabled = false,
+    String? paymentTerminalType,
+    // Прежний флаг: учитывается, только если тип не задан явно.
+    bool paymentTerminalEnabled = false,
+    List<int>? flavorPricesCents,
+    this.cardRefundWindowS = CardPaymentLimits.refundWindowDefaultS,
+    this.cardConfirmEnabled = true,
     // Включён по умолчанию (доработка после проверки 73acfe3, п.4): на
     // боевом аппарате сторож — штатная защита, а не диагностика. Уже
     // сохранённое явное значение не перезаписывается.
@@ -131,7 +164,17 @@ class AppConfig {
     this.specDefaultLang = 'et',
     this.standbyVideoSound = false,
     Map<String, List<String>>? flavorNames,
-  }) : flavorNames =
+  }) : paymentTerminalType =
+           PaymentTerminalType.all.contains(paymentTerminalType)
+           ? paymentTerminalType!
+           : (paymentTerminalEnabled
+                 ? PaymentTerminalType.pulse
+                 : PaymentTerminalType.off),
+       flavorPricesCents = normalizeFlavorPrices(
+         flavorPricesCents,
+         treatmentPriceCents,
+       ),
+       flavorNames =
            flavorNames ??
            {
              'ru': [
@@ -181,7 +224,12 @@ class AppConfig {
     int? paymentTerminalChannel,
     String? paymentTerminalMode,
     int? paymentTerminalGuardMs,
+    String? paymentTerminalType,
+    // Прежний флаг: true → pulse, false → off (если тип не передан).
     bool? paymentTerminalEnabled,
+    List<int>? flavorPricesCents,
+    int? cardRefundWindowS,
+    bool? cardConfirmEnabled,
     bool? outputWatchdogEnabled,
     bool? dioInstalled,
     bool? thermoInstalled,
@@ -212,8 +260,17 @@ class AppConfig {
       paymentTerminalMode: paymentTerminalMode ?? this.paymentTerminalMode,
       paymentTerminalGuardMs:
           paymentTerminalGuardMs ?? this.paymentTerminalGuardMs,
-      paymentTerminalEnabled:
-          paymentTerminalEnabled ?? this.paymentTerminalEnabled,
+      paymentTerminalType:
+          paymentTerminalType ??
+          (paymentTerminalEnabled == null
+              ? this.paymentTerminalType
+              : (paymentTerminalEnabled
+                    ? PaymentTerminalType.pulse
+                    : PaymentTerminalType.off)),
+      // Смена treatmentPriceCents не трогает уже заданные цены запахов.
+      flavorPricesCents: flavorPricesCents ?? this.flavorPricesCents,
+      cardRefundWindowS: cardRefundWindowS ?? this.cardRefundWindowS,
+      cardConfirmEnabled: cardConfirmEnabled ?? this.cardConfirmEnabled,
       outputWatchdogEnabled:
           outputWatchdogEnabled ?? this.outputWatchdogEnabled,
       dioInstalled: dioInstalled ?? this.dioInstalled,
@@ -234,6 +291,39 @@ class AppConfig {
 
   // Активное число ароматов/насосов: specPumps в пределах 4…8, при любой ошибке 4.
   int get activeFlavorCount => DeviceSpec.activeFor(specPumps);
+
+  // Цены по запахам: ровно 8 значений; недостающие и недопустимые (не в
+  // пределах ConfigLimits) — цена по умолчанию. Старые настройки без списка
+  // получают все цены = treatmentPriceCents.
+  static List<int> normalizeFlavorPrices(List<int>? prices, int defaultCents) {
+    final out = <int>[];
+    for (var i = 0; i < PumpChannel.values.length; i++) {
+      final v = (prices != null && i < prices.length) ? prices[i] : null;
+      out.add(
+        v != null && v >= ConfigLimits.priceMinCents && v <= ConfigLimits.priceMaxCents
+            ? v
+            : defaultCents,
+      );
+    }
+    return out;
+  }
+
+  // Цена выбранного запаха (индекс насоса); вне диапазона — цена по умолчанию.
+  int priceForFlavor(int index) =>
+      index >= 0 && index < flavorPricesCents.length
+      ? flavorPricesCents[index]
+      : treatmentPriceCents;
+
+  // Цены активных запахов.
+  List<int> get activeFlavorPrices =>
+      flavorPricesCents.take(activeFlavorCount).toList();
+
+  // Импульсный терминал списывает одну сумму, настроенную у эквайера, — при
+  // нём цены активных запахов обязаны совпадать (решение владельца 21.10.2026:
+  // разные цены при pulse не сохранять).
+  bool get pulsePricesConflict =>
+      paymentTerminalType == PaymentTerminalType.pulse &&
+      activeFlavorPrices.toSet().length > 1;
 
   // Громкость видео ожидания: 0 — без звука (по умолчанию), 1 — как раньше.
   double get standbyVideoVolume => standbyVideoSound ? 1.0 : 0.0;
@@ -275,6 +365,10 @@ class AppConfig {
   Map<String, dynamic> reportedSnapshot() {
     return {
       'price_cents': treatmentPriceCents,
+      'flavor_prices_cents': activeFlavorPrices,
+      'payment_terminal_type': paymentTerminalType,
+      'card_refund_window_s': cardRefundWindowS,
+      'card_confirm_enabled': cardConfirmEnabled,
       'duration_s': treatmentDurationS,
       'compressor_purge_s': compressorPurgeS,
       'pump_after_heater_s': pumpAfterHeaterS,

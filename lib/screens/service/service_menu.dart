@@ -37,7 +37,23 @@ const Map<String, Map<String, String>> _i18n = {
     'tab_diagnostics': 'Диагностика',
     'tab_journal': 'Журнал',
     'exit': 'Выход',
-    'price_label': 'Цена обработки',
+    'price_label': 'Цена по умолчанию (для новых запахов)',
+    'terminal_type': 'Тип терминала',
+    'terminal_type_off': 'Нет',
+    'terminal_type_pulse': 'Импульсный (DI)',
+    'terminal_type_mdb': 'Карта (MDB)',
+    'err_pulse_prices': 'Импульсный терминал списывает одну сумму: сначала сделайте цены всех запахов одинаковыми',
+    'flavor_prices_section': 'Цены по запахам',
+    'flavor_prices_pulse_warn': 'Импульсный терминал: цены всех запахов должны совпадать. Разные цены не сохранятся.',
+    'one_price_btn': 'Одна цена всем запахам',
+    'one_price_title': 'Одна цена всем запахам',
+    'one_price_body': 'Поставить всем запахам цену по умолчанию',
+    'one_price_apply': 'Поставить',
+    'one_price_cancel': 'Отмена',
+    'one_price_done': 'Цены изменены — нажмите «Сохранить»',
+    'refund_window_label': 'Окно автоматического возврата картой, с (10–38)',
+    'refund_window_hint': '30 с по умолчанию — не проверено на терминале, ждём теста раздела 11.1 ТЗ',
+    'err_refund_window': 'Окно возврата: от 10 до 38 с',
     'duration_label': 'Длительность обработки (сек)',
     'pin_label': 'PIN сервисного меню (4 цифры)',
     'save': 'Сохранить',
@@ -408,7 +424,23 @@ const Map<String, Map<String, String>> _i18n = {
     'tab_diagnostics': 'Diagnostics',
     'tab_journal': 'Log',
     'exit': 'Exit',
-    'price_label': 'Treatment price',
+    'price_label': 'Default price (for new flavours)',
+    'terminal_type': 'Terminal type',
+    'terminal_type_off': 'None',
+    'terminal_type_pulse': 'Pulse (DI)',
+    'terminal_type_mdb': 'Card (MDB)',
+    'err_pulse_prices': 'A pulse terminal charges one fixed amount: make all flavour prices equal first',
+    'flavor_prices_section': 'Prices per flavour',
+    'flavor_prices_pulse_warn': 'Pulse terminal: all flavour prices must be equal. Different prices will not be saved.',
+    'one_price_btn': 'One price for all flavours',
+    'one_price_title': 'One price for all flavours',
+    'one_price_body': 'Set the default price for all flavours',
+    'one_price_apply': 'Set',
+    'one_price_cancel': 'Cancel',
+    'one_price_done': 'Prices changed — press “Save”',
+    'refund_window_label': 'Automatic card refund window, s (10–38)',
+    'refund_window_hint': '30 s by default — not verified on the terminal yet (spec section 11.1)',
+    'err_refund_window': 'Refund window: 10 to 38 s',
     'duration_label': 'Treatment duration (sec)',
     'pin_label': 'Service menu PIN (4 digits)',
     'save': 'Save',
@@ -773,7 +805,23 @@ const Map<String, Map<String, String>> _i18n = {
     'tab_diagnostics': 'Diagnostika',
     'tab_journal': 'Logi',
     'exit': 'Välju',
-    'price_label': 'Töötluse hind',
+    'price_label': 'Vaikimisi hind (uutele lõhnadele)',
+    'terminal_type': 'Terminali tüüp',
+    'terminal_type_off': 'Puudub',
+    'terminal_type_pulse': 'Impulss (DI)',
+    'terminal_type_mdb': 'Kaart (MDB)',
+    'err_pulse_prices': 'Impulssterminal võtab ühe kindla summa: tee kõigi lõhnade hinnad enne võrdseks',
+    'flavor_prices_section': 'Hinnad lõhnade kaupa',
+    'flavor_prices_pulse_warn': 'Impulssterminal: kõigi lõhnade hinnad peavad olema võrdsed. Erinevaid hindu ei salvestata.',
+    'one_price_btn': 'Üks hind kõigile lõhnadele',
+    'one_price_title': 'Üks hind kõigile lõhnadele',
+    'one_price_body': 'Määra kõigile lõhnadele vaikimisi hind',
+    'one_price_apply': 'Määra',
+    'one_price_cancel': 'Tühista',
+    'one_price_done': 'Hinnad muudetud — vajuta «Salvesta»',
+    'refund_window_label': 'Kaardimakse automaatse tagastuse aken, s (10–38)',
+    'refund_window_hint': 'Vaikimisi 30 s — terminalil veel kontrollimata (lähteülesande jaotis 11.1)',
+    'err_refund_window': 'Tagastuse aken: 10 kuni 38 s',
     'duration_label': 'Töötluse kestus (sek)',
     'pin_label': 'Teenindusmenüü PIN (4 numbrit)',
     'save': 'Salvesta',
@@ -1293,6 +1341,9 @@ class _SettingsTab extends StatefulWidget {
 
 class _SettingsTabState extends State<_SettingsTab> {
   late int _priceCents;
+  // Цены по запахам (1.11.0): все 8, правятся активные.
+  late List<int> _flavorPrices;
+  late int _refundWindowS;
   late TextEditingController _durationCtrl;
   late TextEditingController _pinCtrl;
   late TextEditingController _compressorPurgeCtrl;
@@ -1305,6 +1356,8 @@ class _SettingsTabState extends State<_SettingsTab> {
     unawaited(_loadMasterState());
     final config = context.read<AppNotifier>().config;
     _priceCents = config.treatmentPriceCents;
+    _flavorPrices = List<int>.from(config.flavorPricesCents);
+    _refundWindowS = config.cardRefundWindowS;
     _durationCtrl = TextEditingController(
       text: config.treatmentDurationS.toString(),
     );
@@ -1348,6 +1401,52 @@ class _SettingsTabState extends State<_SettingsTab> {
         ConfigLimits.priceMaxCents,
       );
     });
+  }
+
+  void _changeFlavorPrice(int index, int deltaCents) {
+    setState(() {
+      _flavorPrices[index] = (_flavorPrices[index] + deltaCents).clamp(
+        ConfigLimits.priceMinCents,
+        ConfigLimits.priceMaxCents,
+      );
+    });
+  }
+
+  void _changeRefundWindow(int delta) {
+    final r = ConfigLimits.range('cardRefundWindowS')!;
+    setState(() => _refundWindowS = (_refundWindowS + delta).clamp(r.min, r.max));
+  }
+
+  // «Одна цена всем запахам»: цена по умолчанию во все активные запахи — только
+  // после подтверждения; на диск — кнопкой «Сохранить».
+  Future<void> _onePriceForAll() async {
+    final notifier = context.read<AppNotifier>();
+    final t = _i18n[notifier.serviceLang]!;
+    final price = '${(_priceCents / 100).toStringAsFixed(2)} €';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(t['one_price_title']!),
+        content: Text('${t['one_price_body']!}: $price?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(t['one_price_cancel']!),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(t['one_price_apply']!),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() {
+      for (var i = 0; i < notifier.config.activeFlavorCount; i++) {
+        _flavorPrices[i] = _priceCents;
+      }
+    });
+    _snack(t['one_price_done']!);
   }
 
   void _save() {
@@ -1398,14 +1497,34 @@ class _SettingsTabState extends State<_SettingsTab> {
       return;
     }
 
+    for (final p in _flavorPrices) {
+      if (p < ConfigLimits.priceMinCents || p > ConfigLimits.priceMaxCents) {
+        _snack(t['err_price']!);
+        return;
+      }
+    }
+    final rw = ConfigLimits.range('cardRefundWindowS')!;
+    if (_refundWindowS < rw.min || _refundWindowS > rw.max) {
+      _snack(t['err_refund_window']!);
+      return;
+    }
+
     final updated = notifier.config.copyWith(
+      // Цена по умолчанию не перезаписывает цены запахов (они ниже, свои).
       treatmentPriceCents: _priceCents,
+      flavorPricesCents: List<int>.from(_flavorPrices),
+      cardRefundWindowS: _refundWindowS,
       treatmentDurationS: duration,
       servicePin: pin,
       compressorPurgeS: compressorPurge,
       pumpAfterHeaterS: pumpAfterHeater,
       idlePowerTariffPerKwh: tariff,
     );
+    // Импульсный терминал списывает одну сумму: разные цены не сохраняются.
+    if (updated.pulsePricesConflict) {
+      _snack(t['err_pulse_prices']!);
+      return;
+    }
     notifier.saveConfig(updated);
     _snack(t['saved']!);
   }
@@ -1586,6 +1705,67 @@ class _SettingsTabState extends State<_SettingsTab> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
+  // Цены активных запахов, кнопка «Одна цена всем запахам», окно возврата.
+  List<Widget> _flavorPricesSection(Map<String, String> t) {
+    final notifier = context.watch<AppNotifier>();
+    final cfg = notifier.config;
+    final lang = notifier.serviceLang;
+    return [
+      Text(
+        t['flavor_prices_section']!,
+        style: const TextStyle(
+          color: Color(0xFF556677),
+          fontWeight: FontWeight.bold,
+          fontSize: 13,
+        ),
+      ),
+      if (cfg.paymentTerminalType == PaymentTerminalType.pulse) ...[
+        const SizedBox(height: 6),
+        Text(
+          t['flavor_prices_pulse_warn']!,
+          key: const ValueKey('pulse_prices_warn'),
+          style: const TextStyle(color: Color(0xFFFFB020), fontSize: 13),
+        ),
+      ],
+      const SizedBox(height: 8),
+      for (var i = 0; i < cfg.activeFlavorCount; i++) ...[
+        _PriceStepper(
+          key: ValueKey('flavor_price_$i'),
+          label: '${i + 1}. ${cfg.flavorNameFor(lang, i)}',
+          priceCents: _flavorPrices[i],
+          onChanged: (d) => _changeFlavorPrice(i, d),
+        ),
+        const SizedBox(height: 8),
+      ],
+      SizedBox(
+        width: double.infinity,
+        child: OutlinedButton(
+          key: const ValueKey('one_price_btn'),
+          onPressed: _onePriceForAll,
+          style: OutlinedButton.styleFrom(
+            foregroundColor: const Color(0xFF00C6B2),
+            side: const BorderSide(color: Color(0xFF00C6B2)),
+            minimumSize: const Size(0, PUi.minTouch),
+          ),
+          child: Text(t['one_price_btn']!),
+        ),
+      ),
+      const SizedBox(height: 16),
+      _PriceStepper(
+        key: const ValueKey('refund_window'),
+        label: t['refund_window_label']!,
+        priceCents: _refundWindowS,
+        onChanged: (d) => _changeRefundWindow(d > 0 ? 1 : -1),
+        format: (v) => '$v s',
+      ),
+      const SizedBox(height: 4),
+      Text(
+        t['refund_window_hint']!,
+        style: const TextStyle(color: Color(0xFF8899AA), fontSize: 12),
+      ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = _i18n[context.watch<AppNotifier>().serviceLang]!;
@@ -1599,6 +1779,8 @@ class _SettingsTabState extends State<_SettingsTab> {
             priceCents: _priceCents,
             onChanged: _changePrice,
           ),
+          const SizedBox(height: 16),
+          ..._flavorPricesSection(t),
           const SizedBox(height: 16),
           _Field(
             label: t['duration_label']!,
@@ -3369,7 +3551,7 @@ class _SensorsTabState extends State<_SensorsTab> {
   late TextEditingController _terminalChannelCtrl;
   late TextEditingController _terminalGuardCtrl;
   late String _terminalMode;
-  late bool _terminalEnabled;
+  late String _terminalType;
   bool? _terminalState;
   List<String> _terminalJournal = [];
   Timer? _terminalObserveTimer;
@@ -3396,7 +3578,7 @@ class _SensorsTabState extends State<_SensorsTab> {
       text: cfg.paymentTerminalGuardMs.toString(),
     );
     _terminalMode = cfg.paymentTerminalMode;
-    _terminalEnabled = cfg.paymentTerminalEnabled;
+    _terminalType = cfg.paymentTerminalType;
   }
 
   @override
@@ -3524,8 +3706,14 @@ class _SensorsTabState extends State<_SensorsTab> {
       paymentTerminalChannel: channel,
       paymentTerminalMode: _terminalMode,
       paymentTerminalGuardMs: guard,
-      paymentTerminalEnabled: _terminalEnabled,
+      paymentTerminalType: _terminalType,
     );
+    // Импульсный терминал списывает одну сумму — при разных ценах запахов
+    // pulse не сохраняется (решение владельца 21.10.2026).
+    if (updated.pulsePricesConflict) {
+      _snack(t['err_pulse_prices']!);
+      return;
+    }
     notifier.saveConfig(updated);
     _snack(t['saved']!);
   }
@@ -3591,10 +3779,24 @@ class _SensorsTabState extends State<_SensorsTab> {
           ),
         ),
         const SizedBox(height: 12),
-        _ToggleRow(
-          label: t['terminal_enabled']!,
-          value: _terminalEnabled,
-          onChanged: (v) => setState(() => _terminalEnabled = v),
+        Text(
+          t['terminal_type']!,
+          style: const TextStyle(color: Color(0xFF8899AA), fontSize: 13),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            for (final (i, type) in PaymentTerminalType.all.indexed) ...[
+              if (i > 0) const SizedBox(width: 8),
+              Expanded(
+                child: _ModeButton(
+                  label: t['terminal_type_$type']!,
+                  selected: _terminalType == type,
+                  onTap: () => setState(() => _terminalType = type),
+                ),
+              ),
+            ],
+          ],
         ),
         const SizedBox(height: 12),
         _Field(
@@ -3980,11 +4182,15 @@ class _PriceStepper extends StatelessWidget {
   final String label;
   final int priceCents;
   final ValueChanged<int> onChanged;
+  // Показ значения; по умолчанию — евро из центов.
+  final String Function(int)? format;
 
   const _PriceStepper({
+    super.key,
     required this.label,
     required this.priceCents,
     required this.onChanged,
+    this.format,
   });
 
   @override
@@ -4008,7 +4214,8 @@ class _PriceStepper extends StatelessWidget {
               _StepButton(icon: Icons.remove, onPressed: () => onChanged(-50)),
               Expanded(
                 child: Text(
-                  '${(priceCents / 100).toStringAsFixed(2)} €',
+                  format?.call(priceCents) ??
+                      '${(priceCents / 100).toStringAsFixed(2)} €',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     color: Colors.white,

@@ -65,7 +65,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
       });
       return;
     }
-    _priceCents = cfg.treatmentPriceCents;
+    // Цена выбранного запаха (1.11.0); монеты считаются от неё же.
+    _priceCents = cfg.priceForFlavor(
+      context.read<AppNotifier>().selectedFlavor ?? 0,
+    );
     ModbusService.startPaymentCoinCounting();
     _coinTimer = Timer.periodic(
       const Duration(milliseconds: 100),
