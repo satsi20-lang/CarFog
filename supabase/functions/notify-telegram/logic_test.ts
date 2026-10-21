@@ -9,6 +9,7 @@ import {
   type DeviceRow,
   deviceName,
   escapeHtml,
+  euroFromCents,
   eventMessage,
   extractChats,
   isNotifiableType,
@@ -20,6 +21,7 @@ import {
   planOffline,
   redact,
   secretMatches,
+  tallinnTime,
 } from "./logic.ts";
 
 // ---------- секрет ----------
@@ -297,4 +299,75 @@ test("журнал: токен вырезается", () => {
   const tok = "123456:AAH-secret-token";
   const out = redact(`fetch https://api.telegram.org/bot${tok}/sendMessage failed`, [tok, undefined]);
   assert.equal(out.includes(tok), false);
+});
+
+// ---------- оплата картой (приложение 1.11.0) ----------
+
+test("оплата картой: оба новых типа отправляются", () => {
+  assert.equal(isNotifiableType("payment_manual_refund_needed"), true);
+  assert.equal(isNotifiableType("terminal_offline"), true);
+  // остальные события оплаты — только в облако, не в Telegram
+  for (const t of ["payment_card_success", "payment_refunded_auto", "terminal_recovered", "payment_card_declined"]) {
+    assert.equal(isNotifiableType(t), false, t);
+  }
+});
+
+test("ручной возврат: сумма, запах, время по Таллину", () => {
+  const text = eventMessage("payment_manual_refund_needed", "Мойка", {
+    amount_cents: 250,
+    flavor: "Ваниль",
+    approved_at: "2026-10-22T11:05:30Z", // 14:05 по Таллину (UTC+3, летнее время)
+    coins_cents: 0,
+  });
+  assert.equal(
+    text,
+    "💳 Мойка: нужен ручной возврат по карте 2,50 € — «Ваниль», оплата 22.10 14:05. Вернуть через кабинет Nayax",
+  );
+});
+
+test("ручной возврат: без суммы и времени — без них, запах по каналу", () => {
+  const text = eventMessage("payment_manual_refund_needed", "Мойка", { flavor_index: 2 });
+  assert.equal(text, "💳 Мойка: нужен ручной возврат по карте — «?». Вернуть через кабинет Nayax");
+});
+
+test("ручной возврат: имя и запах экранируются", () => {
+  const text = eventMessage("payment_manual_refund_needed", "<b>", { amount_cents: 100, flavor: "A&B" });
+  assert.ok(text!.includes("&lt;b&gt;"));
+  assert.ok(text!.includes("«A&amp;B»"));
+});
+
+test("терминал недоступен: причины по-русски, неизвестная — как есть", () => {
+  assert.equal(
+    eventMessage("terminal_offline", "Мойка", { reason: "no_device" }),
+    "💳 Мойка: оплата картой недоступна: адаптер терминала не найден",
+  );
+  assert.equal(
+    eventMessage("terminal_offline", "Мойка", { reason: "no_answer" }),
+    "💳 Мойка: оплата картой недоступна: терминал не отвечает",
+  );
+  assert.equal(
+    eventMessage("terminal_offline", "Мойка", { reason: "x" }),
+    "💳 Мойка: оплата картой недоступна: x",
+  );
+  assert.equal(
+    eventMessage("terminal_offline", "Мойка", {}),
+    "💳 Мойка: оплата картой недоступна: причина не указана",
+  );
+});
+
+test("ручной возврат: разные платежи не склеиваются защитой от повторов", () => {
+  const a = dedupKey("CARFOG-100", "payment_manual_refund_needed", { approved_at: "2026-10-22T11:05:30Z" });
+  const b = dedupKey("CARFOG-100", "payment_manual_refund_needed", { approved_at: "2026-10-22T11:07:10Z" });
+  assert.notEqual(a, b);
+  // один и тот же платёж (повтор доставки) — один ключ
+  assert.equal(a, dedupKey("CARFOG-100", "payment_manual_refund_needed", { approved_at: "2026-10-22T11:05:30Z" }));
+  // terminal_offline — как прочие: не чаще раза в 5 минут на аппарат
+  assert.equal(dedupKey("CARFOG-100", "terminal_offline", { reason: "no_answer" }), "CARFOG-100|terminal_offline|");
+});
+
+test("сумма и время: форматы и мусор", () => {
+  assert.equal(euroFromCents(1990), "19,90");
+  assert.equal(euroFromCents("250"), null);
+  assert.equal(tallinnTime("2026-01-15T10:00:00Z"), "15.01 12:00"); // зимой UTC+2
+  assert.equal(tallinnTime("вчера"), null);
 });

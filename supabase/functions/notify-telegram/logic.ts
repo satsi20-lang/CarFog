@@ -123,7 +123,21 @@ export const OOS_REASON_RU: Record<string, string> = {
   bus_down: "шина не отвечает (снимется само, когда ответы вернутся)",
 };
 
-export const EVENT_TYPES = ["low_liquid", "liquid_restored", "out_of_service"] as const;
+export const EVENT_TYPES = [
+  "low_liquid",
+  "liquid_restored",
+  "out_of_service",
+  // Оплата картой Nayax по MDB (приложение 1.11.0, ТЗ раздел 10).
+  "payment_manual_refund_needed",
+  "terminal_offline",
+] as const;
+
+// Причины недоступности терминала оплаты картой (приложение,
+// MdbLinkSupervisor). Неизвестная причина показывается как есть.
+export const TERMINAL_OFFLINE_REASON_RU: Record<string, string> = {
+  no_device: "адаптер терминала не найден",
+  no_answer: "терминал не отвечает",
+};
 
 export function isNotifiableType(t: string): boolean {
   return (EVENT_TYPES as readonly string[]).includes(t);
@@ -141,6 +155,30 @@ function flavorOf(data: Record<string, unknown>): string {
   if (f.length > 0) return f;
   const c = channelOf(data);
   return c !== null ? `канал ${c + 1}` : "?";
+}
+
+// Сумма в евро из центов: 250 → «2,50». Не число — null.
+export function euroFromCents(v: unknown): string | null {
+  if (typeof v !== "number" || !Number.isFinite(v)) return null;
+  return (v / 100).toFixed(2).replace(".", ",");
+}
+
+// Время одобрения платежа (ISO, UTC) по Таллину: «22.10 14:05». Не разобрать —
+// null.
+export function tallinnTime(iso: unknown): string | null {
+  if (typeof iso !== "string") return null;
+  const ms = Date.parse(iso);
+  if (Number.isNaN(ms)) return null;
+  const parts = new Intl.DateTimeFormat("ru-RU", {
+    timeZone: "Europe/Tallinn",
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date(ms));
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  return `${get("day")}.${get("month")} ${get("hour")}:${get("minute")}`;
 }
 
 // Текст сообщения о событии; null — о таком событии не сообщаем. name —
@@ -164,6 +202,22 @@ export function eventMessage(
       const reason = OOS_REASON_RU[code] ?? (code || "причина не указана");
       return `⛔ ${n}: аппарат выведен из обслуживания: ${escapeHtml(reason)}`;
     }
+    case "payment_manual_refund_needed": {
+      // Деньги по карте списаны, услуга не оказана, автоматический возврат
+      // невозможен (окно прошло) — оператор возвращает через кабинет Nayax.
+      const amount = euroFromCents(data.amount_cents);
+      const at = tallinnTime(data.approved_at);
+      return `💳 ${n}: нужен ручной возврат по карте` +
+        (amount ? ` ${amount} €` : "") +
+        ` — «${escapeHtml(flavorOf(data))}»` +
+        (at ? `, оплата ${at}` : "") +
+        `. Вернуть через кабинет Nayax`;
+    }
+    case "terminal_offline": {
+      const code = typeof data.reason === "string" ? data.reason : "";
+      const reason = TERMINAL_OFFLINE_REASON_RU[code] ?? (code || "причина не указана");
+      return `💳 ${n}: оплата картой недоступна: ${escapeHtml(reason)}`;
+    }
     default:
       return null;
   }
@@ -182,7 +236,13 @@ export const TEST_MESSAGE = "Проверка связи";
 // ---------- Защита от повторов ----------
 
 // Ключ вида сообщения: аппарат + тип + канал (у out_of_service канала нет).
+// Ручной возврат — по каждой оплате отдельно (время одобрения): два разных
+// сорвавшихся платежа подряд не должны склеиться в одно сообщение.
 export function dedupKey(deviceId: string, type: string, data: Record<string, unknown>): string {
+  if (type === "payment_manual_refund_needed") {
+    const at = typeof data.approved_at === "string" ? data.approved_at : "";
+    return `${deviceId}|${type}|${at}`;
+  }
   const c = channelOf(data);
   return `${deviceId}|${type}|${c ?? ""}`;
 }
