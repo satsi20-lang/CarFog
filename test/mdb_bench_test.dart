@@ -27,12 +27,14 @@ void main() {
     var hasSetup = false;
     var testActive = false;
     String? warning;
+    int? holdMs;
 
     setUp(() {
       calls.clear();
       hasSetup = false;
       testActive = false;
       warning = null;
+      holdMs = null;
       messenger.setMockMethodCallHandler(channel, (call) async {
         calls.add(call);
         switch (call.method) {
@@ -46,6 +48,8 @@ void main() {
               'enabled': testActive,
               'testActive': testActive,
               'sessionWarning': warning,
+              'holdRemainingMs': holdMs,
+              'testMode': 'тест А (задержка)',
               'queueSize': 0,
               'testState': testActive ? 'приложите карту (ждём 10 03)' : 'не запущена',
             };
@@ -77,9 +81,17 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
     }
 
+    // Ленивый список строит нижние элементы только при прокрутке.
+    Future<Finder> reveal(WidgetTester tester, Finder f) async {
+      if (f.evaluate().isEmpty) {
+        await tester.dragUntilVisible(f, find.byType(ListView).first, const Offset(0, -300));
+      }
+      await tester.ensureVisible(f);
+      return f;
+    }
+
     Future<void> tapVend(WidgetTester tester) async {
-      final btn = find.widgetWithText(ElevatedButton, 'Запрос оплаты');
-      await tester.ensureVisible(btn);
+      final btn = await reveal(tester, find.widgetWithText(ElevatedButton, 'Запрос оплаты'));
       await tester.tap(btn);
       await tester.pump(const Duration(milliseconds: 300));
     }
@@ -144,10 +156,12 @@ void main() {
       testActive = true;
       await pumpTab(tester);
       for (final label in ['setup', 'id', 'Запрос оплаты', 'Отправить', 'Тестовая оплата 0,10 €']) {
-        final b = tester.widget<ElevatedButton>(find.widgetWithText(ElevatedButton, label));
+        final f = await reveal(tester, find.widgetWithText(ElevatedButton, label));
+        final b = tester.widget<ElevatedButton>(f);
         expect(b.onPressed, isNull, reason: label);
       }
-      final abort = tester.widget<ElevatedButton>(find.widgetWithText(ElevatedButton, 'Прервать'));
+      final abort = tester.widget<ElevatedButton>(
+          await reveal(tester, find.widgetWithText(ElevatedButton, 'Прервать')));
       expect(abort.onPressed, isNotNull);
       await tester.pumpWidget(const SizedBox());
     });
@@ -159,10 +173,50 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
+    Future<void> startViaDialog(WidgetTester tester, String label) async {
+      final btn = find.widgetWithText(ElevatedButton, label);
+      await tester.ensureVisible(btn);
+      await tester.tap(btn);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Будет списано 0,10 € с карты'), findsOneWidget);
+      await tester.tap(find.widgetWithText(TextButton, 'Списать'));
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+
+    testWidgets('тест А передаёт выбранную задержку только после «Списать»', (tester) async {
+      await pumpTab(tester);
+      expect(find.text('Реальное списание 0,10 € в каждом тесте.'), findsOneWidget);
+      await startViaDialog(tester, 'Тест А (задержка)');
+      final start = calls.where((c) => c.method == 'testStart').single;
+      expect(start.arguments['mode'], 'delay');
+      expect(start.arguments['delaySec'], 30);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('тест Б запускается в режиме возврата', (tester) async {
+      await pumpTab(tester);
+      await startViaDialog(tester, 'Тест Б (возврат)');
+      final start = calls.where((c) => c.method == 'testStart').single;
+      expect(start.arguments['mode'], 'refund');
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('обратный отсчёт теста А виден сверху', (tester) async {
+      testActive = true;
+      holdMs = 41200;
+      await pumpTab(tester);
+      expect(find.text('До 13 02 осталось 42 с'), findsOneWidget);
+      for (final label in ['Тест А (задержка)', 'Тест Б (возврат)']) {
+        final b = tester.widget<ElevatedButton>(find.widgetWithText(ElevatedButton, label));
+        expect(b.onPressed, isNull, reason: label);
+      }
+      await tester.pumpWidget(const SizedBox());
+    });
+
     testWidgets('неверный raw не отправляется', (tester) async {
       await pumpTab(tester);
       final field = find.widgetWithText(TextField, 'hex, например 14 01');
-      await tester.ensureVisible(field);
+      await reveal(tester, field);
       await tester.enterText(field, '14 0');
       await tester.tap(find.widgetWithText(ElevatedButton, 'Отправить'));
       await tester.pump(const Duration(milliseconds: 300));

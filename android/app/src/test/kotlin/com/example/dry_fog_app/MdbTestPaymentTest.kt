@@ -53,8 +53,11 @@ class MdbTestPaymentTest {
 
         // Как в журнале CARFOG-100 21.10.2026 17:55: setup → 01 … → prices → 00 →
         // enable → 00; ответы через ~100 мс.
-        fun startToSession(): Rig {
-            pay.start()
+        fun startToSession(
+            mode: MdbTestPayment.Mode = MdbTestPayment.Mode.NORMAL,
+            delaySec: Int = 0,
+        ): Rig {
+            pay.start(mode, delaySec)
             advance(100); rx("01 01 19 78 01 02 78 0D 1B\r\n")
             advance(400); ack()
             advance(400); ack()
@@ -67,8 +70,11 @@ class MdbTestPaymentTest {
         }
 
         // 10 03 → vend → 00 → 10 05 на 10 ед.
-        fun toApproved(): Rig {
-            startToSession()
+        fun toApproved(
+            mode: MdbTestPayment.Mode = MdbTestPayment.Mode.NORMAL,
+            delaySec: Int = 0,
+        ): Rig {
+            startToSession(mode, delaySec)
             advance(2600); rx("10 03 03 E8\r\n")
             assertEquals("vend уходит сразу на 10 03", listOf(VEND), sent)
             advance(90); ack()
@@ -311,6 +317,165 @@ class MdbTestPaymentTest {
         r.rx("01 01 19 78 05 02 78 0D 1F\r\n")
         r.advance(300)
         assertEquals(listOf("11 00 01 00 00 00", "14 00"), r.sent)
+    }
+
+    // ---- тест А «Задержка до подтверждения выдачи» ----
+
+    @Test
+    fun testA_waitsChosenDelayThenConfirmsAndCloses() {
+        val r = Rig().toApproved(MdbTestPayment.Mode.DELAY, 30)
+        assertEquals(State.HOLD, r.pay.state)
+        assertEquals(listOf(VEND), r.sent)
+        assertEquals(30_000L, r.pay.holdRemainingMs)
+        r.advance(29_950)
+        assertEquals("во время ожидания ничего не уходит", listOf(VEND), r.sent)
+        assertEquals(50L, r.pay.holdRemainingMs)
+        r.advance(50)
+        assertEquals(listOf(VEND, "13 02 00 01"), r.sent)
+        r.ack()
+        r.advance(1000)
+        assertEquals("13 04", r.sent.last())
+        r.ack(); r.rx("10 07\r\n")
+        r.advance(300); r.ack()
+        val o = r.pay.outcome!!
+        assertTrue(o.text, o.ok)
+        assertTrue(o.text, o.text.contains("13 02 отправлен через 30.0 с после 10 05"))
+        assertTrue(o.text, o.text.contains("13 02: ACK"))
+        assertTrue(o.text, o.text.contains("13 04: ACK"))
+        assertTrue(o.text, o.text.contains("10 07: пришло"))
+        assertTrue(o.text, o.text.contains("кадров во время ожидания не было"))
+    }
+
+    @Test
+    fun testA_eventsDuringHoldAreLoggedWithoutAnyReply() {
+        val r = Rig().toApproved(MdbTestPayment.Mode.DELAY, 60)
+        r.advance(25_000); r.rx("10 04\r\n")
+        r.advance(5_000); r.rx("10 06\r\n")
+        r.advance(1_000); r.rx("zz")
+        r.advance(1_000); r.rx("10 05 00 0A\r\n")
+        assertEquals("10 04 / 10 06 / мусор не вызывают ответов", listOf(VEND), r.sent)
+        assertEquals(State.HOLD, r.pay.state)
+        r.advance(28_000)
+        assertEquals(listOf(VEND, "13 02 00 01"), r.sent)
+        r.rx("FF\r\n")
+        r.advance(300)
+        assertEquals(listOf(VEND, "13 02 00 01", "13 02 00 01"), r.sent)
+        r.rx("FF\r\n")
+        r.advance(1000)
+        r.ack(); r.rx("10 07\r\n"); r.advance(300); r.ack()
+        val o = r.pay.outcome!!
+        assertFalse(o.ok)
+        assertTrue(o.text, o.text.contains("+25.0 с после 10 05: запрос отмены сессии"))
+        assertTrue(o.text, o.text.contains("+30.0 с после 10 05: отказ в оплате"))
+        assertTrue(o.text, o.text.contains("+31.0 с после 10 05: не распознано"))
+        assertTrue(o.text, o.text.contains("+32.0 с после 10 05: оплата одобрена"))
+        assertTrue(o.text, o.text.contains("13 02: отказ адаптера (FF), отказ адаптера (FF)"))
+        assertTrue(o.text, o.text.contains("выдача НЕ подтверждена"))
+    }
+
+    @Test
+    fun testA_terminalClosesSessionItselfDuringHold() {
+        val r = Rig().toApproved(MdbTestPayment.Mode.DELAY, 90)
+        r.advance(42_500); r.rx("10 07\r\n")
+        assertTrue(r.notes.any { it.contains("терминал закрыл сессию сам через 42.5 с") })
+        r.advance(300)
+        assertEquals("13 02 и 13 04 не отправлены, только 14 00", listOf(VEND, "14 00"), r.sent)
+        r.ack()
+        val o = r.pay.outcome!!
+        assertFalse(o.ok)
+        assertTrue(o.text, o.text.contains("терминал закрыл сессию сам через 42.5 с"))
+        assertTrue(o.text, o.text.contains("13 02: не отправлен"))
+        assertTrue(o.text, o.text.contains("13 04: не отправлялось"))
+        assertFalse(o.sessionMayHang)
+    }
+
+    @Test
+    fun testA_noAckOn1302IsReported() {
+        val r = Rig().toApproved(MdbTestPayment.Mode.DELAY, 120)
+        r.advance(120_000)
+        assertEquals(listOf(VEND, "13 02 00 01"), r.sent)
+        r.advance(2_000); r.advance(300); r.advance(2_000)
+        r.advance(1_000)
+        r.ack(); r.rx("10 07\r\n"); r.advance(300); r.ack()
+        assertTrue(r.pay.outcome!!.text.contains("13 02: нет ACK за 2 с, нет ACK за 2 с"))
+    }
+
+    @Test
+    fun testA_onlyAllowedDelays() {
+        for (bad in listOf(0, 10, 45, 121)) {
+            try {
+                Rig().pay.start(MdbTestPayment.Mode.DELAY, bad)
+                throw AssertionError("задержка $bad должна быть запрещена")
+            } catch (e: IllegalArgumentException) {
+                // ожидаемо
+            }
+        }
+    }
+
+    // ---- тест Б «Возврат» ----
+
+    @Test
+    fun testB_refundAfterOneSecondThenClose() {
+        val r = Rig().toApproved(MdbTestPayment.Mode.REFUND)
+        assertEquals(State.REFUND_PAUSE, r.pay.state)
+        r.advance(950)
+        assertEquals(listOf(VEND), r.sent)
+        r.advance(50)
+        assertEquals(listOf(VEND, "13 03"), r.sent)
+        r.ack()
+        r.advance(300)
+        assertEquals("13 04", r.sent.last())
+        r.ack(); r.advance(96); r.rx("10 07\r\n")
+        r.advance(300); r.ack()
+        val o = r.pay.outcome!!
+        assertTrue(o.text, o.ok)
+        assertTrue(o.text, o.text.startsWith("возврат запрошен: ACK получен. Проверьте списание на карте"))
+        assertTrue(o.text, o.text.contains("13 03: ACK 00"))
+        assertTrue(o.text, o.text.contains("кадры после 13 03: +0.4 с после 13 03: конец сессии"))
+        assertFalse("13 02 в тесте Б не шлётся", r.sent.contains("13 02 00 01"))
+    }
+
+    @Test
+    fun testB_framesAfterRefundIncludingRepeatedApprovalAreReported() {
+        val r = Rig().toApproved(MdbTestPayment.Mode.REFUND)
+        r.advance(1000); r.ack()
+        r.advance(200); r.rx("10 05 00 0A\r\n")
+        r.advance(100); r.rx("10 06\r\n")
+        r.advance(300); r.ack(); r.rx("10 07\r\n")
+        r.advance(300); r.ack()
+        assertEquals("повторное 10 05 не вызывает второго 13 03", 1, r.sent.count { it == "13 03" })
+        val o = r.pay.outcome!!
+        assertTrue(o.text, o.text.contains("+0.2 с после 13 03: оплата одобрена, 10 ед."))
+        assertTrue(o.text, o.text.contains("+0.3 с после 13 03: отказ в оплате"))
+    }
+
+    @Test
+    fun testB_ffOnRefundIsReportedAsNoAck() {
+        val r = Rig().toApproved(MdbTestPayment.Mode.REFUND)
+        r.advance(1000); r.rx("FF\r\n")
+        r.advance(300)
+        assertEquals("13 04", r.sent.last())
+        r.ack(); r.rx("10 07\r\n"); r.advance(300); r.ack()
+        val o = r.pay.outcome!!
+        assertFalse(o.ok)
+        assertTrue(o.text, o.text.startsWith("возврат запрошен: ACK нет (отказ адаптера (FF))"))
+    }
+
+    @Test
+    fun testB_cancelRequestDuringPauseDoesNotSkipRefund() {
+        val r = Rig().toApproved(MdbTestPayment.Mode.REFUND)
+        r.advance(500); r.rx("10 04\r\n")
+        assertEquals("в паузе 10 04 не закрывает сессию без возврата", listOf(VEND), r.sent)
+        r.advance(500)
+        assertEquals(listOf(VEND, "13 03"), r.sent)
+    }
+
+    @Test
+    fun testB_otherAmountIsRefundedImmediatelyAsInMainCycle() {
+        val r = Rig().startToSession(MdbTestPayment.Mode.REFUND)
+        r.rx("10 03 03 E8\r\n"); r.advance(90); r.ack()
+        r.advance(1000); r.rx("10 05 00 14\r\n")
+        assertEquals(listOf(VEND, "13 03"), r.sent)
     }
 
     companion object {

@@ -56,6 +56,9 @@ class MdbBenchStatus {
   final int queueSize;
   // «сессия может висеть, нажмите done» — до прихода 10 07.
   final String? sessionWarning;
+  // Режим текущей/последней тестовой оплаты и обратный отсчёт теста А.
+  final String? testMode;
+  final int? holdRemainingMs;
 
   const MdbBenchStatus({
     this.open = false,
@@ -72,6 +75,8 @@ class MdbBenchStatus {
     this.testOutcome,
     this.queueSize = 0,
     this.sessionWarning,
+    this.testMode,
+    this.holdRemainingMs,
   });
 
   MdbBenchStatus.fromMap(Map<dynamic, dynamic> m)
@@ -88,7 +93,9 @@ class MdbBenchStatus {
       testOutcomeOk = m['testOutcomeOk'] as bool?,
       testOutcome = m['testOutcome'] as String?,
       queueSize = m['queueSize'] as int? ?? 0,
-      sessionWarning = m['sessionWarning'] as String?;
+      sessionWarning = m['sessionWarning'] as String?,
+      testMode = m['testMode'] as String?,
+      holdRemainingMs = (m['holdRemainingMs'] as num?)?.toInt();
 
   bool get hasSetup => setupScale != null && setupDecimals != null;
 }
@@ -169,7 +176,10 @@ class MdbBenchService {
       '';
 
   // Одна тестовая оплата 0,10 € — автомат на стороне Kotlin (MdbTestPayment).
-  static Future<void> testStart() => _channel.invokeMethod('testStart');
+  // mode: 'normal' — одна тестовая оплата; 'delay' — тест А (delaySec 30/60/
+  // 90/120); 'refund' — тест Б.
+  static Future<void> testStart({String mode = 'normal', int delaySec = 0}) =>
+      _channel.invokeMethod('testStart', {'mode': mode, 'delaySec': delaySec});
 
   static Future<void> testAbort() => _channel.invokeMethod('testAbort');
 

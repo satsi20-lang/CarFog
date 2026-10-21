@@ -36,6 +36,8 @@ class _MdbBenchTabState extends State<MdbBenchTab> {
 
   final _amount = TextEditingController(text: '0.10');
   final _raw = TextEditingController();
+  // Задержка теста А перед 13 02.
+  int _delaySec = 30;
   final _lines = <String>[];
   int _lastSeq = 0;
   Timer? _poll;
@@ -204,7 +206,39 @@ class _MdbBenchTabState extends State<MdbBenchTab> {
     _say('Запрос оплаты ${p.amount} € в очереди: $hex');
   });
 
-  Future<void> _testStart() => _run(() async {
+  Future<void> _testStart() => _startTest(
+    mode: 'normal',
+    title: 'Тестовая оплата',
+    details:
+        'Это реальная оплата: setup, prices, enable, затем приложите '
+        'карту в течение 60 с. Сумма 10 ед. (0,10 €), один раз.',
+  );
+
+  Future<void> _testDelay() => _startTest(
+    mode: 'delay',
+    delaySec: _delaySec,
+    title: 'Тест А (задержка $_delaySec с)',
+    details:
+        'Реальная оплата 0,10 €. После одобрения (10 05) стенд $_delaySec с '
+        'не отвечает терминалу, затем 13 02 и 13 04. Смотрим, что терминал '
+        'делает сам.',
+  );
+
+  Future<void> _testRefund() => _startTest(
+    mode: 'refund',
+    title: 'Тест Б (возврат)',
+    details:
+        'Реальная оплата 0,10 €. После одобрения (10 05) через 1 с стенд '
+        'шлёт 13 03 (ошибка выдачи — возврат), затем 13 04. После теста '
+        'проверьте списание на карте.',
+  );
+
+  Future<void> _startTest({
+    required String mode,
+    required String title,
+    required String details,
+    int delaySec = 0,
+  }) => _run(() async {
     final ok = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -214,10 +248,9 @@ class _MdbBenchTabState extends State<MdbBenchTab> {
           'Будет списано 0,10 € с карты',
           style: TextStyle(color: Colors.white, fontSize: 20),
         ),
-        content: const Text(
-          'Это реальная оплата: setup, prices, enable, затем приложите '
-          'карту в течение 60 с. Сумма 10 ед. (0,10 €), один раз.',
-          style: TextStyle(color: _dim, fontSize: 16),
+        content: Text(
+          details,
+          style: const TextStyle(color: _dim, fontSize: 16),
         ),
         actions: [
           TextButton(
@@ -239,11 +272,11 @@ class _MdbBenchTabState extends State<MdbBenchTab> {
       ),
     );
     if (ok != true) {
-      _say('Тестовая оплата отменена, ничего не отправлено');
+      _say('$title отменён(а), ничего не отправлено');
       return;
     }
-    await MdbBenchService.testStart();
-    _say('Тестовая оплата запущена — следите за состоянием и журналом');
+    await MdbBenchService.testStart(mode: mode, delaySec: delaySec);
+    _say('$title запущен(а) — следите за состоянием и журналом');
   });
 
   Future<void> _testAbort() => _run(() async {
@@ -324,12 +357,22 @@ class _MdbBenchTabState extends State<MdbBenchTab> {
                 _text('Внимание: ${s.sessionWarning}', color: _red, bold: true),
               if (s.testActive || s.testOutcome != null) ...[
                 const SizedBox(height: 8),
-                _text('Тестовая оплата: ${s.testState ?? '?'}', bold: true),
+                _text(
+                  '${s.testMode ?? 'Тестовая оплата'}: ${s.testState ?? '?'}',
+                  bold: true,
+                ),
+                if (s.holdRemainingMs != null)
+                  _text(
+                    'До 13 02 осталось ${(s.holdRemainingMs! / 1000).ceil()} с',
+                    color: _red,
+                    size: 22,
+                    bold: true,
+                  ),
+                // Итог уже начинается с «УСПЕХ — », «НЕ УДАЛАСЬ — » или
+                // «возврат запрошен: …».
                 if (s.testOutcome != null)
                   _text(
-                    s.testOutcomeOk == true
-                        ? s.testOutcome!
-                        : 'НЕ УДАЛАСЬ: ${s.testOutcome}',
+                    s.testOutcome!,
                     color: s.testOutcomeOk == true ? PUi.accent : _red,
                     bold: true,
                   ),
@@ -443,6 +486,51 @@ class _MdbBenchTabState extends State<MdbBenchTab> {
                     s.open && !s.testActive ? _testStart : null,
                   ),
                   _button('Прервать', s.testActive ? _testAbort : null),
+                ],
+              ),
+              const SizedBox(height: 16),
+              _section('Служебные тесты оплаты'),
+              _text(
+                'Реальное списание 0,10 € в каждом тесте.',
+                color: _red,
+                bold: true,
+              ),
+              _text(
+                'Тест А: после одобрения ждём выбранное время без ответов '
+                'терминалу, потом 13 02 и 13 04. Тест Б: после одобрения '
+                '13 03 (возврат), потом 13 04.',
+                color: _dim,
+                size: 14,
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  _text('Задержка теста А: '),
+                  DropdownButton<int>(
+                    value: _delaySec,
+                    dropdownColor: _bg,
+                    onChanged: s.testActive
+                        ? null
+                        : (v) => setState(() => _delaySec = v ?? 30),
+                    items: [
+                      for (final v in const [30, 60, 90, 120])
+                        DropdownMenuItem(value: v, child: _text('$v с')),
+                    ],
+                  ),
+                ],
+              ),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _button(
+                    'Тест А (задержка)',
+                    s.open && !s.testActive ? _testDelay : null,
+                  ),
+                  _button(
+                    'Тест Б (возврат)',
+                    s.open && !s.testActive ? _testRefund : null,
+                  ),
                 ],
               ),
               const SizedBox(height: 16),

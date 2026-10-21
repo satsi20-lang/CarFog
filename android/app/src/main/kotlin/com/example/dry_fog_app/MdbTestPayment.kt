@@ -17,11 +17,25 @@ import com.example.dry_fog_app.MdbCommandQueue.Result
 //   10 03 без суммы или < 10 ед. → закрытие → 14 00.
 // «УСПЕХ» — только если 10 05 на 10 ед., ACK на 13 02, ACK на 13 04 и 10 07.
 // Иначе — статус по каждому шагу. Один логический поток стенда, без Android.
+//
+// Служебные тесты (1.10.13), тот же цикл до 10 05 на 10 ед.:
+//   А «Задержка до подтверждения выдачи» (Mode.DELAY): после 10 05 ждём N с
+//     (30/60/90/120) без автоматических ответов — все кадры только в журнал;
+//     пришло 10 07 — ожидание прекращается («терминал закрыл сессию сам через
+//     X с»); иначе 13 02 00 01 → пауза 1 с → закрытие сессии → 14 00.
+//   Б «Возврат» (Mode.REFUND): после 10 05 пауза 1 с → 13 03 (ACK) → закрытие
+//     сессии → 14 00; все кадры после 13 03 — в итог.
 class MdbTestPayment(
     private val queue: MdbCommandQueue,
     private val note: (String) -> Unit,
     private val clock: () -> Long,
 ) {
+    enum class Mode(val title: String) {
+        NORMAL("одна тестовая оплата"),
+        DELAY("тест А (задержка)"),
+        REFUND("тест Б (возврат)"),
+    }
+
     enum class State(val title: String) {
         IDLE("не запущена"),
         SETUP("setup: ждём ответ"),
@@ -31,6 +45,8 @@ class MdbTestPayment(
         VEND("vend 10 ед.: ждём ACK"),
         WAIT_VEND_RESULT("vend принят: ждём ответ терминала"),
         CANCEL("vend отменён (13 01): ждём ответ"),
+        HOLD("тест А: ждём перед 13 02 (без ответов терминалу)"),
+        REFUND_PAUSE("тест Б: пауза 1 с перед 13 03"),
         CONFIRM("13 02 00 01: ждём ACK"),
         PAUSE("пауза 1 с перед 13 04"),
         REFUND("13 03 (возврат): ждём ACK"),
@@ -67,9 +83,35 @@ class MdbTestPayment(
     private var closeReport: MdbSessionCloser.Report? = null
     private var disableResult: Result? = null
     private var portLost: String? = null
+    // Служебные тесты А/Б.
+    var mode = Mode.NORMAL
+        private set
+    private var holdMs = 0L
+    private var approvedAt = 0L
+    private var confirmSentAfterMs: Long? = null
+    private val confirmResults = mutableListOf<Result>()
+    private var closedByTerminalAfterMs: Long? = null
+    private var refundSentAt: Long? = null
+    // Кадры терминала во время ожидания (А) или после 13 03 (Б), с временем.
+    private val observed = mutableListOf<String>()
 
-    fun start() {
+    // Сколько осталось ждать в тесте А (для обратного отсчёта на экране).
+    val holdRemainingMs: Long?
+        get() = if (state == State.HOLD) maxOf(0L, deadline - clock()) else null
+
+    fun start(mode: Mode = Mode.NORMAL, delaySec: Int = 0) {
         check(!active) { "тестовая оплата уже идёт" }
+        if (mode == Mode.DELAY) {
+            require(delaySec in DELAY_CHOICES) { "задержка теста А — только ${DELAY_CHOICES.joinToString("/")} с" }
+        }
+        this.mode = mode
+        holdMs = delaySec * 1000L
+        approvedAt = 0L
+        confirmSentAfterMs = null
+        confirmResults.clear()
+        closedByTerminalAfterMs = null
+        refundSentAt = null
+        observed.clear()
         outcome = null
         pendingBegin = null
         sessionOpen = false
@@ -83,7 +125,8 @@ class MdbTestPayment(
         closeReport = null
         disableResult = null
         portLost = null
-        note("тестовая оплата: старт (0,10 € = $UNITS ед., товар $ITEM)")
+        note("${mode.title}: старт (0,10 € = $UNITS ед., товар $ITEM" +
+            (if (mode == Mode.DELAY) ", ожидание $delaySec с перед 13 02" else "") + ")")
         state = State.SETUP
         queue.enqueue(cmd(MdbCashlessProtocol.SETUP, "setup") { r, e ->
             if (state != State.SETUP) return@cmd
@@ -112,6 +155,12 @@ class MdbTestPayment(
 
     fun onEvent(e: Event) {
         if (!active) return
+        // Тест А (ожидание) и пауза теста Б: никаких автоматических ответов —
+        // иначе 10 04 в паузе закрыл бы сессию без запланированного 13 03.
+        if (state == State.HOLD || state == State.REFUND_PAUSE) return onHoldEvent(e)
+        if (mode == Mode.REFUND && refundSentAt != null && e != Event.Ack && e != Event.Nak) {
+            observed += "+${sinceSec(refundSentAt!!)} с после 13 03: ${MdbCashlessProtocol.describe(e)}"
+        }
         closer.onEvent(e)
         when (e) {
             is Event.BeginSession -> {
@@ -157,6 +206,12 @@ class MdbTestPayment(
             State.WAIT_VEND_RESULT -> cancelVend("нет ответа на vend за ${VEND_TIMEOUT_MS / 1000} с")
             State.CANCEL -> closeSession("нет ответа на 13 01")
             State.PAUSE -> closeSession("после 13 02")
+            State.HOLD -> {
+                note("${mode.title}: ожидание ${holdMs / 1000} с прошло — 13 02 00 01")
+                confirmSentAfterMs = clock() - approvedAt
+                confirm(1)
+            }
+            State.REFUND_PAUSE -> requestRefund()
             else -> Unit
         }
     }
@@ -170,6 +225,12 @@ class MdbTestPayment(
                 if (sessionOpen) closeSession("прервано") else disable()
             }
             State.VEND, State.WAIT_VEND_RESULT -> cancelVend("прервано кнопкой")
+            // Деньги уже одобрены — прерывание лишь сокращает ожидание.
+            State.HOLD -> {
+                note("${mode.title}: ожидание прервано кнопкой — 13 02 00 01 сейчас")
+                confirmSentAfterMs = clock() - approvedAt
+                confirm(1)
+            }
             else -> note("тестовая оплата: «Прервать» — уже идёт завершение (${state.title})")
         }
     }
@@ -225,7 +286,19 @@ class MdbTestPayment(
                 if (amount == UNITS) {
                     approved = true
                     moneySettled = true
-                    confirm(1)
+                    approvedAt = clock()
+                    when (mode) {
+                        Mode.NORMAL -> confirm(1)
+                        Mode.DELAY -> {
+                            state = State.HOLD
+                            deadline = clock() + holdMs
+                            note("${mode.title}: 10 05 получено — ждём ${holdMs / 1000} с, терминалу не отвечаем")
+                        }
+                        Mode.REFUND -> {
+                            state = State.REFUND_PAUSE
+                            deadline = clock() + PAUSE_BEFORE_REFUND_MS
+                        }
+                    }
                 } else {
                     refund("одобрено ${amount?.let { "$it ед." } ?: "без суммы"} вместо $UNITS ед.")
                 }
@@ -238,6 +311,7 @@ class MdbTestPayment(
         state = State.CONFIRM
         queue.enqueue(cmd(MdbCashlessProtocol.vendSuccess(ITEM), "13 02 00 01 (попытка $attempt)") { r, _ ->
             if (state != State.CONFIRM) return@cmd
+            confirmResults += r
             when {
                 r == Result.ACK -> confirmAck = true
                 attempt < 2 && (r == Result.NAK || r == Result.TIMEOUT) -> return@cmd confirm(attempt + 1)
@@ -261,6 +335,33 @@ class MdbTestPayment(
             closeSession("после возврата")
         })
     }
+
+    private fun onHoldEvent(e: Event) {
+        val at = sinceSec(approvedAt)
+        observed += "+$at с после 10 05: ${MdbCashlessProtocol.describe(e)}"
+        if (e is Event.BeginSession) sessionOpen = true
+        if (e == Event.EndSession) {
+            sessionOpen = false
+            closedByTerminalAfterMs = clock() - approvedAt
+            val skipped = if (mode == Mode.REFUND) "13 03" else "13 02"
+            note("${mode.title}: терминал закрыл сессию сам через $at с — $skipped не отправлен")
+            disable()
+        }
+    }
+
+    // Тест Б: 13 03 по плану, а не из-за ошибки.
+    private fun requestRefund() {
+        state = State.REFUND
+        refundSentAt = clock()
+        queue.enqueue(cmd(MdbCashlessProtocol.VEND_FAILURE, "13 03 (тест Б: возврат)") { r, _ ->
+            if (state != State.REFUND) return@cmd
+            refundResult = r
+            closeSession("после 13 03")
+        })
+    }
+
+    private fun sinceSec(from: Long): String =
+        java.math.BigDecimal(clock() - from).movePointLeft(3).setScale(1, java.math.RoundingMode.HALF_UP).toPlainString()
 
     private fun cancelVend(why: String) {
         failure = "$why — отправлена отмена 13 01; проверьте списание в кабинете Nayax"
@@ -299,20 +400,31 @@ class MdbTestPayment(
 
     private fun finishOutcome() {
         val close = closeReport
-        val ok = portLost == null && approved && confirmAck == true &&
-            close?.ackOk == true && close.ended
+        val closedOk = close?.ackOk == true && close.ended
+        val ok = portLost == null && approved && closedOk && when (mode) {
+            Mode.REFUND -> refundResult == Result.ACK
+            else -> confirmAck == true
+        }
         val hang = (close?.hanging == true) || (sessionOpen && portLost == null && close == null)
         val steps = mutableListOf<String>()
         portLost?.let { steps += "прервано: $it; 14 00 не отправлено (порта нет)" }
         if (!ok) failure?.let { steps += it }
-        if (approved && confirmAck == false) steps += NOT_CONFIRMED
+        if (mode != Mode.REFUND && approved && confirmAck == false) steps += NOT_CONFIRMED
         steps += "10 05: " + if (approvedAmount != null) "одобрено $approvedAmount ед." else "не было"
-        if (approved) steps += "13 02: " + when (confirmAck) {
-            true -> "ACK"
-            false -> "нет ACK (FF/таймаут, 2 попытки)"
-            null -> "не отправлено"
+        if (mode == Mode.DELAY && approved) {
+            steps += "ожидание ${holdMs / 1000} с"
+            closedByTerminalAfterMs?.let { steps += "терминал закрыл сессию сам через ${sec(it)} с" }
+            confirmSentAfterMs?.let { steps += "13 02 отправлен через ${sec(it)} с после 10 05" }
         }
-        refundResult?.let { steps += "13 03: ${it.title}" }
+        if (approved && mode != Mode.REFUND) steps += "13 02: " + when {
+            confirmResults.isNotEmpty() -> confirmResults.joinToString(", ") { it.title }
+            else -> "не отправлен"
+        }
+        if (mode == Mode.REFUND && approved) {
+            steps += "13 03: " + (refundResult?.title ?: "не отправлен")
+        } else {
+            refundResult?.let { steps += "13 03: ${it.title}" }
+        }
         steps += "13 04: " + when {
             close == null -> "не отправлялось"
             close.ackOk -> "ACK (попыток ${close.attempts})"
@@ -320,12 +432,30 @@ class MdbTestPayment(
         }
         if (close != null) steps += "10 07: " + if (close.ended) "пришло" else "не пришло"
         disableResult?.let { steps += "14 00: ${it.title}" }
+        if (observed.isNotEmpty()) {
+            steps += (if (mode == Mode.DELAY) "кадры во время ожидания: " else "кадры после 13 03: ") +
+                observed.joinToString(", ")
+        } else if (mode == Mode.DELAY && approved) {
+            steps += "кадров во время ожидания не было"
+        } else if (mode == Mode.REFUND && refundSentAt != null) {
+            steps += "кадров после 13 03 не было"
+        }
         if (hang) steps += MdbSessionCloser.HANGING_TEXT
         if (vendSent && !moneySettled) steps += "vend был отправлен, исход неизвестен — проверьте кабинет Nayax"
-        val text = (if (ok) "УСПЕХ — " else "") + steps.joinToString("; ")
+        val head = when {
+            mode == Mode.REFUND && approved -> "возврат запрошен: " +
+                (if (refundResult == Result.ACK) "ACK получен" else "ACK нет (${refundResult?.title ?: "не отправлен"})") +
+                ". Проверьте списание на карте — "
+            ok -> "УСПЕХ — "
+            else -> "НЕ УДАЛАСЬ — "
+        }
+        val text = head + steps.joinToString("; ")
         outcome = Outcome(ok, text, hang)
-        note("тестовая оплата: ${if (ok) "" else "НЕ УДАЛАСЬ — "}$text")
+        note("${mode.title}: $text")
     }
+
+    private fun sec(ms: Long): String =
+        java.math.BigDecimal(ms).movePointLeft(3).setScale(1, java.math.RoundingMode.HALF_UP).toPlainString()
 
     private fun cmd(data: ByteArray, label: String, onDone: (Result, Event?) -> Unit = { _, _ -> }) =
         MdbCommandQueue.Command(data, "тест: $label", onDone)
@@ -344,6 +474,8 @@ class MdbTestPayment(
         const val VEND_TIMEOUT_MS = 60_000L
         const val CANCEL_WAIT_MS = 10_000L
         const val PAUSE_BEFORE_CLOSE_MS = 1_000L
+        const val PAUSE_BEFORE_REFUND_MS = 1_000L
+        val DELAY_CHOICES = listOf(30, 60, 90, 120)
         const val NOT_CONFIRMED = "оплата одобрена, выдача НЕ подтверждена терминалом"
     }
 }

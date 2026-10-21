@@ -169,7 +169,13 @@ class MdbUsbBench(private val context: Context) : MethodChannel.MethodCallHandle
                 "raw" -> result.success(onLogic { sendRaw(call.argument<String>("hex") ?: "") })
                 "testStart" -> {
                     synchronized(lock) { port } ?: throw IOException("порт не открыт")
-                    onLogic { testPayment.start() }
+                    val mode = when (call.argument<String>("mode")) {
+                        "delay" -> MdbTestPayment.Mode.DELAY
+                        "refund" -> MdbTestPayment.Mode.REFUND
+                        else -> MdbTestPayment.Mode.NORMAL
+                    }
+                    val delaySec = call.argument<Int>("delaySec") ?: 0
+                    onLogic { testPayment.start(mode, delaySec) }
                     result.success(null)
                 }
                 "testAbort" -> {
@@ -430,6 +436,8 @@ class MdbUsbBench(private val context: Context) : MethodChannel.MethodCallHandle
                 "testState" to testPayment.state.title,
                 "testOutcomeOk" to testPayment.outcome?.ok,
                 "testOutcome" to testPayment.outcome?.text,
+                "testMode" to testPayment.mode.title,
+                "holdRemainingMs" to testPayment.holdRemainingMs,
                 "queueSize" to queue.size,
                 "sessionWarning" to sessionWarning,
                 "logFile" to context.getExternalFilesDir(null)?.let { File(it, LOG_FILE).path },
