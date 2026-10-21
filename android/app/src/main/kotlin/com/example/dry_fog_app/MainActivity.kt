@@ -41,6 +41,8 @@ class MainActivity : FlutterActivity() {
     private var modbusChannel: ModbusChannel? = null
     // Стенд терминала MDB через USB-адаптер (1.10.9) — отдельно от шины.
     private var mdbBench: MdbUsbBench? = null
+    // Терминал Nayax в основном потоке оплаты (1.11.0) — тот же слой MDB.
+    private var cardTerminal: MdbCardTerminal? = null
     // Канал системных вызовов — нужен, чтобы перед завершением процесса
     // (restart_app) спросить Dart: аппарат всё ещё в покое?
     private var systemChannel: MethodChannel? = null
@@ -173,7 +175,16 @@ class MainActivity : FlutterActivity() {
         // Стенд «Терминал (стенд)» (1.10.9): свой канал и своя фоновая
         // очередь — запись в USB-порт блокирует до 500 мс и не должна
         // задерживать вызовы шины Modbus.
-        mdbBench = MdbUsbBench(this).also { bench ->
+        cardTerminal = MdbCardTerminal(this).also { terminal ->
+            MethodChannel(
+                flutterEngine.dartExecutor.binaryMessenger,
+                MdbCardTerminal.CHANNEL,
+                StandardMethodCodec.INSTANCE,
+                flutterEngine.dartExecutor.binaryMessenger
+                    .makeBackgroundTaskQueue(BinaryMessenger.TaskQueueOptions())
+            ).setMethodCallHandler(terminal)
+        }
+        mdbBench = MdbUsbBench(this, cardTerminal).also { bench ->
             MethodChannel(
                 flutterEngine.dartExecutor.binaryMessenger,
                 MdbUsbBench.CHANNEL,
@@ -631,6 +642,8 @@ class MainActivity : FlutterActivity() {
         modbusChannel = null
         mdbBench?.release()
         mdbBench = null
+        cardTerminal?.release()
+        cardTerminal = null
         adbWifiObserver?.let { contentResolver.unregisterContentObserver(it) }
         adbWifiObserver = null
         KioskPolicy.detachLogSink(this)

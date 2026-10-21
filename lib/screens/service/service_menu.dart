@@ -1206,7 +1206,7 @@ class _ServiceMenuScreenState extends State<ServiceMenuScreen> {
   void dispose() {
     // Стенд MDB (1.10.9) не должен оставаться открытым за пределами
     // сервисного меню: порт закрывается при выходе, ничего не отправляя.
-    MdbBenchService.close().catchError((_) {});
+    MdbBenchService.exitService().catchError((_) {});
     super.dispose();
   }
 

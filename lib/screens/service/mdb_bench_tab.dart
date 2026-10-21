@@ -54,6 +54,8 @@ class _MdbBenchTabState extends State<MdbBenchTab> {
   @override
   void initState() {
     super.initState();
+    // Пока вкладка открыта, порт у стенда, а не у оплаты картой (ТЗ 7.2).
+    MdbBenchService.enterService().catchError((_) {});
     _refresh();
     _poll = Timer.periodic(
       const Duration(milliseconds: 250),
@@ -63,6 +65,8 @@ class _MdbBenchTabState extends State<MdbBenchTab> {
 
   @override
   void dispose() {
+    // Порт стенда закрывается и возвращается оплате картой.
+    MdbBenchService.exitService().catchError((_) {});
     _poll?.cancel();
     _amount.dispose();
     _raw.dispose();

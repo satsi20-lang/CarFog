@@ -45,7 +45,12 @@ import java.util.concurrent.TimeUnit
 // оплата, опрос, закрытие сессии) живёт на одном логическом потоке
 // mdb-bench-logic: туда приходят кадры из потока чтения, тики и вызовы с
 // экрана — блокировок между автоматами нет.
-class MdbUsbBench(private val context: Context) : MethodChannel.MethodCallHandler {
+class MdbUsbBench(
+    private val context: Context,
+    // Основной поток оплаты картой (1.11.0): один владелец порта (ТЗ 7.2) —
+    // пока вкладка стенда открыта, порт у стенда, оплата картой недоступна.
+    private val mainTerminal: MdbCardTerminal? = null,
+) : MethodChannel.MethodCallHandler {
 
     private val usb = context.getSystemService(Context.USB_SERVICE) as UsbManager
     val log = MdbBenchLog(
@@ -163,6 +168,21 @@ class MdbUsbBench(private val context: Context) : MethodChannel.MethodCallHandle
                     closePort("кнопка «Закрыть порт»")?.get(CLOSE_WAIT_MS, TimeUnit.MILLISECONDS)
                     result.success(null)
                 }
+                // Вкладка стенда открыта: основной поток отдаёт порт.
+                "enterService" -> {
+                    enterService()
+                    result.success(null)
+                }
+                // Вкладка закрыта: свой порт закрыть, порт вернуть основному потоку.
+                "exitService" -> {
+                    closePort("выход из вкладки стенда")?.get(CLOSE_WAIT_MS, TimeUnit.MILLISECONDS)
+                    if (inService) {
+                        inService = false
+                        log.info(now(), "сервисный режим стенда выключен — порт возвращён оплате картой")
+                        mainTerminal?.takePortBack()
+                    }
+                    result.success(null)
+                }
                 "status" -> result.success(onLogic { status() })
                 "command" -> result.success(onLogic { command(call) })
                 "vendPreview" -> result.success(onLogic { vendPreview(call.argument<String>("amount") ?: "") })
@@ -222,8 +242,21 @@ class MdbUsbBench(private val context: Context) : MethodChannel.MethodCallHandle
         }
     }
 
+    @Volatile
+    private var inService = false
+
+    // Только не с главного потока: ждёт, пока основной поток закроет порт.
+    private fun enterService() {
+        if (inService) return
+        mainTerminal?.yieldPortToBench()
+        inService = true
+        log.info(now(), "сервисный режим стенда: оплата картой в основном потоке недоступна")
+    }
+
     // Возвращает "opened", "permission_requested" или бросает с текстом ошибки.
     private fun open(deviceName: String, driver: String): String {
+        // Порт может быть у основного потока оплаты — сначала забрать.
+        enterService()
         val device = usb.deviceList[deviceName] ?: throw IOException("устройство $deviceName не найдено")
         synchronized(lock) {
             if (port != null) throw IOException("порт уже открыт ($portDevice), сначала закройте")

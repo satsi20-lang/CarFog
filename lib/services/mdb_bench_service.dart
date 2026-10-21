@@ -138,6 +138,13 @@ class MdbBenchService {
 
   static Future<void> close() => _channel.invokeMethod('close');
 
+  // Вкладка стенда открыта: основной поток оплаты отдаёт порт (один владелец,
+  // ТЗ раздел 7.2) — оплата картой недоступна, пока вкладка открыта.
+  static Future<void> enterService() => _channel.invokeMethod('enterService');
+
+  // Вкладка закрыта: порт стенда закрывается, порт возвращается оплате картой.
+  static Future<void> exitService() => _channel.invokeMethod('exitService');
+
   static Future<MdbBenchStatus> status() async {
     final r = await _channel.invokeMethod<Map>('status');
     return r == null ? const MdbBenchStatus() : MdbBenchStatus.fromMap(r);
