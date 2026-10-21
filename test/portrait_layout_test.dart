@@ -156,11 +156,11 @@ void main() {
   });
 
   const tabNames = {
-    'ru': ['Настройки', 'Ароматы', 'Диагностика', 'Датчики', 'Журнал', 'Облако', 'Сканер', 'Киоск', 'Терминал (стенд)'],
+    'ru': ['Настройки', 'Ароматы', 'Диагностика', 'Датчики', 'Журнал', 'Облако', 'Сканер', 'Киоск', 'Карта', 'Терминал (стенд)'],
   };
 
   for (final lang in ['ru', 'en', 'et']) {
-    for (var i = 0; i < 9; i++) {
+    for (var i = 0; i < 10; i++) {
       testWidgets('сервисное меню, вкладка $i [$lang] 720x1280', (tester) async {
         portrait(tester);
         final n = notifier(lang);
@@ -178,9 +178,9 @@ void main() {
     }
   }
   // Подсказка прокрутки вкладок: на старте виден только правый край; листая
-  // стрелкой вправо, доходим до последней вкладки целиком (все 9 достижимы).
+  // стрелкой вправо, доходим до последней вкладки целиком (все 10 достижимы).
   for (final lang in ['ru', 'en', 'et']) {
-    testWidgets('вкладки сервисного меню: подсказка и все 9 достижимы [$lang]',
+    testWidgets('вкладки сервисного меню: подсказка и все 10 достижимы [$lang]',
         (tester) async {
       portrait(tester);
       await pumpScreen(tester, const ServiceMenuScreen(), notifier(lang));
@@ -199,7 +199,7 @@ void main() {
       expect(right, findsOneWidget); // не помещаются: есть что листать
       final row = find.byType(SingleChildScrollView).first;
       final tabs = find.descendant(of: row, matching: find.byType(GestureDetector));
-      expect(tabs, findsNWidgets(9));
+      expect(tabs, findsNWidgets(10));
       for (var i = 0; i < 12 && right.evaluate().isNotEmpty; i++) {
         await tester.tap(right);
         await tester.pump(const Duration(milliseconds: 400));
@@ -207,7 +207,7 @@ void main() {
       }
       expect(right, findsNothing); // дошли до конца
       expect(left, findsOneWidget); // слева есть что вернуть
-      final last = tester.getRect(tabs.at(8));
+      final last = tester.getRect(tabs.at(9));
       expect(last.right, lessThanOrEqualTo(720.0 + 0.5));
       expect(last.left, greaterThanOrEqualTo(0));
       expect(tester.takeException(), isNull);
@@ -224,5 +224,5 @@ void main() {
   }
 
   // Чтобы список имён не считался неиспользуемым.
-  test('вкладок девять', () => expect(tabNames['ru']!.length, 9));
+  test('вкладок десять', () => expect(tabNames['ru']!.length, 10));
 }

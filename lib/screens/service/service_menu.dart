@@ -10,6 +10,7 @@ import '../../models/bus_map.dart';
 import '../../widgets/lang_switcher.dart';
 import '../../widgets/portrait_ui.dart';
 import 'bus_port_section.dart';
+import 'card_status_tab.dart';
 import 'mdb_bench_tab.dart';
 import 'scroll_hint_row.dart';
 import '../../models/out_of_service.dart';
@@ -208,6 +209,7 @@ const Map<String, Map<String, String>> _i18n = {
     'cloud_synced': 'Синхронизация выполнена',
     'tab_kiosk': 'Киоск',
     'tab_mdb_bench': 'Терминал (стенд)',
+    'tab_card': 'Карта',
     'kiosk_enabled': 'Киоск-режим',
     'kiosk_hint':
         'После включения откроется системный экран выбора домашнего '
@@ -596,6 +598,7 @@ const Map<String, Map<String, String>> _i18n = {
     'cloud_synced': 'Sync complete',
     'tab_kiosk': 'Kiosk',
     'tab_mdb_bench': 'Terminal (bench)',
+    'tab_card': 'Card',
     'kiosk_enabled': 'Kiosk mode',
     'kiosk_hint':
         'Once enabled, a system screen opens to pick the default '
@@ -979,6 +982,7 @@ const Map<String, Map<String, String>> _i18n = {
     'cloud_synced': 'Sünkroniseerimine tehtud',
     'tab_kiosk': 'Kiosk',
     'tab_mdb_bench': 'Terminal (stend)',
+    'tab_card': 'Kaart',
     'kiosk_enabled': 'Kioski režiim',
     'kiosk_hint':
         'Sisselülitamisel avaneb süsteemi vaikimisi avakuva valiku '
@@ -1200,7 +1204,7 @@ class ServiceMenuScreen extends StatefulWidget {
 
 class _ServiceMenuScreenState extends State<ServiceMenuScreen> {
   int _tab =
-      0; // 0=Настройки, 1=Ароматы, 2=Диагностика, 3=Датчики, 4=Журнал, 5=Облако, 6=Сканер, 7=Киоск, 8=Терминал (стенд)
+      0; // 0=Настройки, 1=Ароматы, 2=Диагностика, 3=Датчики, 4=Журнал, 5=Облако, 6=Сканер, 7=Киоск, 8=Карта, 9=Терминал (стенд)
 
   @override
   void dispose() {
@@ -1228,6 +1232,8 @@ class _ServiceMenuScreenState extends State<ServiceMenuScreen> {
         return _ScannerTab();
       case 7:
         return _KioskTab();
+      case 8:
+        return const CardStatusTab();
       default:
         return const MdbBenchTab();
     }
@@ -1248,6 +1254,7 @@ class _ServiceMenuScreenState extends State<ServiceMenuScreen> {
       t['tab_cloud']!,
       t['tab_scanner']!,
       t['tab_kiosk']!,
+      t['tab_card']!,
       t['tab_mdb_bench']!,
     ];
 

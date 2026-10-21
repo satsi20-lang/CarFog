@@ -134,6 +134,51 @@ class MdbCardPayment(
         }
     }
 
+    // ---- восстановление после перезапуска (ТЗ раздел 8) ----
+
+    // На диске осталась незакрытая запись payment_pending: деньги одобрены,
+    // итога нет. До deadlineMs (10 05 + окно возврата, часы стены) ждём, пока
+    // связь готова (порт открыт, setup ответил), затем 13 03 и 13 04. Не
+    // успели — ручной возврат.
+    private var recovery: Triple<Int, Int, Long>? = null
+
+    fun scheduleRecovery(units: Int, item: Int, deadlineMs: Long) {
+        require(units in 1..MdbCashlessProtocol.MAX_UNITS) { "сумма $units ед. вне 1..65535" }
+        require(item in 1..8) { "номер запаха $item вне 1..8" }
+        recovery = Triple(units, item, deadlineMs)
+        note("восстановление: незакрытая оплата $units ед., возврат возможен до $deadlineMs")
+    }
+
+    val recoveryPending: Boolean get() = recovery != null
+
+    // linkReady — контур связи в READY (setup ответил). Вызывать каждый тик.
+    fun tickRecovery(linkReady: Boolean) {
+        val (u, i, deadline) = recovery ?: return
+        if (clock() >= deadline) {
+            recovery = null
+            units = u
+            item = i
+            outcome.clear()
+            outcome["recovered"] = true
+            outcome["refund"] = "окно возврата прошло до восстановления связи"
+            state = State.FINISHING
+            complete("manual_refund_needed")
+            return
+        }
+        if (!linkReady || state != State.IDLE) return
+        recovery = null
+        units = u
+        item = i
+        outcome.clear()
+        outcome["recovered"] = true
+        // Состояние сессии на терминале после перезапуска неизвестно: считаем
+        // её открытой — 13 03, затем 13 04 и ожидание 10 07 (с повтором).
+        sessionOpen = true
+        state = State.FINISHING
+        setOwnsSession(true)
+        refund(1)
+    }
+
     // ---- кадры и время ----
 
     fun onEvent(e: Event) {

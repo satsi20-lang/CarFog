@@ -203,6 +203,8 @@ void main() async {
   // здесь включение по типу терминала и события в журнал/облако.
   CardTerminalService.start(notifier);
   CardPaymentService.install();
+  // Незакрытая оплата картой с прошлого запуска (сбой приложения/питания).
+  unawaited(CardPaymentService.recoverOnStartup(notifier));
 
   // Возврат на передний план: заводской файл мог появиться/смениться уже при
   // работающем приложении (запись adb во время наладки).

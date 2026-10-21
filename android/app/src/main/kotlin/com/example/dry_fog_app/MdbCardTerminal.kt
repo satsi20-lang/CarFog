@@ -106,7 +106,14 @@ class MdbCardTerminal(private val context: Context) : MethodChannel.MethodCallHa
             @Suppress("UnspecifiedRegisterReceiverFlag")
             context.registerReceiver(receiver, filter)
         }
-        logic.scheduleWithFixedDelay({ guarded { supervisor.tick(); payment.tick(); queue.tick() } }, TICK_MS, TICK_MS, TimeUnit.MILLISECONDS)
+        logic.scheduleWithFixedDelay({
+            guarded {
+                supervisor.tick()
+                payment.tickRecovery(supervisor.state == MdbLinkSupervisor.State.READY)
+                payment.tick()
+                queue.tick()
+            }
+        }, TICK_MS, TICK_MS, TimeUnit.MILLISECONDS)
     }
 
     fun release() {
@@ -171,6 +178,17 @@ class MdbCardTerminal(private val context: Context) : MethodChannel.MethodCallHa
                     onLogic { payment.disarm(call.argument<String>("reason") ?: "") }
                     result.success(null)
                 }
+                // После перезапуска: незакрытая оплата — возврат, если окно не прошло.
+                "recover" -> {
+                    onLogic {
+                        payment.scheduleRecovery(
+                            call.argument<Int>("units") ?: 0,
+                            call.argument<Int>("item") ?: 1,
+                            (call.argument<Number>("deadlineMs") ?: 0).toLong(),
+                        )
+                    }
+                    result.success(null)
+                }
                 // Итог цикла после одобрения: 13 02 / 13 03 / ручной возврат.
                 "finish" -> {
                     val ok = call.argument<Boolean>("success") ?: false
@@ -197,6 +215,7 @@ class MdbCardTerminal(private val context: Context) : MethodChannel.MethodCallHa
         "setupDecimals" to supervisor.setupReply?.decimals,
         "paymentState" to payment.state.name,
         "customerCanCancel" to payment.customerCanCancel,
+        "recoveryPending" to payment.recoveryPending,
     )
 
     // Центы → единицы терминала по ответу setup (ТЗ 4.4); не целое или

@@ -204,6 +204,51 @@ class CardPaymentService {
     _events.add(CardPaymentEvent(type, data));
   }
 
+  // ---- восстановление после перезапуска (раздел 8) ----
+
+  // При старте приложения: незакрытая запись payment_pending — деньги
+  // одобрены, итога нет (сбой приложения или питания во время цикла). Окно
+  // возврата ещё не прошло и терминал mdb — попросить его вернуть деньги
+  // (13 03, 13 04), как только связь будет готова; иначе — ручной возврат
+  // (облако и Telegram). Запись закрывается по итогу.
+  static Future<void> recoverOnStartup(AppNotifier n, {DateTime? now}) async {
+    final p = await CardPaymentStore.pending();
+    if (p == null) return;
+    final cfg = n.config;
+    final t = now ?? DateTime.now();
+    final deadlineMs = p.approvedAtMs + cfg.cardRefundWindowS * 1000;
+    _ctx = _ArmContext(p.amountCents, p.flavorIndex, p.flavorName, p.coinsCents, cfg.deviceId)
+      ..sessionId = p.sessionId
+      ..approved = true;
+    AppLog.log('CardPayment', 'при старте найдена незакрытая оплата картой ${p.amountCents} центов (${p.id})');
+    final canRefund = cfg.paymentTerminalType == PaymentTerminalType.mdb &&
+        t.millisecondsSinceEpoch < deadlineMs;
+    if (canRefund) {
+      try {
+        await _channel.invokeMethod('recover', {
+          'units': p.units,
+          'item': p.flavorIndex + 1,
+          'deadlineMs': deadlineMs,
+        });
+        return;
+      } catch (e) {
+        AppLog.log('CardPayment', 'возврат при старте не запрошен: $e');
+      }
+    }
+    await handlePaymentEvent({
+      'type': 'manual_refund_needed',
+      'data': {
+        'recovered': true,
+        'refund': cfg.paymentTerminalType != PaymentTerminalType.mdb
+            ? 'терминал mdb выключен'
+            : t.millisecondsSinceEpoch >= deadlineMs
+            ? 'окно возврата прошло до перезапуска'
+            : 'терминал недоступен',
+        'elapsed_s': (t.millisecondsSinceEpoch - p.approvedAtMs) ~/ 1000,
+      },
+    }, now: t);
+  }
+
   // ---- pre-flight (раздел 5) ----
 
   // Может ли аппарат выдать услугу: только существующие проверки и узлы,

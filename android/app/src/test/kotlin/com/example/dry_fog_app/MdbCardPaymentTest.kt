@@ -356,6 +356,67 @@ class MdbCardPaymentTest {
         assertNull("2,50 € без знаков после запятой — не целое", MdbCashlessProtocol.unitsFromCents(250, 1, 0))
     }
 
+    // ---- восстановление после перезапуска (ТЗ раздел 8) ----
+
+    @Test
+    fun recoveryWithinWindowRefundsWhenLinkReady() {
+        val r = Rig()
+        r.now = 1_000_000
+        r.pay.scheduleRecovery(200, 3, deadlineMs = 1_000_000 + 25_000)
+        assertTrue(r.pay.recoveryPending)
+        r.pay.tickRecovery(linkReady = false)
+        r.advance(3_000)
+        assertTrue("пока связь не готова — ничего не шлём", r.sent.isEmpty())
+        r.pay.tickRecovery(linkReady = true)
+        assertEquals(listOf("13 03"), r.sent)
+        assertTrue(r.owns)
+        r.ack(); r.advance(300)
+        assertEquals("13 04", r.sent.last())
+        r.ack(); r.rx("10 07\r\n")
+        val (type, data) = r.last()
+        assertEquals("refunded", type)
+        assertEquals(true, data["recovered"])
+        assertEquals(200, data["units"])
+        assertEquals(3, data["item"])
+        assertFalse(r.pay.recoveryPending)
+        assertFalse(r.owns)
+    }
+
+    @Test
+    fun recoveryAfterDeadlineIsManualWithoutCommands() {
+        val r = Rig()
+        r.now = 1_000_000
+        r.pay.scheduleRecovery(200, 3, deadlineMs = 1_000_000 + 5_000)
+        r.advance(5_000)
+        r.pay.tickRecovery(linkReady = true)
+        assertEquals("manual_refund_needed", r.last().first)
+        assertEquals(true, r.last().second["recovered"])
+        assertTrue(r.sent.isEmpty())
+        assertEquals(State.IDLE, r.pay.state)
+    }
+
+    @Test
+    fun recoveryRefundRefusedTwiceIsManual() {
+        val r = Rig()
+        r.pay.scheduleRecovery(200, 3, deadlineMs = 30_000)
+        r.pay.tickRecovery(linkReady = true)
+        r.rx("FF\r\n"); r.advance(300); r.rx("FF\r\n"); r.advance(300)
+        r.ack(); r.rx("10 07\r\n")
+        assertEquals("manual_refund_needed", r.last().first)
+    }
+
+    @Test
+    fun recoveryWaitsForRunningPaymentToEnd() {
+        val r = Rig().armed()
+        r.pay.scheduleRecovery(100, 1, deadlineMs = 30_000)
+        r.pay.tickRecovery(linkReady = true)
+        assertTrue("идёт другая оплата — возврат ждёт", r.pay.recoveryPending)
+        r.pay.disarm("тест")
+        r.pay.tickRecovery(linkReady = true)
+        assertFalse(r.pay.recoveryPending)
+        assertEquals(listOf("13 03"), r.sent)
+    }
+
     companion object {
         const val VEND = "13 00 00 C8 00 03"
     }

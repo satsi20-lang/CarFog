@@ -7,6 +7,7 @@ import 'package:dry_fog_app/models/app_state.dart';
 import 'package:dry_fog_app/screens/error.dart';
 import 'package:dry_fog_app/screens/payment.dart';
 import 'package:dry_fog_app/screens/select_flavor.dart';
+import 'package:dry_fog_app/screens/service/card_status_tab.dart';
 import 'package:dry_fog_app/services/app_log_service.dart';
 import 'package:dry_fog_app/services/card_payment_service.dart';
 import 'package:dry_fog_app/services/card_payment_store.dart';
@@ -440,6 +441,135 @@ void main() {
       await tester.pump(const Duration(seconds: 7));
       expect(find.text('Сначала выберите запах'), findsNothing);
     }, timeout: const Timeout(Duration(seconds: 30)));
+  });
+
+  group('восстановление после перезапуска (раздел 8)', () {
+    final approved = DateTime(2026, 10, 22, 14, 5);
+    Future<void> leavePending() => CardPaymentStore.writePending(CardPaymentRecord(
+      id: 'card-1',
+      approvedAtMs: approved.millisecondsSinceEpoch,
+      amountCents: 250,
+      units: 250,
+      flavorIndex: 1,
+      flavorName: 'Вишня',
+      coinsCents: 0,
+      sessionId: 's-old',
+    ));
+
+    test('нет незакрытой записи — ничего', () async {
+      await CardPaymentService.recoverOnStartup(notifier(), now: approved);
+      expect(cardCalls, isEmpty);
+      expect(await cloudTypes(), isEmpty);
+    });
+
+    test('окно не прошло, терминал mdb — просим терминал вернуть (recover)', () async {
+      await leavePending();
+      await CardPaymentService.recoverOnStartup(notifier(), now: approved.add(const Duration(seconds: 12)));
+      final r = cardCalls.where((c) => c.method == 'recover').single;
+      expect(r.arguments['units'], 250);
+      expect(r.arguments['item'], 2);
+      expect(r.arguments['deadlineMs'], approved.millisecondsSinceEpoch + 30000);
+      // итог от терминала закрывает запись
+      await CardPaymentService.handlePaymentEvent({'type': 'refunded', 'data': {'recovered': true, 'refund': 'ACK 00'}});
+      expect(await CardPaymentStore.pending(), isNull);
+      final h = (await CardPaymentStore.history()).single;
+      expect(h.status, 'refunded');
+      expect(h.sessionId, 's-old');
+      final e = (await cloud()).lastWhere((e) => e.type == 'payment_refunded_auto');
+      expect(e.data['amount_cents'], 250);
+      expect(e.data['recovered'], true);
+    });
+
+    test('окно прошло — сразу ручной возврат (облако и Telegram), терминал не трогаем', () async {
+      await leavePending();
+      await CardPaymentService.recoverOnStartup(notifier(), now: approved.add(const Duration(minutes: 3)));
+      expect(cardCalls.where((c) => c.method == 'recover'), isEmpty);
+      final e = (await cloud()).lastWhere((e) => e.type == 'payment_manual_refund_needed');
+      expect(e.data['amount_cents'], 250);
+      expect(e.data['flavor'], 'Вишня');
+      expect(e.data['recovered'], true);
+      expect(e.data['refund'], 'окно возврата прошло до перезапуска');
+      expect(e.data['elapsed_s'], 180);
+      expect(e.data['approved_at'], approved.toUtc().toIso8601String());
+      expect(await CardPaymentStore.pending(), isNull);
+      expect((await CardPaymentStore.history()).single.status, 'manual_refund_needed');
+    });
+
+    test('тип терминала уже не mdb — ручной возврат', () async {
+      await leavePending();
+      final n = notifier()..config = notifier().config.copyWith(paymentTerminalType: PaymentTerminalType.off);
+      await CardPaymentService.recoverOnStartup(n, now: approved.add(const Duration(seconds: 5)));
+      final e = (await cloud()).lastWhere((e) => e.type == 'payment_manual_refund_needed');
+      expect(e.data['refund'], 'терминал mdb выключен');
+    });
+
+    test('терминал не ответил на запрос — ручной возврат', () async {
+      await leavePending();
+      messenger.setMockMethodCallHandler(card, (c) async => throw PlatformException(code: 'CARD', message: 'нет порта'));
+      await CardPaymentService.recoverOnStartup(notifier(), now: approved.add(const Duration(seconds: 5)));
+      final e = (await cloud()).lastWhere((e) => e.type == 'payment_manual_refund_needed');
+      expect(e.data['refund'], 'терминал недоступен');
+    });
+  });
+
+  group('журнал событий и вкладка «Карта»', () {
+    test('последние события — не больше 20, новые в конце', () {
+      for (var i = 0; i < 25; i++) {
+        CardTerminalService.handleEvent(
+          {'kind': 'event', 'type': 'terminal_unexpected_frame', 'data': {'reason': 'r$i'}},
+          'CARFOG-T',
+          now: DateTime(2026, 10, 22, 12, 0, i),
+        );
+      }
+      final list = CardTerminalService.recent.value;
+      expect(list.length, 20);
+      expect(list.last, contains('r24'));
+      expect(list.first, contains('r5'));
+    });
+
+    testWidgets('статус, незакрытая оплата и история', (tester) async {
+      tester.view.devicePixelRatio = 1.5;
+      tester.view.physicalSize = const Size(1080, 1920);
+      addTearDown(tester.view.reset);
+      await tester.runAsync(() async {
+        await CardPaymentStore.writePending(CardPaymentRecord(
+          id: 'a', approvedAtMs: DateTime(2026, 10, 22, 10).millisecondsSinceEpoch,
+          amountCents: 200, units: 200, flavorIndex: 0, flavorName: 'Лимон', coinsCents: 0,
+        ));
+        await CardPaymentStore.close('manual_refund_needed', const {});
+        await CardPaymentStore.writePending(CardPaymentRecord(
+          id: 'b', approvedAtMs: DateTime(2026, 10, 22, 11).millisecondsSinceEpoch,
+          amountCents: 300, units: 300, flavorIndex: 2, flavorName: 'Хвоя', coinsCents: 50,
+        ));
+      });
+      CardTerminalService.status.value = const CardTerminalStatus(
+        state: 'OFFLINE', stateTitle: 'терминал недоступен', consecutiveFailures: 3, recoveryPending: true,
+      );
+      final n = notifier()..setLanguage('ru');
+      await tester.pumpWidget(ChangeNotifierProvider<AppNotifier>.value(
+        value: n,
+        child: const MaterialApp(home: Scaffold(body: CardStatusTab())),
+      ));
+      await settle(tester);
+      expect(find.text('карта (MDB)'), findsOneWidget);
+      expect(find.text('терминал недоступен'), findsOneWidget);
+      expect(find.text('3'), findsOneWidget);
+      expect(find.textContaining('3.00 € · Хвоя'), findsOneWidget);
+      expect(find.textContaining('Лимон · нужен ручной возврат'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('тип не mdb — подсказка, где включить', (tester) async {
+      final n = notifier()..config = notifier().config.copyWith(paymentTerminalType: PaymentTerminalType.pulse);
+      n.setLanguage('ru');
+      await tester.pumpWidget(ChangeNotifierProvider<AppNotifier>.value(
+        value: n,
+        child: const MaterialApp(home: Scaffold(body: CardStatusTab())),
+      ));
+      await settle(tester);
+      expect(find.textContaining('Оплата картой по MDB выключена'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    });
   });
 }
 

@@ -29,6 +29,10 @@ class CardTerminalStatus {
   final bool inSession;
   final int consecutiveFailures;
   final int unexpectedFrames;
+  // Автомат оплаты (MdbCardPayment.State) и ожидаемый возврат после
+  // перезапуска.
+  final String paymentState;
+  final bool recoveryPending;
 
   const CardTerminalStatus({
     this.state = 'INACTIVE',
@@ -38,6 +42,8 @@ class CardTerminalStatus {
     this.inSession = false,
     this.consecutiveFailures = 0,
     this.unexpectedFrames = 0,
+    this.paymentState = 'IDLE',
+    this.recoveryPending = false,
   });
 
   CardTerminalStatus.fromMap(Map<dynamic, dynamic> m)
@@ -47,7 +53,9 @@ class CardTerminalStatus {
       readerEnabled = m['readerEnabled'] as bool? ?? false,
       inSession = m['inSession'] as bool? ?? false,
       consecutiveFailures = (m['consecutiveFailures'] as num?)?.toInt() ?? 0,
-      unexpectedFrames = (m['unexpectedFrames'] as num?)?.toInt() ?? 0;
+      unexpectedFrames = (m['unexpectedFrames'] as num?)?.toInt() ?? 0,
+      paymentState = m['paymentState'] as String? ?? 'IDLE',
+      recoveryPending = m['recoveryPending'] as bool? ?? false;
 
   // Порт у стенда — экран оплаты покажет «Терминал занят сервисным режимом».
   bool get busyService => state == 'SERVICE';
@@ -68,6 +76,17 @@ class CardTerminalService {
   static final ValueNotifier<DateTime?> tappedWithoutFlavorAt = ValueNotifier(
     null,
   );
+
+  // Последние события терминала и оплаты для вкладки «Карта» сервисного
+  // меню (новые в конце, не больше recentMax). Данных карты нет.
+  static const int recentMax = 20;
+  static final ValueNotifier<List<String>> recent = ValueNotifier(const []);
+
+  static void _remember(DateTime t, String text) {
+    final hh = '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}:${t.second.toString().padLeft(2, '0')}';
+    final list = [...recent.value, '$hh $text'];
+    recent.value = list.length > recentMax ? list.sublist(list.length - recentMax) : list;
+  }
 
   static Timer? _timer;
   static bool _busy = false;
@@ -130,6 +149,8 @@ class CardTerminalService {
       AppLog.log('CardTerminal', '${e['text']}');
       return;
     }
+    _remember(t, '${e['kind'] == 'payment' ? 'оплата' : 'терминал'}: ${e['type']}'
+        '${(e['data'] as Map?)?.isNotEmpty == true ? ' ${e['data']}' : ''}');
     // Оплата картой (автомат MdbCardPayment) — своя обработка.
     if (e['kind'] == 'payment') {
       unawaited(CardPaymentService.handlePaymentEvent(e, now: now));
@@ -171,5 +192,6 @@ class CardTerminalService {
     _unexpectedSinceReport = 0;
     status.value = const CardTerminalStatus();
     tappedWithoutFlavorAt.value = null;
+    recent.value = const [];
   }
 }
