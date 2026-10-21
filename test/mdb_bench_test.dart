@@ -26,11 +26,13 @@ void main() {
     final calls = <MethodCall>[];
     var hasSetup = false;
     var testActive = false;
+    String? warning;
 
     setUp(() {
       calls.clear();
       hasSetup = false;
       testActive = false;
+      warning = null;
       messenger.setMockMethodCallHandler(channel, (call) async {
         calls.add(call);
         switch (call.method) {
@@ -43,6 +45,8 @@ void main() {
               'logFile': null,
               'enabled': testActive,
               'testActive': testActive,
+              'sessionWarning': warning,
+              'queueSize': 0,
               'testState': testActive ? 'приложите карту (ждём 10 03)' : 'не запущена',
             };
           case 'getLog':
@@ -145,6 +149,13 @@ void main() {
       }
       final abort = tester.widget<ElevatedButton>(find.widgetWithText(ElevatedButton, 'Прервать'));
       expect(abort.onPressed, isNotNull);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('предупреждение «сессия может висеть» видно сверху', (tester) async {
+      warning = 'сессия может висеть, нажмите done';
+      await pumpTab(tester);
+      expect(find.text('Внимание: сессия может висеть, нажмите done'), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
     });
 

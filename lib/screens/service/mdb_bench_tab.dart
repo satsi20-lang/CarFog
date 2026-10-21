@@ -148,7 +148,7 @@ class _MdbBenchTabState extends State<MdbBenchTab> {
 
   Future<void> _command(String name) => _run(() async {
     final hex = await MdbBenchService.command(name);
-    _say('Отправлено $name: $hex');
+    _say('В очереди $name: $hex (уходит после ACK предыдущей команды)');
   });
 
   Future<void> _vend() => _run(() async {
@@ -201,7 +201,7 @@ class _MdbBenchTabState extends State<MdbBenchTab> {
       return;
     }
     final hex = await MdbBenchService.sendVend(p);
-    _say('Запрос оплаты ${p.amount} €: $hex');
+    _say('Запрос оплаты ${p.amount} € в очереди: $hex');
   });
 
   Future<void> _testStart() => _run(() async {
@@ -259,7 +259,7 @@ class _MdbBenchTabState extends State<MdbBenchTab> {
     if (err != null) return;
     await _run(() async {
       final hex = await MdbBenchService.raw(_raw.text);
-      _say('Отправлено: $hex');
+      _say('В очереди: $hex (уходит после ACK предыдущей команды)');
     });
   }
 
@@ -316,15 +316,20 @@ class _MdbBenchTabState extends State<MdbBenchTab> {
               ),
               _text(
                 'Приём: ${s.enabled ? 'включён' : 'выключен'}   ·   '
-                'сессия: ${s.inSession ? 'идёт' : 'нет'}',
+                'сессия: ${s.inSession ? 'идёт' : 'нет'}   ·   '
+                'очередь: ${s.queueSize}',
                 color: _dim,
               ),
+              if (s.sessionWarning != null)
+                _text('Внимание: ${s.sessionWarning}', color: _red, bold: true),
               if (s.testActive || s.testOutcome != null) ...[
                 const SizedBox(height: 8),
                 _text('Тестовая оплата: ${s.testState ?? '?'}', bold: true),
                 if (s.testOutcome != null)
                   _text(
-                    '${s.testOutcomeOk == true ? 'УСПЕХ' : 'НЕ УДАЛАСЬ'}: ${s.testOutcome}',
+                    s.testOutcomeOk == true
+                        ? s.testOutcome!
+                        : 'НЕ УДАЛАСЬ: ${s.testOutcome}',
                     color: s.testOutcomeOk == true ? PUi.accent : _red,
                     bold: true,
                   ),

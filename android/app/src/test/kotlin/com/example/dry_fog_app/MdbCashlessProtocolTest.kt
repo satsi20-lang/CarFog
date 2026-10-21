@@ -117,6 +117,13 @@ class MdbCashlessProtocolTest {
     }
 
     @Test
+    fun ffIsAdapterRefusal() {
+        assertEquals(Event.Nak, frame("FF\r\n"))
+        assertEquals("отказ адаптера (FF)", MdbCashlessProtocol.describe(Event.Nak))
+        assertTrue(frame("FF FF") is Event.Unrecognized)
+    }
+
+    @Test
     fun ack() {
         assertEquals(Event.Ack, frame("00\r\n"))
         assertEquals(Event.Ack, frame("00"))
@@ -159,7 +166,7 @@ class MdbCashlessProtocolTest {
 
     @Test
     fun garbageIsNotGuessed() {
-        for (s in listOf("", "\r\n", "zz", "10 GG", "\u0000\u00FF", "10 09", "10 0A 01", "02", "FF")) {
+        for (s in listOf("", "\r\n", "zz", "10 GG", "\u0000\u00FF", "10 09", "10 0A 01", "02", "FE")) {
             assertTrue(s, frame(s) is Event.Unrecognized)
         }
     }

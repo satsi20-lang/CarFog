@@ -140,6 +140,11 @@ object MdbCashlessProtocol {
         object Ack : Event() {
             override fun toString() = "Ack"
         }
+        // "FF" — адаптер отказал в команде (NAK; подтверждено на железе 21.10.2026:
+        // вторая команда через 3 мс после первой получила FF).
+        object Nak : Event() {
+            override fun toString() = "Nak"
+        }
         data class Setup(val reply: SetupReply) : Event()
         // funds/amount null — терминал не прислал сумму.
         data class BeginSession(val funds: Int?) : Event()
@@ -185,6 +190,7 @@ object MdbCashlessProtocol {
             }
         }
         if (u(0) == 0x00 && data.size == 1) return Event.Ack
+        if (u(0) == 0xFF && data.size == 1) return Event.Nak
         if (u(0) == 0x01) {
             if (data.size != 9) return Event.Unrecognized("ответ setup длиной ${data.size} байт, ждали 9")
             if (!hasValidChecksum(data)) {
@@ -209,6 +215,7 @@ object MdbCashlessProtocol {
 
     fun describe(event: Event): String = when (event) {
         Event.Ack -> "ACK"
+        Event.Nak -> "отказ адаптера (FF)"
         is Event.Setup -> event.reply.let {
             "ответ на setup: уровень ${it.level}, страна %04X, масштаб ${it.scale}, знаков ${it.decimals}, "
                 .format(it.country) + "отклик ${it.maxResponseSec} с, опции %02X, контрольная сумма верна"

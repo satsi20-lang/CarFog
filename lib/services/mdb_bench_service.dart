@@ -17,18 +17,19 @@ class MdbUsbDevice {
   final String? driver;
 
   MdbUsbDevice.fromMap(Map<dynamic, dynamic> m)
-      : device = m['device'] as String,
-        vendorId = m['vendorId'] as int,
-        productId = m['productId'] as int,
-        manufacturer = m['manufacturer'] as String?,
-        product = m['product'] as String?,
-        deviceClass = m['deviceClass'] as int,
-        interfaceClasses =
-            (m['interfaceClasses'] as List? ?? const []).cast<int>(),
-        hasPermission = m['hasPermission'] as bool? ?? false,
-        driver = m['driver'] as String?;
+    : device = m['device'] as String,
+      vendorId = m['vendorId'] as int,
+      productId = m['productId'] as int,
+      manufacturer = m['manufacturer'] as String?,
+      product = m['product'] as String?,
+      deviceClass = m['deviceClass'] as int,
+      interfaceClasses = (m['interfaceClasses'] as List? ?? const [])
+          .cast<int>(),
+      hasPermission = m['hasPermission'] as bool? ?? false,
+      driver = m['driver'] as String?;
 
-  static String hex4(int v) => v.toRadixString(16).toUpperCase().padLeft(4, '0');
+  static String hex4(int v) =>
+      v.toRadixString(16).toUpperCase().padLeft(4, '0');
 
   String get title =>
       'VID ${hex4(vendorId)} PID ${hex4(productId)} — '
@@ -51,6 +52,10 @@ class MdbBenchStatus {
   final String? testState;
   final bool? testOutcomeOk;
   final String? testOutcome;
+  // Команд в очереди (одна за раз, после ACK предыдущей).
+  final int queueSize;
+  // «сессия может висеть, нажмите done» — до прихода 10 07.
+  final String? sessionWarning;
 
   const MdbBenchStatus({
     this.open = false,
@@ -65,21 +70,25 @@ class MdbBenchStatus {
     this.testState,
     this.testOutcomeOk,
     this.testOutcome,
+    this.queueSize = 0,
+    this.sessionWarning,
   });
 
   MdbBenchStatus.fromMap(Map<dynamic, dynamic> m)
-      : open = m['open'] as bool? ?? false,
-        device = m['device'] as String?,
-        setupScale = m['setupScale'] as int?,
-        setupDecimals = m['setupDecimals'] as int?,
-        logFile = m['logFile'] as String?,
-        enabled = m['enabled'] as bool? ?? false,
-        inSession = m['inSession'] as bool? ?? false,
-        silent = m['silent'] as bool? ?? false,
-        testActive = m['testActive'] as bool? ?? false,
-        testState = m['testState'] as String?,
-        testOutcomeOk = m['testOutcomeOk'] as bool?,
-        testOutcome = m['testOutcome'] as String?;
+    : open = m['open'] as bool? ?? false,
+      device = m['device'] as String?,
+      setupScale = m['setupScale'] as int?,
+      setupDecimals = m['setupDecimals'] as int?,
+      logFile = m['logFile'] as String?,
+      enabled = m['enabled'] as bool? ?? false,
+      inSession = m['inSession'] as bool? ?? false,
+      silent = m['silent'] as bool? ?? false,
+      testActive = m['testActive'] as bool? ?? false,
+      testState = m['testState'] as String?,
+      testOutcomeOk = m['testOutcomeOk'] as bool?,
+      testOutcome = m['testOutcome'] as String?,
+      queueSize = m['queueSize'] as int? ?? 0,
+      sessionWarning = m['sessionWarning'] as String?;
 
   bool get hasSetup => setupScale != null && setupDecimals != null;
 }
@@ -94,11 +103,11 @@ class MdbVendPreview {
   final String hex;
 
   MdbVendPreview.fromMap(Map<dynamic, dynamic> m)
-      : units = m['units'] as int,
-        scale = m['scale'] as int,
-        decimals = m['decimals'] as int,
-        amount = m['amount'] as String,
-        hex = m['hex'] as String;
+    : units = m['units'] as int,
+      scale = m['scale'] as int,
+      decimals = m['decimals'] as int,
+      amount = m['amount'] as String,
+      hex = m['hex'] as String;
 }
 
 class MdbBenchService {
@@ -139,8 +148,12 @@ class MdbBenchService {
   // Расчёт запроса оплаты без отправки. Ошибка суммы (не кратна шагу, вне
   // диапазона, нет ответа на setup) — PlatformException с текстом.
   static Future<MdbVendPreview> vendPreview(String amount) async {
-    final r = await _channel.invokeMethod<Map>('vendPreview', {'amount': amount});
-    if (r == null) throw PlatformException(code: 'MDB', message: 'нет ответа стенда');
+    final r = await _channel.invokeMethod<Map>('vendPreview', {
+      'amount': amount,
+    });
+    if (r == null) {
+      throw PlatformException(code: 'MDB', message: 'нет ответа стенда');
+    }
     return MdbVendPreview.fromMap(r);
   }
 
@@ -164,7 +177,8 @@ class MdbBenchService {
       await _channel.invokeMethod<String>('raw', {'hex': hex}) ?? '';
 
   static Future<List<({int seq, String line})>> getLog(int since) async {
-    final r = await _channel.invokeMethod<List>('getLog', {'since': since}) ??
+    final r =
+        await _channel.invokeMethod<List>('getLog', {'since': since}) ??
         const [];
     return r.map((e) {
       final m = e as Map;

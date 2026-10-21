@@ -1,7 +1,5 @@
 package com.example.dry_fog_app
 
-import com.example.dry_fog_app.MdbKeepAlive.Action
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -14,71 +12,58 @@ class MdbKeepAliveTest {
     @Test
     fun noPollWhileReceptionDisabled() {
         now = 120_000
-        assertEquals(Action.NONE, k.tick())
+        assertFalse(k.due())
     }
 
     @Test
-    fun pollsEvery60sWhileEnabledAndNoSession() {
-        k.onSent(MdbCashlessProtocol.ENABLE)
+    fun pollsEvery60sAfterEnableAck() {
+        k.onAcked(MdbCashlessProtocol.ENABLE)
         now = 59_999
-        assertEquals(Action.NONE, k.tick())
+        assertFalse(k.due())
         now = 60_000
-        assertEquals(Action.SEND_SETUP, k.tick())
-        k.onEvent(frame("01 01 19 78 01 02 78 0D 1B\r\n"))
-        assertFalse(k.silent)
+        assertTrue(k.due())
+        assertFalse("пока ответ не пришёл, второй опрос не ставим", k.due())
+        k.onPollDone(true)
         now = 119_999
-        assertEquals(Action.NONE, k.tick())
+        assertFalse(k.due())
         now = 120_000
-        assertEquals(Action.SEND_SETUP, k.tick())
+        assertTrue(k.due())
     }
 
     @Test
     fun noPollDuringSession() {
-        k.onSent(MdbCashlessProtocol.ENABLE)
+        k.onAcked(MdbCashlessProtocol.ENABLE)
         k.onEvent(frame("10 03 03 E8\r\n"))
         now = 300_000
-        assertEquals(Action.NONE, k.tick())
+        assertFalse(k.due())
         k.onEvent(frame("10 07\r\n"))
-        assertEquals(Action.SEND_SETUP, k.tick())
+        assertTrue(k.due())
     }
 
     @Test
-    fun silenceIsReportedOnceAndNothingIsResentAutomatically() {
-        k.onSent(MdbCashlessProtocol.ENABLE)
+    fun silenceIsFlaggedAndClearedOnlyByAnswerOrEnable() {
+        k.onAcked(MdbCashlessProtocol.ENABLE)
         now = 60_000
-        assertEquals(Action.SEND_SETUP, k.tick())
-        now = 64_999
-        assertEquals(Action.NONE, k.tick())
-        now = 65_000
-        assertEquals(Action.REPORT_SILENCE, k.tick())
+        assertTrue(k.due())
+        k.onPollDone(false)
         assertTrue(k.silent)
-        // дальше только обычный опрос setup раз в 60 с — prices/enable сам не шлёт
-        now = 100_000
-        assertEquals(Action.NONE, k.tick())
-        now = 120_000
-        assertEquals(Action.SEND_SETUP, k.tick())
-    }
-
-    @Test
-    fun disableStopsPollingAndManualEnableClearsSilence() {
-        k.onSent(MdbCashlessProtocol.ENABLE)
-        now = 60_000
-        k.tick()
-        now = 65_000
-        k.tick()
-        assertTrue(k.silent)
-        k.onSent(MdbCashlessProtocol.DISABLE)
-        now = 500_000
-        assertEquals(Action.NONE, k.tick())
-        k.onSent(MdbCashlessProtocol.ENABLE)
+        k.onEvent(frame("01 01 19 78 01 02 78 0D 1B\r\n"))
         assertFalse(k.silent)
     }
 
     @Test
+    fun disableStopsPolling() {
+        k.onAcked(MdbCashlessProtocol.ENABLE)
+        k.onAcked(MdbCashlessProtocol.DISABLE)
+        now = 500_000
+        assertFalse(k.due())
+    }
+
+    @Test
     fun pausedDuringTestPayment() {
-        k.onSent(MdbCashlessProtocol.ENABLE)
+        k.onAcked(MdbCashlessProtocol.ENABLE)
         now = 60_000
-        assertEquals(Action.NONE, k.tick(paused = true))
-        assertEquals(Action.SEND_SETUP, k.tick())
+        assertFalse(k.due(paused = true))
+        assertTrue(k.due())
     }
 }
