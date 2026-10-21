@@ -130,7 +130,12 @@ class _StandbyScreenState extends State<StandbyScreen> {
 
     _controller?.dispose();
     _controller = null;
+    if (!mounted) return;
 
+    // Громкость задаётся явно на каждом запуске ролика: по умолчанию 0
+    // (без звука), 1 — только если включён тумблер «Звук видео ожидания».
+    // Без этого video_player играет с громкостью 1.0.
+    final volume = context.read<AppNotifier>().config.standbyVideoVolume;
     final path = _playlist[index];
     final controller = VideoPlayerController.file(File(path));
     try {
@@ -190,6 +195,11 @@ class _StandbyScreenState extends State<StandbyScreen> {
           _playVideo(_currentIndex);
         }
       });
+    }
+    await controller.setVolume(volume);
+    if (!mounted) {
+      controller.dispose();
+      return;
     }
     controller.play();
 

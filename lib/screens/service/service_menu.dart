@@ -72,6 +72,9 @@ const Map<String, Map<String, String>> _i18n = {
     'tariff_label': 'Тариф на электроэнергию (€/кВт·ч)',
     'err_tariff': 'Тариф: неотрицательное число',
     'idle_cost_label': 'Стоимость простоя за сутки (справочно)',
+    'standby_sound_label': 'Звук видео ожидания',
+    'standby_sound_hint':
+        'Выключено — видео с SD-карты играет без звука (и после перезагрузки). Сохраняется сразу.',
     'available': 'Есть',
     'empty_level': 'Пусто',
     'flavor_fallback': 'Аромат',
@@ -441,6 +444,9 @@ const Map<String, Map<String, String>> _i18n = {
     'tariff_label': 'Electricity tariff (€/kWh)',
     'err_tariff': 'Tariff: non-negative number',
     'idle_cost_label': 'Daily idle cost (reference only)',
+    'standby_sound_label': 'Standby video sound',
+    'standby_sound_hint':
+        'Off — the SD card video plays muted (also after a restart). Saved immediately.',
     'available': 'OK',
     'empty_level': 'Empty',
     'flavor_fallback': 'Fragrance',
@@ -805,6 +811,9 @@ const Map<String, Map<String, String>> _i18n = {
     'tariff_label': 'Elektritariif (€/kWh)',
     'err_tariff': 'Tariif: mittenegatiivne arv',
     'idle_cost_label': 'Seisaku maksumus ööpäevas (info)',
+    'standby_sound_label': 'Ooterežiimi video heli',
+    'standby_sound_hint':
+        'Väljas — SD-kaardi video mängib ilma helita (ka pärast taaskäivitust). Salvestatakse kohe.',
     'available': 'Olemas',
     'empty_level': 'Tühi',
     'coin_label': 'Münt',
@@ -1652,6 +1661,24 @@ class _SettingsTabState extends State<_SettingsTab> {
             '${t['idle_cost_label']}: '
             '${_dailyIdleCostEur.toStringAsFixed(2)} €',
             style: const TextStyle(color: Color(0xFF556677), fontSize: 13),
+          ),
+          const SizedBox(height: 16),
+          // Сохраняется сразу, как тумблер «Киоск-режим», а не кнопкой
+          // «Сохранить» ниже.
+          _ToggleRow(
+            key: const ValueKey('standby_video_sound'),
+            label: t['standby_sound_label']!,
+            value: context.watch<AppNotifier>().config.standbyVideoSound,
+            onChanged: (v) {
+              final notifier = context.read<AppNotifier>();
+              notifier.saveConfig(
+                notifier.config.copyWith(standbyVideoSound: v),
+              );
+            },
+          ),
+          Text(
+            t['standby_sound_hint']!,
+            style: const TextStyle(color: Color(0xFF556677), fontSize: 12),
           ),
           const SizedBox(height: 32),
           SizedBox(

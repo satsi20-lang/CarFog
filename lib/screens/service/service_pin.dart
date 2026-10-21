@@ -281,7 +281,7 @@ class _ServicePinScreenState extends State<ServicePinScreen>
     final blocked = _mode != _Mode.newPin && _isLocked;
 
     // Портрет 720x1280 dp: сверху язык, затем заголовок/статус, точки ввода,
-    // крупная клавиатура по центру, внизу ссылки. Не помещается — прокрутка.
+    // компактная клавиатура по центру, внизу ссылки. Не помещается — прокрутка.
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E1A),
       body: SafeArea(
@@ -377,6 +377,7 @@ class _ServicePinScreenState extends State<ServicePinScreen>
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: List.generate(_maxLen, (i) {
                       final filled = i < _entered.length;
+                      // Введённые цифры — только закрашенные кружки.
                       return Container(
                         margin: EdgeInsets.symmetric(
                           horizontal: _maxLen > 4 ? 8 : 14,
@@ -400,14 +401,14 @@ class _ServicePinScreenState extends State<ServicePinScreen>
               if (!blocked) const SizedBox(height: 40),
               if (!blocked)
                 SizedBox(
-                  width: 520,
+                  width: _DigitButton.gridWidth,
                   child: GridView.count(
                     crossAxisCount: 3,
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
-                    mainAxisSpacing: 16,
-                    crossAxisSpacing: 16,
-                    childAspectRatio: 1.45,
+                    mainAxisSpacing: _DigitButton.spacing,
+                    crossAxisSpacing: _DigitButton.spacing,
+                    childAspectRatio: _DigitButton.width / _DigitButton.height,
                     children: [
                       ...['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(
                         (d) => _DigitButton(label: d, onTap: () => _onDigit(d)),
@@ -533,7 +534,15 @@ class _AttemptsIndicator extends StatelessWidget {
 // КНОПКА КЛАВИАТУРЫ
 // ============================================================
 
+// Кнопки вдвое меньше прежних (было ~163x112 dp, цифра 40 sp): крупную
+// клавиатуру и нажимаемые цифры было видно издалека. 80x56 dp — не меньше
+// PUi.minTouch, попадать в перчатках по-прежнему удобно.
 class _DigitButton extends StatelessWidget {
+  static const double width = 80;
+  static const double height = 56;
+  static const double spacing = 12;
+  static const double gridWidth = width * 3 + spacing * 2;
+
   final String label;
   final VoidCallback onTap;
   final Color color;
@@ -552,7 +561,7 @@ class _DigitButton extends StatelessWidget {
       child: Container(
         decoration: BoxDecoration(
           color: color,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(10),
           border: Border.all(color: const Color(0xFF2A3A4A)),
         ),
         child: Center(
@@ -560,7 +569,7 @@ class _DigitButton extends StatelessWidget {
             label,
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 40,
+              fontSize: PUi.minBodySp,
               fontWeight: FontWeight.bold,
             ),
           ),

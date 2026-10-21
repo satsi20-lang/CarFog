@@ -65,6 +65,7 @@ class ConfigService {
     'specPumps': c.specPumps,
     'specLangs': c.specLangs,
     'specDefaultLang': c.specDefaultLang,
+    'standbyVideoSound': c.standbyVideoSound,
     'flavorNames': c.flavorNames,
   };
 
@@ -151,6 +152,8 @@ class ConfigService {
       specPumps: spec.pumps,
       specLangs: spec.langs,
       specDefaultLang: spec.defaultLang,
+      // Старые настройки без поля — без звука.
+      standbyVideoSound: (j['standbyVideoSound'] as bool?) ?? false,
       flavorNames: padFlavorNames(
         (j['flavorNames'] as Map<String, dynamic>?)?.map(
           (k, v) => MapEntry(k, List<String>.from(v)),
