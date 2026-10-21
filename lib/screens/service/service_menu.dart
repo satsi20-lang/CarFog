@@ -10,6 +10,7 @@ import '../../models/bus_map.dart';
 import '../../widgets/lang_switcher.dart';
 import '../../widgets/portrait_ui.dart';
 import 'bus_port_section.dart';
+import 'mdb_bench_tab.dart';
 import 'scroll_hint_row.dart';
 import '../../models/out_of_service.dart';
 import '../../models/remote_limits.dart';
@@ -17,6 +18,7 @@ import '../../models/adb_exposure.dart';
 import '../../services/adb_network_service.dart';
 import '../../services/cloud_service.dart';
 import '../../services/master_code_service.dart';
+import '../../services/mdb_bench_service.dart';
 import '../../services/pin_policy.dart';
 import '../../services/heater_trial_service.dart';
 import '../../services/i18n_service.dart';
@@ -205,6 +207,7 @@ const Map<String, Map<String, String>> _i18n = {
     'cloud_sync_now': 'Синхронизировать сейчас',
     'cloud_synced': 'Синхронизация выполнена',
     'tab_kiosk': 'Киоск',
+    'tab_mdb_bench': 'Терминал (стенд)',
     'kiosk_enabled': 'Киоск-режим',
     'kiosk_hint':
         'После включения откроется системный экран выбора домашнего '
@@ -592,6 +595,7 @@ const Map<String, Map<String, String>> _i18n = {
     'cloud_sync_now': 'Sync now',
     'cloud_synced': 'Sync complete',
     'tab_kiosk': 'Kiosk',
+    'tab_mdb_bench': 'Terminal (bench)',
     'kiosk_enabled': 'Kiosk mode',
     'kiosk_hint':
         'Once enabled, a system screen opens to pick the default '
@@ -974,6 +978,7 @@ const Map<String, Map<String, String>> _i18n = {
     'cloud_sync_now': 'Sünkroniseeri kohe',
     'cloud_synced': 'Sünkroniseerimine tehtud',
     'tab_kiosk': 'Kiosk',
+    'tab_mdb_bench': 'Terminal (stend)',
     'kiosk_enabled': 'Kioski režiim',
     'kiosk_hint':
         'Sisselülitamisel avaneb süsteemi vaikimisi avakuva valiku '
@@ -1195,7 +1200,15 @@ class ServiceMenuScreen extends StatefulWidget {
 
 class _ServiceMenuScreenState extends State<ServiceMenuScreen> {
   int _tab =
-      0; // 0=Настройки, 1=Ароматы, 2=Диагностика, 3=Датчики, 4=Журнал, 5=Облако, 6=Сканер, 7=Киоск
+      0; // 0=Настройки, 1=Ароматы, 2=Диагностика, 3=Датчики, 4=Журнал, 5=Облако, 6=Сканер, 7=Киоск, 8=Терминал (стенд)
+
+  @override
+  void dispose() {
+    // Стенд MDB (1.10.9) не должен оставаться открытым за пределами
+    // сервисного меню: порт закрывается при выходе, ничего не отправляя.
+    MdbBenchService.close().catchError((_) {});
+    super.dispose();
+  }
 
   Widget _buildTab() {
     switch (_tab) {
@@ -1213,8 +1226,10 @@ class _ServiceMenuScreenState extends State<ServiceMenuScreen> {
         return _CloudTab();
       case 6:
         return _ScannerTab();
-      default:
+      case 7:
         return _KioskTab();
+      default:
+        return const MdbBenchTab();
     }
   }
 
@@ -1233,6 +1248,7 @@ class _ServiceMenuScreenState extends State<ServiceMenuScreen> {
       t['tab_cloud']!,
       t['tab_scanner']!,
       t['tab_kiosk']!,
+      t['tab_mdb_bench']!,
     ];
 
     return Scaffold(

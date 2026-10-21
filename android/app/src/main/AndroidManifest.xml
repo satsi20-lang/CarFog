@@ -31,6 +31,10 @@
          блокировки (1.10.8, ReturnNotification). Выдаёт Device Owner сам
          (KioskPolicy.grantNotificationPermission), диалога нет. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Стенд терминала MDB через USB-адаптер (1.10.9). required=false:
+         без USB-хоста приложение ставится и работает, стенд просто не
+         найдёт устройств. Фильтр адаптера — MdbUsbAttachAlias ниже. -->
+    <uses-feature android:name="android.hardware.usb.host" android:required="false" />
     <application
         android:label="dry_fog_app"
         android:name=".DryFogApplication"
@@ -98,6 +102,29 @@
                 <category android:name="android.intent.category.HOME"/>
                 <category android:name="android.intent.category.DEFAULT"/>
             </intent-filter>
+        </activity-alias>
+
+        <!-- Стенд терминала MDB (1.10.11): фильтр USB-устройств для адаптера
+             Wafer (FTDI FT232R 0403:6001, res/xml/mdb_usb_device_filter.xml).
+             Отдельный псевдоним, чтобы не трогать фильтры MainActivity; при
+             подключении адаптера Android может показать стандартное окно
+             «Открыть CaRFog для этого устройства?» — согласие с «по
+             умолчанию» даёт постоянное разрешение на это устройство. Это
+             стандартный механизм Android, не обход: разрешение выдаёт только
+             пользователь в системном окне. Основной путь — запрос по кнопке
+             «Открыть порт» (UsbManager.requestPermission). Как окно ведёт себя
+             под Lock Task, не проверено. MainActivity такой intent
+             игнорирует (onNewIntent обрабатывает только «Вернуться»). -->
+        <activity-alias
+            android:name=".MdbUsbAttachAlias"
+            android:targetActivity=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
+                android:resource="@xml/mdb_usb_device_filter" />
         </activity-alias>
 
         <!-- Перезапуск по команде restart_app (R1): отдельный процесс, чтобы
