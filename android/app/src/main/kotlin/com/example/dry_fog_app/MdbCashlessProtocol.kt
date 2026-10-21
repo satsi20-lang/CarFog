@@ -3,14 +3,15 @@ package com.example.dry_fog_app
 import java.math.BigDecimal
 
 // Протокол кассового устройства MDB (уровень 1) через адаптер Wafer
-// MDB-RS232 — только для стенда «Терминал (стенд)» (1.10.9). Без Android-
+// MDB-RS232 — только для стенда «Терминал (стенд)». Без Android-
 // зависимостей, чтобы проверяться обычными JVM-тестами.
 //
-// Команды шлются байтами, ответы адаптера приходят ТЕКСТОМ из hex-символов
-// (инструкция Wafer, стр. 10). Разбор событий намеренно консервативный:
-// распознаются только 03/05/06/07/08 точной длины (с контрольной суммой или
-// без), всё остальное — «не распознано», без догадок. Формат событий на
-// реальном адаптере не подтверждён.
+// Формат подтверждён на железе (1.10.11, паспорт стенда): команды шлются
+// байтами; адаптер отвечает ТЕКСТОМ ASCII — hex-символы через пробел, кадр
+// кончается \r\n. Ответ на нашу команду идёт без префикса ("00" — ACK,
+// "01 …" — ответ на setup с контрольной суммой), события терминала — с
+// префиксом 10 ("10 03 03 E8", "10 07"). Разбор консервативный: всё, что не
+// совпало с паспортом точно, — «не распознано», без догадок.
 object MdbCashlessProtocol {
 
     val SETUP = byteArrayOf(0x11, 0x00, 0x01, 0x00, 0x00, 0x00)
@@ -19,10 +20,15 @@ object MdbCashlessProtocol {
     val DISABLE = byteArrayOf(0x14, 0x00)
     val READER_CANCEL = byteArrayOf(0x14, 0x02)
     val VEND_CANCEL = byteArrayOf(0x13, 0x01)
+    // Ошибка выдачи: возврат денег после одобрения (товар не выдан).
+    val VEND_FAILURE = byteArrayOf(0x13, 0x03)
     val SESSION_COMPLETE = byteArrayOf(0x13, 0x04)
 
     const val MAX_UNITS = 0xFFFF
     const val MAX_ITEM = 0xFFFF
+    // Префикс событий терминала в выводе адаптера Wafer (адрес кассового
+    // устройства MDB).
+    const val EVENT_PREFIX = 0x10
 
     fun vendRequest(units: Int, item: Int = 1): ByteArray {
         require(units in 0..MAX_UNITS) { "цена вне диапазона 0..65535 единиц" }
@@ -120,82 +126,101 @@ object MdbCashlessProtocol {
         val decimals: Int,
         val maxResponseSec: Int,
         val options: Int,
-        // null — контрольной суммы в ответе нет; true/false — сошлась ли.
-        val checksumOk: Boolean?,
     )
 
-    // Ответ на настройку: 01 уровень страна(2) масштаб десятичные отклик
-    // опции [контрольная сумма]. Пример из инструкции: 010109720102070D94.
-    fun parseSetupReply(text: String): SetupReply? {
-        val data = try { parseHex(text) } catch (e: IllegalArgumentException) { return null }
-        if (data.size !in 8..9 || data[0].toInt() != 0x01) return null
-        val u = { i: Int -> data[i].toInt() and 0xFF }
-        return SetupReply(
-            level = u(1),
-            country = (u(2) shl 8) or u(3),
-            // Масштаб 0 по стандарту не бывает; не подменяем его единицей,
-            // а считаем ответ неразобранным.
-            scale = u(4).takeIf { it != 0 } ?: return null,
-            decimals = u(5),
-            maxResponseSec = u(6),
-            options = u(7),
-            checksumOk = if (data.size == 9) hasValidChecksum(data) else null,
-        )
-    }
+    // Ответ на настройку: 01 уровень страна(2) масштаб знаки отклик опции
+    // контрольная сумма. С железа: "01 01 19 78 01 02 78 0D 1B" (EUR 1978,
+    // масштаб 1, 2 знака, отклик 120 с, опции 0D, 1B = сумма первых 8 байт).
+    // Без контрольной суммы или с неверной — null: масштаб из такого ответа
+    // не используем.
+    fun parseSetupReply(text: String): SetupReply? =
+        (parseFrame(text) as? Event.Setup)?.reply
 
     sealed class Event {
-        abstract val checksumOk: Boolean?
-        data class BeginSession(val funds: Int, override val checksumOk: Boolean?) : Event()
-        data class VendApproved(val amount: Int, override val checksumOk: Boolean?) : Event()
-        data class VendDenied(override val checksumOk: Boolean?) : Event()
-        data class EndSession(override val checksumOk: Boolean?) : Event()
-        data class Cancelled(override val checksumOk: Boolean?) : Event()
-        data class Unrecognized(val reason: String) : Event() {
-            override val checksumOk: Boolean? = null
+        object Ack : Event() {
+            override fun toString() = "Ack"
         }
+        data class Setup(val reply: SetupReply) : Event()
+        // funds/amount null — терминал не прислал сумму.
+        data class BeginSession(val funds: Int?) : Event()
+        object SessionCancelRequest : Event() {
+            override fun toString() = "SessionCancelRequest"
+        }
+        data class VendApproved(val amount: Int?) : Event()
+        object VendDenied : Event() {
+            override fun toString() = "VendDenied"
+        }
+        object EndSession : Event() {
+            override fun toString() = "EndSession"
+        }
+        object Cancelled : Event() {
+            override fun toString() = "Cancelled"
+        }
+        data class Unrecognized(val reason: String) : Event()
     }
 
-    // Длина события БЕЗ контрольной суммы по первому байту.
-    private val EVENT_LEN = mapOf(0x03 to 3, 0x05 to 3, 0x06 to 1, 0x07 to 1, 0x08 to 1)
-
-    fun parseEvent(text: String): Event {
+    // Один кадр адаптера (текст без \r\n или с ним) → событие.
+    fun parseFrame(text: String): Event {
         val data = try {
             parseHex(text)
         } catch (e: IllegalArgumentException) {
             return Event.Unrecognized("не hex: ${e.message}")
         }
-        val code = data[0].toInt() and 0xFF
-        val len = EVENT_LEN[code] ?: return Event.Unrecognized("код %02X не из списка 03/05/06/07/08".format(code))
-        val checksumOk = when (data.size) {
-            len -> null
-            // Лишний байт принимаем только как контрольную сумму, и только если сошлась.
-            len + 1 -> if (hasValidChecksum(data)) true else
-                return Event.Unrecognized("лишний байт не совпал с контрольной суммой")
-            else -> return Event.Unrecognized("длина ${data.size} байт не подходит к коду %02X".format(code))
+        val u = { i: Int -> data[i].toInt() and 0xFF }
+        val word = { i: Int -> (u(i) shl 8) or u(i + 1) }
+        if (u(0) == EVENT_PREFIX) {
+            if (data.size < 2) return Event.Unrecognized("префикс 10 без кода события")
+            val code = u(1)
+            val n = data.size
+            return when {
+                code == 0x03 && n == 4 -> Event.BeginSession(word(2))
+                code == 0x03 && n == 2 -> Event.BeginSession(null)
+                code == 0x04 && n == 2 -> Event.SessionCancelRequest
+                code == 0x05 && n == 4 -> Event.VendApproved(word(2))
+                code == 0x05 && n == 2 -> Event.VendApproved(null)
+                code == 0x06 && n == 2 -> Event.VendDenied
+                code == 0x07 && n == 2 -> Event.EndSession
+                code == 0x08 && n == 2 -> Event.Cancelled
+                else -> Event.Unrecognized("событие 10 %02X длиной $n байт не из паспорта".format(code))
+            }
         }
-        val word = { ((data[1].toInt() and 0xFF) shl 8) or (data[2].toInt() and 0xFF) }
-        return when (code) {
-            0x03 -> Event.BeginSession(word(), checksumOk)
-            0x05 -> Event.VendApproved(word(), checksumOk)
-            0x06 -> Event.VendDenied(checksumOk)
-            0x07 -> Event.EndSession(checksumOk)
-            else -> Event.Cancelled(checksumOk)
+        if (u(0) == 0x00 && data.size == 1) return Event.Ack
+        if (u(0) == 0x01) {
+            if (data.size != 9) return Event.Unrecognized("ответ setup длиной ${data.size} байт, ждали 9")
+            if (!hasValidChecksum(data)) {
+                return Event.Unrecognized(
+                    "ответ setup: контрольная сумма %02X, а сумма байтов %02X".format(u(8), checksum(data, 0, 8))
+                )
+            }
+            if (u(4) == 0) return Event.Unrecognized("ответ setup: масштаб 0")
+            return Event.Setup(
+                SetupReply(
+                    level = u(1),
+                    country = word(2),
+                    scale = u(4),
+                    decimals = u(5),
+                    maxResponseSec = u(6),
+                    options = u(7),
+                )
+            )
         }
+        return Event.Unrecognized("кадр %02X… не из паспорта".format(u(0)))
     }
 
-    fun describe(event: Event): String {
-        val chk = when (event.checksumOk) {
-            true -> ", контрольная сумма верна"
-            else -> ""
+    fun describe(event: Event): String = when (event) {
+        Event.Ack -> "ACK"
+        is Event.Setup -> event.reply.let {
+            "ответ на setup: уровень ${it.level}, страна %04X, масштаб ${it.scale}, знаков ${it.decimals}, "
+                .format(it.country) + "отклик ${it.maxResponseSec} с, опции %02X, контрольная сумма верна"
+                .format(it.options)
         }
-        return when (event) {
-            is Event.BeginSession -> "начало сессии, доступно ${event.funds} ед.$chk"
-            is Event.VendApproved -> "оплата одобрена, ${event.amount} ед.$chk"
-            is Event.VendDenied -> "отказ в оплате$chk"
-            is Event.EndSession -> "конец сессии$chk"
-            is Event.Cancelled -> "отменено$chk"
-            is Event.Unrecognized -> "не распознано (${event.reason})"
-        }
+        is Event.BeginSession -> "начало сессии, доступно ${event.funds?.let { "$it ед." } ?: "— (сумма не пришла)"}"
+        Event.SessionCancelRequest -> "запрос отмены сессии (нужно ответить 13 04)"
+        is Event.VendApproved -> "оплата одобрена, ${event.amount?.let { "$it ед." } ?: "— (сумма не пришла)"}"
+        Event.VendDenied -> "отказ в оплате"
+        Event.EndSession -> "конец сессии"
+        Event.Cancelled -> "отменено"
+        is Event.Unrecognized -> "не распознано (${event.reason})"
     }
 
     private fun bytes(vararg v: Int) = ByteArray(v.size) { v[it].toByte() }

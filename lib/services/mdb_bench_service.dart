@@ -41,6 +41,16 @@ class MdbBenchStatus {
   final int? setupScale;
   final int? setupDecimals;
   final String? logFile;
+  // Приём включён (14 01 отправлено), идёт сессия (10 03 … 10 07), опрос
+  // setup раз в 60 с остался без ответа.
+  final bool enabled;
+  final bool inSession;
+  final bool silent;
+  // Режим «одна тестовая оплата 0,10 €».
+  final bool testActive;
+  final String? testState;
+  final bool? testOutcomeOk;
+  final String? testOutcome;
 
   const MdbBenchStatus({
     this.open = false,
@@ -48,6 +58,13 @@ class MdbBenchStatus {
     this.setupScale,
     this.setupDecimals,
     this.logFile,
+    this.enabled = false,
+    this.inSession = false,
+    this.silent = false,
+    this.testActive = false,
+    this.testState,
+    this.testOutcomeOk,
+    this.testOutcome,
   });
 
   MdbBenchStatus.fromMap(Map<dynamic, dynamic> m)
@@ -55,7 +72,14 @@ class MdbBenchStatus {
         device = m['device'] as String?,
         setupScale = m['setupScale'] as int?,
         setupDecimals = m['setupDecimals'] as int?,
-        logFile = m['logFile'] as String?;
+        logFile = m['logFile'] as String?,
+        enabled = m['enabled'] as bool? ?? false,
+        inSession = m['inSession'] as bool? ?? false,
+        silent = m['silent'] as bool? ?? false,
+        testActive = m['testActive'] as bool? ?? false,
+        testState = m['testState'] as String?,
+        testOutcomeOk = m['testOutcomeOk'] as bool?,
+        testOutcome = m['testOutcome'] as String?;
 
   bool get hasSetup => setupScale != null && setupDecimals != null;
 }
@@ -130,6 +154,11 @@ class MdbBenchService {
         'item': 1,
       }) ??
       '';
+
+  // Одна тестовая оплата 0,10 € — автомат на стороне Kotlin (MdbTestPayment).
+  static Future<void> testStart() => _channel.invokeMethod('testStart');
+
+  static Future<void> testAbort() => _channel.invokeMethod('testAbort');
 
   static Future<String> raw(String hex) async =>
       await _channel.invokeMethod<String>('raw', {'hex': hex}) ?? '';

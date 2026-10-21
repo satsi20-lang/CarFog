@@ -18,6 +18,7 @@ class MdbCashlessProtocolTest {
         assertArrayEquals(hex("1400"), MdbCashlessProtocol.DISABLE)
         assertArrayEquals(hex("1402"), MdbCashlessProtocol.READER_CANCEL)
         assertArrayEquals(hex("1301"), MdbCashlessProtocol.VEND_CANCEL)
+        assertArrayEquals(hex("1303"), MdbCashlessProtocol.VEND_FAILURE)
         assertArrayEquals(hex("1304"), MdbCashlessProtocol.SESSION_COMPLETE)
     }
 
@@ -79,66 +80,87 @@ class MdbCashlessProtocolTest {
         MdbCashlessProtocol.requestId("CRFX", "1", "M", 0)
     }
 
+    // ---- реальные кадры адаптера Wafer (паспорт стенда, 1.10.11) ----
+    private fun frame(s: String) = MdbCashlessProtocol.parseFrame(s)
+
     @Test
-    fun setupReplyFromManual() {
-        val r = MdbCashlessProtocol.parseSetupReply("010109720102070D94")!!
+    fun setupReplyFromHardware() {
+        val r = MdbCashlessProtocol.parseSetupReply("01 01 19 78 01 02 78 0D 1B\r\n")!!
         assertEquals(1, r.level)
-        assertEquals(0x0972, r.country)
+        assertEquals(0x1978, r.country)
         assertEquals(1, r.scale)
         assertEquals(2, r.decimals)
-        assertEquals(7, r.maxResponseSec)
+        assertEquals(120, r.maxResponseSec)
         assertEquals(0x0D, r.options)
-        assertEquals(true, r.checksumOk)
+        // 0,10 € = 10 ед. = 00 0A
+        assertEquals(10, MdbCashlessProtocol.priceUnits("0.10", r.scale, r.decimals))
+        assertArrayEquals(hex("13 00 00 0A 00 01"),
+            MdbCashlessProtocol.vendRequest(MdbCashlessProtocol.priceUnits("0.10", r.scale, r.decimals), 1))
     }
 
     @Test
-    fun checksumIsSumOfPreviousBytes() {
-        val data = hex("010109720102070D94")
-        assertEquals(0x94, MdbCashlessProtocol.checksum(data, 0, data.size - 1))
+    fun setupChecksumIsSumOfFirstEightBytes() {
+        val data = hex("01 01 19 78 01 02 78 0D 1B")
+        assertEquals(0x1B, MdbCashlessProtocol.checksum(data, 0, 8))
         assertTrue(MdbCashlessProtocol.hasValidChecksum(data))
-        assertEquals(false, MdbCashlessProtocol.parseSetupReply("010109720102070D95")!!.checksumOk)
-        assertNull(MdbCashlessProtocol.parseSetupReply("010109720102070D")!!.checksumOk)
+        // пример из инструкции Wafer — тоже сходится
+        assertEquals(2, MdbCashlessProtocol.parseSetupReply("010109720102070D94")!!.decimals)
     }
 
     @Test
-    fun setupReplyRejectsOtherMessages() {
-        assertNull(MdbCashlessProtocol.parseSetupReply("03FFFE"))
-        assertNull(MdbCashlessProtocol.parseSetupReply("0101"))
-        assertNull(MdbCashlessProtocol.parseSetupReply("zz"))
-        // масштаб 0 — не подменяем, а не разбираем
-        assertNull(MdbCashlessProtocol.parseSetupReply("0101097200020700"))
+    fun setupWithBadOrMissingChecksumIsNotAccepted() {
+        assertNull(MdbCashlessProtocol.parseSetupReply("01 01 19 78 01 02 78 0D 1C"))
+        assertNull(MdbCashlessProtocol.parseSetupReply("01 01 19 78 01 02 78 0D"))
+        assertTrue(frame("01 01 19 78 01 02 78 0D 1C") is Event.Unrecognized)
+        // масштаб 0 при верной сумме — тоже нет
+        assertNull(MdbCashlessProtocol.parseSetupReply("01 01 19 78 00 02 78 0D 1A"))
     }
 
     @Test
-    fun badHexInput() {
-        for (s in listOf("", "1", "14 0", "GG", "14-01")) {
-            try {
-                MdbCashlessProtocol.parseHex(s)
-                throw AssertionError("ожидалась ошибка для \"$s\"")
-            } catch (e: IllegalArgumentException) {
-                // ожидаемо
-            }
+    fun ack() {
+        assertEquals(Event.Ack, frame("00\r\n"))
+        assertEquals(Event.Ack, frame("00"))
+    }
+
+    @Test
+    fun terminalEventsWithPrefix10() {
+        assertEquals(Event.BeginSession(1000), frame("10 03 03 E8\r\n"))
+        assertEquals(Event.SessionCancelRequest, frame("10 04\r\n"))
+        assertEquals(Event.VendApproved(10), frame("10 05 00 0A\r\n"))
+        assertEquals(Event.VendDenied, frame("10 06\r\n"))
+        assertEquals(Event.EndSession, frame("10 07\r\n"))
+        assertEquals(Event.Cancelled, frame("10 08\r\n"))
+        // сумма не пришла — событие есть, суммы нет (тестовая оплата не шлёт vend / делает возврат)
+        assertEquals(Event.BeginSession(null), frame("10 03"))
+        assertEquals(Event.VendApproved(null), frame("10 05"))
+    }
+
+    @Test
+    fun eventsWithoutPrefixAreNotGuessed() {
+        // по паспорту без префикса идут только ответы на команды (00, 01 …)
+        for (s in listOf("03 03 E8", "05 00 0A", "06", "07", "08")) {
+            assertTrue(s, frame(s) is Event.Unrecognized)
         }
-        assertArrayEquals(byteArrayOf(0x14, 0x01), MdbCashlessProtocol.parseHex(" 14 01\n"))
-        assertArrayEquals(byteArrayOf(0x0a), MdbCashlessProtocol.parseHex("0a"))
     }
 
     @Test
-    fun knownEvents() {
-        assertEquals(Event.BeginSession(0xFFFE, null), MdbCashlessProtocol.parseEvent("03FFFE"))
-        assertEquals(Event.VendApproved(10, null), MdbCashlessProtocol.parseEvent("05000A"))
-        assertEquals(Event.EndSession(null), MdbCashlessProtocol.parseEvent("07"))
-        assertEquals(Event.VendDenied(null), MdbCashlessProtocol.parseEvent("06"))
-        assertEquals(Event.Cancelled(null), MdbCashlessProtocol.parseEvent("08"))
-        // с контрольной суммой
-        assertEquals(Event.EndSession(true), MdbCashlessProtocol.parseEvent("0707"))
-        assertEquals(Event.VendApproved(10, true), MdbCashlessProtocol.parseEvent("05000A0F"))
+    fun gluedTwoFramesInOneTextAreNotGuessed() {
+        // Если бы кадры склеились, такой текст не должен разобраться как одно из событий.
+        assertTrue(frame("00\r\n10 07\r\n") is Event.Unrecognized)
+        assertTrue(frame("10 05 00 0A 10 07") is Event.Unrecognized)
     }
 
     @Test
-    fun unknownOrMalformedEventsAreNotGuessed() {
-        for (s in listOf("00", "04", "0A", "03FF", "07 08", "05000A00", "xyz", "")) {
-            assertTrue(s, MdbCashlessProtocol.parseEvent(s) is Event.Unrecognized)
+    fun incompleteFramesAreNotGuessed() {
+        for (s in listOf("10", "10 0", "10 03 03", "10 05 00", "01 01 19 78", "0")) {
+            assertTrue(s, frame(s) is Event.Unrecognized)
+        }
+    }
+
+    @Test
+    fun garbageIsNotGuessed() {
+        for (s in listOf("", "\r\n", "zz", "10 GG", "\u0000\u00FF", "10 09", "10 0A 01", "02", "FF")) {
+            assertTrue(s, frame(s) is Event.Unrecognized)
         }
     }
 
@@ -193,14 +215,5 @@ class MdbCashlessProtocolTest {
     fun vendSuccessOtherItemAndRequestBounds() {
         assertArrayEquals(hex("13 02 00 02"), MdbCashlessProtocol.vendSuccess(2))
         assertArrayEquals(hex("13 00 FF FF 01 00"), MdbCashlessProtocol.vendRequest(0xFFFF, 0x100))
-    }
-
-    @Test
-    fun eventsWithChecksum() {
-        assertEquals(Event.BeginSession(0xFFFE, true), MdbCashlessProtocol.parseEvent("03FFFE00"))
-        assertEquals(Event.VendDenied(true), MdbCashlessProtocol.parseEvent("0606"))
-        assertEquals(Event.Cancelled(true), MdbCashlessProtocol.parseEvent("0808"))
-        // неверная контрольная сумма — не догадываемся
-        assertTrue(MdbCashlessProtocol.parseEvent("03FFFE01") is Event.Unrecognized)
     }
 }

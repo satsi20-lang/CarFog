@@ -25,10 +25,12 @@ void main() {
   group('вкладка стенда', () {
     final calls = <MethodCall>[];
     var hasSetup = false;
+    var testActive = false;
 
     setUp(() {
       calls.clear();
       hasSetup = false;
+      testActive = false;
       messenger.setMockMethodCallHandler(channel, (call) async {
         calls.add(call);
         switch (call.method) {
@@ -39,6 +41,9 @@ void main() {
               'setupScale': hasSetup ? 1 : null,
               'setupDecimals': hasSetup ? 2 : null,
               'logFile': null,
+              'enabled': testActive,
+              'testActive': testActive,
+              'testState': testActive ? 'приложите карту (ждём 10 03)' : 'не запущена',
             };
           case 'getLog':
             return <Map>[];
@@ -110,6 +115,36 @@ void main() {
       expect(vend.arguments['units'], 10);
       expect(vend.arguments['scale'], 1);
       expect(vend.arguments['decimals'], 2);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('тестовая оплата стартует только после «Списать»', (tester) async {
+      await pumpTab(tester);
+      final btn = find.widgetWithText(ElevatedButton, 'Тестовая оплата 0,10 €');
+      await tester.ensureVisible(btn);
+      await tester.tap(btn);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Будет списано 0,10 € с карты'), findsOneWidget);
+      await tester.tap(find.widgetWithText(TextButton, 'Отмена'));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(calls.where((c) => c.method == 'testStart'), isEmpty);
+      await tester.tap(btn);
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(find.widgetWithText(TextButton, 'Списать'));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(calls.where((c) => c.method == 'testStart'), hasLength(1));
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('во время тестовой оплаты ручные команды недоступны', (tester) async {
+      testActive = true;
+      await pumpTab(tester);
+      for (final label in ['setup', 'id', 'Запрос оплаты', 'Отправить', 'Тестовая оплата 0,10 €']) {
+        final b = tester.widget<ElevatedButton>(find.widgetWithText(ElevatedButton, label));
+        expect(b.onPressed, isNull, reason: label);
+      }
+      final abort = tester.widget<ElevatedButton>(find.widgetWithText(ElevatedButton, 'Прервать'));
+      expect(abort.onPressed, isNotNull);
       await tester.pumpWidget(const SizedBox());
     });
 

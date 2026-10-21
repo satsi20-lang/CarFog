@@ -53,7 +53,10 @@ class _MdbBenchTabState extends State<MdbBenchTab> {
   void initState() {
     super.initState();
     _refresh();
-    _poll = Timer.periodic(const Duration(milliseconds: 250), (_) => _refresh());
+    _poll = Timer.periodic(
+      const Duration(milliseconds: 250),
+      (_) => _refresh(),
+    );
   }
 
   @override
@@ -108,85 +111,147 @@ class _MdbBenchTabState extends State<MdbBenchTab> {
   }
 
   Future<void> _find() => _run(() async {
-        final list = await MdbBenchService.listDevices();
-        setState(() {
-          _devices = list;
-          if (!list.any((d) => d.device == _selected)) {
-            _selected = list.isEmpty ? null : list.first.device;
-          }
-        });
-        _say(list.isEmpty
-            ? 'USB-устройств не найдено. Адаптер подключён? Режим OTG не менять.'
-            : 'Найдено устройств: ${list.length}');
-      });
+    final list = await MdbBenchService.listDevices();
+    setState(() {
+      _devices = list;
+      if (!list.any((d) => d.device == _selected)) {
+        _selected = list.isEmpty ? null : list.first.device;
+      }
+    });
+    _say(
+      list.isEmpty
+          ? 'USB-устройств не найдено. Адаптер подключён? Режим OTG не менять.'
+          : 'Найдено устройств: ${list.length}',
+    );
+  });
 
   Future<void> _open() => _run(() async {
-        final dev = _selected;
-        if (dev == null) {
-          _say('Сначала найдите и выберите устройство', error: true);
-          return;
-        }
-        final r = await MdbBenchService.open(dev, driver: _driver);
-        _say(r == 'permission_requested'
-            ? 'Запрошено разрешение на USB. Подтвердите в системном окне — '
+    final dev = _selected;
+    if (dev == null) {
+      _say('Сначала найдите и выберите устройство', error: true);
+      return;
+    }
+    final r = await MdbBenchService.open(dev, driver: _driver);
+    _say(
+      r == 'permission_requested'
+          ? 'Запрошено разрешение на USB. Подтвердите в системном окне — '
                 'порт откроется сам. Если окна нет, см. журнал и '
                 'docs/payment_mdb_bench.md.'
-            : 'Порт открыт');
-      });
+          : 'Порт открыт',
+    );
+  });
 
   Future<void> _close() => _run(() async {
-        await MdbBenchService.close();
-        _say('Порт закрыт');
-      });
+    await MdbBenchService.close();
+    _say('Порт закрыт');
+  });
 
   Future<void> _command(String name) => _run(() async {
-        final hex = await MdbBenchService.command(name);
-        _say('Отправлено $name: $hex');
-      });
+    final hex = await MdbBenchService.command(name);
+    _say('Отправлено $name: $hex');
+  });
 
   Future<void> _vend() => _run(() async {
-        if (!_status.hasSetup) {
-          _say('Нет ответа на setup: сначала setup и дождитесь ответа '
-              '(масштаб и знаки нужны для суммы).', error: true);
-          return;
-        }
-        // Сумму считает стенд — в окне то, что уйдёт в адаптер.
-        final p = await MdbBenchService.vendPreview(_amount.text.trim());
-        if (!mounted) return;
-        final ok = await showDialog<bool>(
-          context: context,
-          barrierDismissible: false,
-          builder: (ctx) => AlertDialog(
-            backgroundColor: _bg,
-            title: Text(
-              'Списать ${p.amount} € с карты? Это реальная оплата.',
-              style: const TextStyle(color: Colors.white, fontSize: 20),
-            ),
-            content: Text(
-              '${p.units} ед. терминала (масштаб ${p.scale}, знаков ${p.decimals})\n'
-              'Байты: ${p.hex}',
-              style: const TextStyle(color: _dim, fontSize: 16),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(false),
-                child: const Text('Отмена', style: TextStyle(fontSize: 18)),
-              ),
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(true),
-                child: const Text('Списать',
-                    style: TextStyle(color: _red, fontSize: 18, fontWeight: FontWeight.bold)),
-              ),
-            ],
+    if (!_status.hasSetup) {
+      _say(
+        'Нет ответа на setup: сначала setup и дождитесь ответа '
+        '(масштаб и знаки нужны для суммы).',
+        error: true,
+      );
+      return;
+    }
+    // Сумму считает стенд — в окне то, что уйдёт в адаптер.
+    final p = await MdbBenchService.vendPreview(_amount.text.trim());
+    if (!mounted) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _bg,
+        title: Text(
+          'Списать ${p.amount} € с карты? Это реальная оплата.',
+          style: const TextStyle(color: Colors.white, fontSize: 20),
+        ),
+        content: Text(
+          '${p.units} ед. терминала (масштаб ${p.scale}, знаков ${p.decimals})\n'
+          'Байты: ${p.hex}',
+          style: const TextStyle(color: _dim, fontSize: 16),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Отмена', style: TextStyle(fontSize: 18)),
           ),
-        );
-        if (ok != true) {
-          _say('Запрос оплаты отменён, ничего не отправлено');
-          return;
-        }
-        final hex = await MdbBenchService.sendVend(p);
-        _say('Запрос оплаты ${p.amount} €: $hex');
-      });
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text(
+              'Списать',
+              style: TextStyle(
+                color: _red,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) {
+      _say('Запрос оплаты отменён, ничего не отправлено');
+      return;
+    }
+    final hex = await MdbBenchService.sendVend(p);
+    _say('Запрос оплаты ${p.amount} €: $hex');
+  });
+
+  Future<void> _testStart() => _run(() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _bg,
+        title: const Text(
+          'Будет списано 0,10 € с карты',
+          style: TextStyle(color: Colors.white, fontSize: 20),
+        ),
+        content: const Text(
+          'Это реальная оплата: setup, prices, enable, затем приложите '
+          'карту в течение 60 с. Сумма 10 ед. (0,10 €), один раз.',
+          style: TextStyle(color: _dim, fontSize: 16),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Отмена', style: TextStyle(fontSize: 18)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text(
+              'Списать',
+              style: TextStyle(
+                color: _red,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) {
+      _say('Тестовая оплата отменена, ничего не отправлено');
+      return;
+    }
+    await MdbBenchService.testStart();
+    _say('Тестовая оплата запущена — следите за состоянием и журналом');
+  });
+
+  Future<void> _testAbort() => _run(() async {
+    await MdbBenchService.testAbort();
+    _say(
+      'Тестовая оплата прерывается (отмена по текущему шагу, затем disable)',
+    );
+  });
 
   Future<void> _sendRaw() async {
     final err = MdbBenchService.validateHex(_raw.text);
@@ -199,170 +264,317 @@ class _MdbBenchTabState extends State<MdbBenchTab> {
   }
 
   Future<void> _copy() => _run(() async {
-        final text = await MdbBenchService.allLog();
-        await Clipboard.setData(ClipboardData(text: text));
-        _say('Журнал скопирован (${text.isEmpty ? 0 : text.split('\n').length} строк)');
-      });
+    final text = await MdbBenchService.allLog();
+    await Clipboard.setData(ClipboardData(text: text));
+    _say(
+      'Журнал скопирован (${text.isEmpty ? 0 : text.split('\n').length} строк)',
+    );
+  });
 
   Future<void> _clear() => _run(() async {
-        await MdbBenchService.clearLog();
-        setState(_lines.clear);
-        _say('Экран журнала очищен (файл не тронут)');
-      });
+    await MdbBenchService.clearLog();
+    setState(_lines.clear);
+    _say('Экран журнала очищен (файл не тронут)');
+  });
 
   @override
   Widget build(BuildContext context) {
     final s = _status;
-    return ListView(
-      padding: const EdgeInsets.all(16),
+    // Ручные команды — только при открытом порте и вне тестовой оплаты.
+    final manual = s.open && !s.testActive;
+    // Верх закреплён: предупреждение, состояние порта, приёма, тестовой
+    // оплаты и ответ на последнее нажатие видны при любой прокрутке.
+    return Column(
       children: [
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: _red.withValues(alpha: 0.15),
-            border: Border.all(color: _red, width: 2),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: const Text(
-            'Тестовый режим: реальное списание.\n'
-            'Запрос оплаты списывает деньги с приложенной карты. Стенд '
-            'не связан с боевой оплатой аппарата.',
-            style: TextStyle(color: _red, fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-        ),
-        const SizedBox(height: 12),
-        _text(
-          'Порт: ${s.open ? 'открыт (${s.device})' : 'закрыт'}   ·   '
-          'setup: ${s.hasSetup ? 'масштаб ${s.setupScale}, знаков ${s.setupDecimals}' : 'нет ответа'}',
-          bold: true,
-        ),
-        if (s.logFile != null) _text('Файл журнала: ${s.logFile}', color: _dim, size: 14),
-        if (_message != null) ...[
-          const SizedBox(height: 8),
-          _text(_message!, color: _messageIsError ? _red : PUi.accent),
-        ],
-        const SizedBox(height: 16),
-        _section('USB-адаптер'),
-        Wrap(spacing: 8, runSpacing: 8, children: [
-          _button('Найти USB-устройства', _find),
-          _button('Открыть порт', s.open ? null : _open),
-          _button('Закрыть порт', s.open ? _close : null),
-        ]),
-        const SizedBox(height: 8),
-        for (final d in _devices)
-          ListTile(
-            onTap: s.open ? null : () => setState(() => _selected = d.device),
-            leading: Icon(
-              d.device == _selected
-                  ? Icons.radio_button_checked
-                  : Icons.radio_button_unchecked,
-              color: PUi.accent,
-            ),
-            title: _text(d.title),
-            subtitle: _text(
-              '${d.device} · класс ${d.deviceClass} · интерфейсы ${d.interfaceClasses.join(',')}'
-              ' · драйвер ${d.driver ?? 'не найден'}'
-              ' · разрешение ${d.hasPermission ? 'есть' : 'нет'}',
-              color: _dim,
-              size: 14,
-            ),
-          ),
-        Row(children: [
-          _text('Драйвер: '),
-          DropdownButton<String>(
-            value: _driver,
-            dropdownColor: _bg,
-            onChanged: s.open ? null : (v) => setState(() => _driver = v ?? 'auto'),
-            items: [
-              for (final e in _drivers.entries)
-                DropdownMenuItem(value: e.key, child: _text(e.value)),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: _red.withValues(alpha: 0.15),
+                  border: Border.all(color: _red, width: 2),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Text(
+                  'Тестовый режим: реальное списание. Стенд не связан с боевой '
+                  'оплатой аппарата.',
+                  style: TextStyle(
+                    color: _red,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              _text(
+                'Порт: ${s.open ? 'открыт (${s.device})' : 'закрыт'}   ·   '
+                'setup: ${s.hasSetup ? 'масштаб ${s.setupScale}, знаков ${s.setupDecimals}' : 'нет ответа'}',
+                bold: true,
+              ),
+              _text(
+                'Приём: ${s.enabled ? 'включён' : 'выключен'}   ·   '
+                'сессия: ${s.inSession ? 'идёт' : 'нет'}',
+                color: _dim,
+              ),
+              if (s.testActive || s.testOutcome != null) ...[
+                const SizedBox(height: 8),
+                _text('Тестовая оплата: ${s.testState ?? '?'}', bold: true),
+                if (s.testOutcome != null)
+                  _text(
+                    '${s.testOutcomeOk == true ? 'УСПЕХ' : 'НЕ УДАЛАСЬ'}: ${s.testOutcome}',
+                    color: s.testOutcomeOk == true ? PUi.accent : _red,
+                    bold: true,
+                  ),
+              ],
+              if (_message != null) ...[
+                const SizedBox(height: 8),
+                _text(_message!, color: _messageIsError ? _red : PUi.accent),
+              ],
             ],
           ),
-        ]),
-        const SizedBox(height: 16),
-        _section('Команды MDB'),
-        Wrap(spacing: 8, runSpacing: 8, children: [
-          for (final c in const [
-            'setup', 'prices', 'enable', 'disable', 'rcancel', 'cancel', 'done', 'ok', 'id',
-          ])
-            _button(c, s.open ? () => _command(c) : null),
-        ]),
-        _text('Порядок: setup → prices → enable → приложить карту → '
-            'запрос оплаты 0.10 → ok → done', color: _dim, size: 14),
-        const SizedBox(height: 16),
-        _section('Запрос оплаты (vend)'),
-        Row(children: [
-          SizedBox(width: 160, child: _field(_amount, 'Сумма, €')),
-          const SizedBox(width: 12),
-          _button('Запрос оплаты', s.open ? _vend : null),
-        ]),
-        const SizedBox(height: 16),
-        _section('Свои байты (raw)'),
-        Row(children: [
-          Expanded(child: _field(_raw, 'hex, например 14 01', error: _rawError)),
-          const SizedBox(width: 12),
-          _button('Отправить', s.open ? _sendRaw : null),
-        ]),
-        const SizedBox(height: 16),
-        Row(children: [
-          Expanded(child: _section('Журнал (${_lines.length})')),
-          _button('Копировать журнал', _copy),
-          const SizedBox(width: 8),
-          _button('Очистить', _clear),
-        ]),
-        Container(
-          height: 520,
-          margin: const EdgeInsets.only(top: 8),
-          padding: const EdgeInsets.all(8),
-          color: Colors.black,
-          child: ListView.builder(
-            reverse: true,
-            itemCount: _lines.length,
-            itemBuilder: (_, i) => SelectableText(
-              _lines[_lines.length - 1 - i],
-              style: const TextStyle(
-                color: Color(0xFFCCDDEE),
-                fontFamily: 'monospace',
-                fontSize: 12,
+        ),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            children: [
+              if (s.open && s.silent && !s.testActive) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: _red),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _text(
+                        'Адаптер не ответил на опрос setup. Автоматически ничего '
+                        'не повторяется. Если нужно — заново по порядку:',
+                        color: _red,
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          for (final c in const ['setup', 'prices', 'enable'])
+                            _button(c, () => _command(c)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              if (s.logFile != null)
+                _text('Файл журнала: ${s.logFile}', color: _dim, size: 14),
+              const SizedBox(height: 16),
+              _section('USB-адаптер'),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _button('Найти USB-устройства', _find),
+                  _button('Открыть порт', s.open ? null : _open),
+                  _button('Закрыть порт', s.open ? _close : null),
+                ],
               ),
-            ),
+              const SizedBox(height: 8),
+              for (final d in _devices)
+                ListTile(
+                  onTap: s.open
+                      ? null
+                      : () => setState(() => _selected = d.device),
+                  leading: Icon(
+                    d.device == _selected
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_unchecked,
+                    color: PUi.accent,
+                  ),
+                  title: _text(d.title),
+                  subtitle: _text(
+                    '${d.device} · класс ${d.deviceClass} · интерфейсы ${d.interfaceClasses.join(',')}'
+                    ' · драйвер ${d.driver ?? 'не найден'}'
+                    ' · разрешение ${d.hasPermission ? 'есть' : 'нет'}',
+                    color: _dim,
+                    size: 14,
+                  ),
+                ),
+              Row(
+                children: [
+                  _text('Драйвер: '),
+                  DropdownButton<String>(
+                    value: _driver,
+                    dropdownColor: _bg,
+                    onChanged: s.open
+                        ? null
+                        : (v) => setState(() => _driver = v ?? 'auto'),
+                    items: [
+                      for (final e in _drivers.entries)
+                        DropdownMenuItem(value: e.key, child: _text(e.value)),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              _section('Одна тестовая оплата 0,10 €'),
+              _text(
+                'Автоматически: setup → prices → enable → ждём карту (10 03) до '
+                '60 с → vend 10 ед. → 13 02 + 13 04 → disable. Сумма жёстко '
+                '10 ед., повторный vend невозможен.',
+                color: _dim,
+                size: 14,
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _button(
+                    'Тестовая оплата 0,10 €',
+                    s.open && !s.testActive ? _testStart : null,
+                  ),
+                  _button('Прервать', s.testActive ? _testAbort : null),
+                ],
+              ),
+              const SizedBox(height: 16),
+              _section('Команды MDB'),
+              if (s.testActive)
+                _text(
+                  'Во время тестовой оплаты ручные команды, другие суммы, id и '
+                  'raw недоступны.',
+                  color: _dim,
+                  size: 14,
+                ),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final c in const [
+                    'setup',
+                    'prices',
+                    'enable',
+                    'disable',
+                    'rcancel',
+                    'cancel',
+                    'vendfail',
+                    'done',
+                    'ok',
+                    'id',
+                  ])
+                    _button(c, manual ? () => _command(c) : null),
+                ],
+              ),
+              _text(
+                'Порядок: setup → prices → enable → приложить карту → '
+                'запрос оплаты 0.10 → ok → done',
+                color: _dim,
+                size: 14,
+              ),
+              const SizedBox(height: 16),
+              _section('Запрос оплаты (vend)'),
+              Row(
+                children: [
+                  SizedBox(width: 160, child: _field(_amount, 'Сумма, €')),
+                  const SizedBox(width: 12),
+                  _button('Запрос оплаты', manual ? _vend : null),
+                ],
+              ),
+              const SizedBox(height: 16),
+              _section('Свои байты (raw)'),
+              Row(
+                children: [
+                  Expanded(
+                    child: _field(
+                      _raw,
+                      'hex, например 14 01',
+                      error: _rawError,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  _button('Отправить', manual ? _sendRaw : null),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(child: _section('Журнал (${_lines.length})')),
+                  _button('Копировать журнал', _copy),
+                  const SizedBox(width: 8),
+                  _button('Очистить', _clear),
+                ],
+              ),
+              Container(
+                height: 520,
+                margin: const EdgeInsets.only(top: 8),
+                padding: const EdgeInsets.all(8),
+                color: Colors.black,
+                child: ListView.builder(
+                  reverse: true,
+                  itemCount: _lines.length,
+                  itemBuilder: (_, i) => SelectableText(
+                    _lines[_lines.length - 1 - i],
+                    style: const TextStyle(
+                      color: Color(0xFFCCDDEE),
+                      fontFamily: 'monospace',
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ],
     );
   }
 
-  Widget _text(String t, {Color color = Colors.white, double size = 16, bool bold = false}) =>
-      Text(t, style: TextStyle(
-        color: color,
-        fontSize: size,
-        fontWeight: bold ? FontWeight.bold : FontWeight.normal,
-      ));
+  Widget _text(
+    String t, {
+    Color color = Colors.white,
+    double size = 16,
+    bool bold = false,
+  }) => Text(
+    t,
+    style: TextStyle(
+      color: color,
+      fontSize: size,
+      fontWeight: bold ? FontWeight.bold : FontWeight.normal,
+    ),
+  );
 
   Widget _section(String t) => Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: _text(t, color: PUi.accent, size: 18, bold: true),
-      );
+    padding: const EdgeInsets.only(bottom: 8),
+    child: _text(t, color: PUi.accent, size: 18, bold: true),
+  );
 
   Widget _button(String label, VoidCallback? onPressed) => ElevatedButton(
-        onPressed: onPressed,
-        style: ElevatedButton.styleFrom(
-          minimumSize: const Size(88, PUi.minTouch),
-          backgroundColor: const Color(0xFF1F2937),
-          foregroundColor: Colors.white,
-        ),
-        child: Text(label, style: const TextStyle(fontSize: 16)),
-      );
+    onPressed: onPressed,
+    style: ElevatedButton.styleFrom(
+      minimumSize: const Size(88, PUi.minTouch),
+      backgroundColor: const Color(0xFF1F2937),
+      foregroundColor: Colors.white,
+    ),
+    child: Text(label, style: const TextStyle(fontSize: 16)),
+  );
 
-  Widget _field(TextEditingController c, String label, {String? error}) => TextField(
+  Widget _field(TextEditingController c, String label, {String? error}) =>
+      TextField(
         controller: c,
         style: const TextStyle(color: Colors.white, fontSize: 18),
         decoration: InputDecoration(
           labelText: label,
           labelStyle: const TextStyle(color: _dim),
           errorText: error,
-          enabledBorder: const OutlineInputBorder(borderSide: BorderSide(color: _dim)),
-          focusedBorder: const OutlineInputBorder(borderSide: BorderSide(color: PUi.accent)),
+          enabledBorder: const OutlineInputBorder(
+            borderSide: BorderSide(color: _dim),
+          ),
+          focusedBorder: const OutlineInputBorder(
+            borderSide: BorderSide(color: PUi.accent),
+          ),
         ),
       );
 }

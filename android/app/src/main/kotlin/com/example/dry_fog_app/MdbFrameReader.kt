@@ -12,11 +12,12 @@ fun interface MdbBytePort {
     fun read(buf: ByteArray, timeoutMs: Int): Int
 }
 
-// Цикл чтения стенда MDB (1.10.9). Адаптер Wafer присылает ответы текстом
-// без разделителей, поэтому конец сообщения — пауза GAP_MS без новых
-// байтов (как в mdb_test.py v2). Два события, пришедшие подряд быстрее
-// паузы, склеятся в одно сообщение — поэтому в журнале видно время
-// первого и последнего байта.
+// Цикл чтения стенда MDB. Адаптер Wafer присылает кадры текстом, кадр
+// кончается \r\n (подтверждено на железе, 1.10.11). Конец кадра — \n
+// (сразу, даже если два кадра пришли одним USB-пакетом) либо, для кадра без
+// \r\n, пауза GAP_MS без новых байтов. Паузы между кадрами на железе ~85 мс
+// (пример: "00", затем "10 07") — больше GAP_MS, такие кадры не склеиваются.
+// В журнале видно время первого и последнего байта кадра.
 class MdbFrameReader(
     private val port: MdbBytePort,
     private val onFrame: (data: ByteArray, firstMs: Long, lastMs: Long) -> Unit,
@@ -57,9 +58,16 @@ class MdbFrameReader(
             }
             val now = clock()
             if (n > 0) {
-                if (frame.size() == 0) first = now
-                frame.write(buf, 0, n)
-                last = now
+                // Пауза могла пройти внутри этого же чтения (таймаут чтения
+                // не совпал с границей паузы) — старый кадр закрываем до
+                // новых байтов.
+                if (frame.size() > 0 && now - last >= gapMs) flush()
+                for (i in 0 until n) {
+                    if (frame.size() == 0) first = now
+                    frame.write(buf[i].toInt())
+                    last = now
+                    if (buf[i] == LF) flush()
+                }
             } else if (frame.size() > 0 && now - last >= gapMs) {
                 flush()
             }
@@ -70,5 +78,6 @@ class MdbFrameReader(
     companion object {
         const val GAP_MS = 60L
         const val READ_TIMEOUT_MS = 20
+        private const val LF: Byte = 0x0A
     }
 }

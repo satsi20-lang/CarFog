@@ -20,8 +20,10 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 import java.io.IOException
+import java.util.concurrent.Executors
 import java.util.concurrent.Future
 import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 
 // Стенд «Терминал (стенд)» (1.10.9): терминал Nayax по MDB через адаптер
@@ -31,8 +33,10 @@ import java.util.concurrent.TimeUnit
 // ModbusChannel не прикасается.
 //
 // Порт: 9600 8N1. Команды — байтами, ответы адаптера — текстом из
-// hex-символов (см. MdbCashlessProtocol). Сам стенд ничего не шлёт без
-// нажатия кнопки.
+// hex-символов (см. MdbCashlessProtocol). Сам стенд шлёт только: команды по
+// кнопкам, шаги режима «одна тестовая оплата» (MdbTestPayment, запуск
+// кнопкой с подтверждением) и опрос setup раз в 60 с при включённом приёме
+// (MdbKeepAlive, 1.10.11).
 class MdbUsbBench(private val context: Context) : MethodChannel.MethodCallHandler {
 
     private val usb = context.getSystemService(Context.USB_SERVICE) as UsbManager
@@ -60,6 +64,18 @@ class MdbUsbBench(private val context: Context) : MethodChannel.MethodCallHandle
     @Volatile
     private var session = 0L
 
+    private val testPayment = MdbTestPayment(
+        send = { d, label -> send(d, label) },
+        note = { log.info(now(), it) },
+        clock = ::now,
+    )
+    private val keepAlive = MdbKeepAlive(::now)
+    // Таймеры тестовой оплаты и опроса — пока открыт порт, каждые TICK_MS.
+    private val ticker = Executors.newSingleThreadScheduledExecutor { r ->
+        Thread(r, "mdb-bench-ticker").apply { isDaemon = true }
+    }
+    private var tickTask: ScheduledFuture<*>? = null
+
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context, intent: Intent) {
             val device = deviceExtra(intent)
@@ -67,8 +83,9 @@ class MdbUsbBench(private val context: Context) : MethodChannel.MethodCallHandle
                 ACTION_PERMISSION -> {
                     val granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
                     val pending = synchronized(lock) { pendingOpen.also { pendingOpen = null } }
-                    log.info(now(), "разрешение на ${device?.deviceName ?: "?"}: " +
-                        if (granted) "выдано" else "НЕ выдано")
+                    log.info(now(), "результат запроса разрешения USB: " +
+                        (if (granted) "ВЫДАНО" else "НЕ выдано") +
+                        " — ${device?.let(::describe) ?: "устройство не указано"}")
                     if (granted && pending != null && device?.deviceName == pending.first) {
                         // Открытие — блокирующий USB-обмен, не на главном потоке.
                         Thread { openNow(pending.first, pending.second) }.start()
@@ -107,6 +124,7 @@ class MdbUsbBench(private val context: Context) : MethodChannel.MethodCallHandle
     fun release() {
         closePort("приложение закрывает экран")
         closer.shutdown()
+        ticker.shutdownNow()
         try {
             context.unregisterReceiver(receiver)
         } catch (e: IllegalArgumentException) {
@@ -131,6 +149,15 @@ class MdbUsbBench(private val context: Context) : MethodChannel.MethodCallHandle
                 "command" -> result.success(command(call))
                 "vendPreview" -> result.success(vendPreview(call.argument<String>("amount") ?: ""))
                 "raw" -> result.success(sendRaw(call.argument<String>("hex") ?: ""))
+                "testStart" -> {
+                    synchronized(lock) { port } ?: throw IOException("порт не открыт")
+                    testPayment.start()
+                    result.success(null)
+                }
+                "testAbort" -> {
+                    testPayment.abort()
+                    result.success(null)
+                }
                 "getLog" -> {
                     val since = (call.argument<Number>("since") ?: 0).toLong()
                     result.success(log.since(since).map { mapOf("seq" to it.seq, "line" to it.line) })
@@ -177,14 +204,16 @@ class MdbUsbBench(private val context: Context) : MethodChannel.MethodCallHandle
         synchronized(lock) {
             if (port != null) throw IOException("порт уже открыт ($portDevice), сначала закройте")
         }
-        if (!usb.hasPermission(device)) {
+        if (usb.hasPermission(device)) {
+            log.info(now(), "разрешение USB уже есть: ${describe(device)}")
+        } else {
             synchronized(lock) { pendingOpen = deviceName to driver }
             val intent = Intent(ACTION_PERMISSION).setPackage(context.packageName)
             // Android 12+: система дописывает в intent EXTRA_DEVICE и
             // EXTRA_PERMISSION_GRANTED — PendingIntent обязан быть изменяемым.
             val flags = if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0
             val pi = PendingIntent.getBroadcast(context, 0, intent, flags or PendingIntent.FLAG_UPDATE_CURRENT)
-            log.info(now(), "запрошено разрешение на ${describe(device)} — ждём ответа системного диалога")
+            log.info(now(), "запрошено разрешение USB (системный диалог Android): ${describe(device)}")
             usb.requestPermission(device, pi)
             return "permission_requested"
         }
@@ -224,6 +253,9 @@ class MdbUsbBench(private val context: Context) : MethodChannel.MethodCallHandle
                     isDaemon = true
                     start()
                 }
+                tickTask = ticker.scheduleWithFixedDelay(
+                    { onTick(mySession) }, TICK_MS, TICK_MS, TimeUnit.MILLISECONDS
+                )
             }
             log.info(now(), "порт открыт: ${describe(device)}, ${driver.javaClass.simpleName}, $BAUD 8N1")
         } catch (e: Exception) {
@@ -255,12 +287,21 @@ class MdbUsbBench(private val context: Context) : MethodChannel.MethodCallHandle
             readerThread = null
             setupReply = null
             session++
+            tickTask?.cancel(false)
+            tickTask = null
             snapshot
         }
         if (p == null) return null
+        // Автоматика сбрасывается на потоке закрытия: testPayment может ждать
+        // записи в порт из потока чтения, главный поток этого ждать не должен.
+        val stopAll = {
+            r?.stop()
+            keepAlive.reset()
+            testPayment.portLost(reason)
+        }
         return try {
             closer.close(
-                stop = { r?.stop() },
+                stop = stopAll,
                 closePort = { p.close() },
                 reader = t,
                 onDone = { stopped ->
@@ -270,30 +311,41 @@ class MdbUsbBench(private val context: Context) : MethodChannel.MethodCallHandle
             )
         } catch (e: RejectedExecutionException) {
             // release() уже был: закрыть прямо здесь, без ожидания потока.
-            r?.stop()
+            stopAll()
             try { p.close() } catch (ignored: Exception) {}
             null
         }
     }
 
+    // Поток чтения. Сначала кадр в журнал, потом автоматика — так в журнале
+    // RX стоит раньше ответного TX (на 10 03 vend уходит сразу, < 1 с).
     private fun onFrame(data: ByteArray, firstMs: Long, lastMs: Long, frameSession: Long) {
-        val text = String(data, Charsets.US_ASCII)
-        val setup = MdbCashlessProtocol.parseSetupReply(text)
-        val note = if (setup != null) {
-            val accepted = synchronized(lock) {
-                (frameSession == session).also { if (it) setupReply = setup }
-            }
-            (if (accepted) "" else "[порт уже закрыт, не принят] ") +
-                "ответ на setup: уровень ${setup.level}, масштаб ${setup.scale}, знаков ${setup.decimals}" +
-                when (setup.checksumOk) {
-                    true -> ", контрольная сумма верна"
-                    false -> ", КОНТРОЛЬНАЯ СУММА НЕ СОШЛАСЬ"
-                    null -> ""
-                }
-        } else {
-            "разбор: " + MdbCashlessProtocol.describe(MdbCashlessProtocol.parseEvent(text))
+        val e = MdbCashlessProtocol.parseFrame(String(data, Charsets.US_ASCII))
+        val current = synchronized(lock) {
+            (frameSession == session).also { if (it && e is MdbCashlessProtocol.Event.Setup) setupReply = e.reply }
         }
-        log.rx(firstMs, lastMs, data, note)
+        log.rx(firstMs, lastMs, data,
+            (if (current) "" else "[порт уже закрыт, не принят] ") + "разбор: " + MdbCashlessProtocol.describe(e))
+        if (!current) return
+        keepAlive.onEvent(e)
+        testPayment.onEvent(e)
+    }
+
+    // Поток таймеров. Исключение здесь остановило бы расписание — ловим всё.
+    private fun onTick(tickSession: Long) {
+        if (tickSession != session) return
+        try {
+            testPayment.tick()
+            when (keepAlive.tick(paused = testPayment.active)) {
+                MdbKeepAlive.Action.SEND_SETUP -> send(MdbCashlessProtocol.SETUP, "опрос (раз в 60 с)")
+                MdbKeepAlive.Action.REPORT_SILENCE -> log.info(now(),
+                    "нет ответа на опрос setup за ${MdbKeepAlive.REPLY_TIMEOUT_MS / 1000} с — адаптер молчит. " +
+                        "Автоматически не повторяем: при необходимости setup → prices → enable кнопками")
+                MdbKeepAlive.Action.NONE -> Unit
+            }
+        } catch (ex: Exception) {
+            log.info(now(), "ошибка таймера стенда: ${ex.message ?: ex}")
+        }
     }
 
     private fun status(): Map<String, Any?> {
@@ -304,12 +356,26 @@ class MdbUsbBench(private val context: Context) : MethodChannel.MethodCallHandle
                 "device" to portDevice,
                 "setupScale" to s?.scale,
                 "setupDecimals" to s?.decimals,
+                "enabled" to keepAlive.enabled,
+                "inSession" to keepAlive.inSession,
+                "silent" to keepAlive.silent,
+                "testActive" to testPayment.active,
+                "testState" to testPayment.state.title,
+                "testOutcomeOk" to testPayment.outcome?.ok,
+                "testOutcome" to testPayment.outcome?.text,
                 "logFile" to context.getExternalFilesDir(null)?.let { File(it, LOG_FILE).path },
             )
         }
     }
 
+    // Во время тестовой оплаты — только её автомат: другие суммы, id и raw
+    // недоступны.
+    private fun requireNoTest() {
+        check(!testPayment.active) { "недоступно во время тестовой оплаты — дождитесь конца или «Прервать»" }
+    }
+
     private fun command(call: MethodCall): String {
+        requireNoTest()
         val name = call.argument<String>("name") ?: ""
         val item = call.argument<Int>("item") ?: 1
         val data = when (name) {
@@ -320,6 +386,7 @@ class MdbUsbBench(private val context: Context) : MethodChannel.MethodCallHandle
             "rcancel" -> MdbCashlessProtocol.READER_CANCEL
             "cancel" -> MdbCashlessProtocol.VEND_CANCEL
             "done" -> MdbCashlessProtocol.SESSION_COMPLETE
+            "vendfail" -> MdbCashlessProtocol.VEND_FAILURE
             "ok" -> MdbCashlessProtocol.vendSuccess(item)
             "id" -> MdbCashlessProtocol.requestId(ID_MANUFACTURER, ID_SERIAL, ID_MODEL, ID_VERSION)
             "vend" -> {
@@ -357,6 +424,7 @@ class MdbUsbBench(private val context: Context) : MethodChannel.MethodCallHandle
     // показывается сумма, обратно пересчитанная из единиц, которые уйдут в
     // адаптер, а не введённый текст.
     private fun vendPreview(amount: String): Map<String, Any> {
+        requireNoTest()
         val s = requireSetup()
         val units = MdbCashlessProtocol.priceUnits(amount, s.scale, s.decimals)
         return mapOf(
@@ -369,6 +437,7 @@ class MdbUsbBench(private val context: Context) : MethodChannel.MethodCallHandle
     }
 
     private fun sendRaw(hex: String): String {
+        requireNoTest()
         val data = MdbCashlessProtocol.parseHex(hex)
         send(data, "raw")
         return MdbCashlessProtocol.toHex(data)
@@ -383,6 +452,7 @@ class MdbUsbBench(private val context: Context) : MethodChannel.MethodCallHandle
             throw e
         }
         log.tx(now(), data, label)
+        keepAlive.onSent(data)
     }
 
     private fun describe(d: UsbDevice): String =
@@ -412,6 +482,7 @@ class MdbUsbBench(private val context: Context) : MethodChannel.MethodCallHandle
         private const val WRITE_TIMEOUT_MS = 500
         // Ожидание закрытия по кнопке: join потока чтения (1 с) + запас.
         private const val CLOSE_WAIT_MS = 2000L
+        private const val TICK_MS = 200L
 
         // Данные для 17 00 (передача ID автомата). Какие значения ждёт Nayax,
         // не подтверждено — только для проверки, что команда проходит.

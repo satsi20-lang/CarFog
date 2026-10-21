@@ -120,4 +120,85 @@ class MdbFrameReaderTest {
         assertTrue(line, line.contains("<- hex: 07 | ascii: 07 | байты: 30 37 | первый байт"))
         assertTrue(line, line.contains("+40 мс"))
     }
+
+    // ---- реальные кадры адаптера Wafer (1.10.11) ----
+
+    // Порт как настоящий read: блокируется до прихода данных или таймаута.
+    // script — (время прихода, байты).
+    private class BlockingFakePort(script: List<Pair<Long, String>>, private val endAt: Long) : MdbBytePort {
+        private val queue = ArrayDeque(script)
+        var now = 0L
+        lateinit var reader: MdbFrameReader
+        override fun read(buf: ByteArray, timeoutMs: Int): Int {
+            val next = queue.firstOrNull()
+            if (next != null && next.first <= now + timeoutMs) {
+                queue.removeFirst()
+                now = maxOf(now, next.first)
+                val b = next.second.toByteArray(Charsets.US_ASCII)
+                b.copyInto(buf)
+                return b.size
+            }
+            now += timeoutMs
+            if (now >= endAt) reader.stop()
+            return 0
+        }
+    }
+
+    private fun runBlocking(script: List<Pair<Long, String>>, readTimeoutMs: Int = 20): List<Triple<String, Long, Long>> {
+        val frames = mutableListOf<Triple<String, Long, Long>>()
+        val port = BlockingFakePort(script, 2000)
+        val reader = MdbFrameReader(
+            port = port,
+            onFrame = { d, f, l -> frames += Triple(String(d, Charsets.US_ASCII), f, l) },
+            onError = { throw AssertionError("ошибки быть не должно") },
+            clock = { port.now },
+            readTimeoutMs = readTimeoutMs,
+        )
+        port.reader = reader
+        reader.run()
+        return frames
+    }
+
+    @Test
+    fun ackThenEndSession85msApartAreTwoFrames() {
+        // С железа: "00", через ~85 мс "10 07".
+        val frames = runBlocking(listOf(100L to "00\r\n", 185L to "10 07\r\n"))
+        assertEquals(listOf("00\r\n", "10 07\r\n"), frames.map { it.first })
+        assertEquals(MdbCashlessProtocol.Event.Ack, MdbCashlessProtocol.parseFrame(frames[0].first))
+        assertEquals(MdbCashlessProtocol.Event.EndSession, MdbCashlessProtocol.parseFrame(frames[1].first))
+    }
+
+    @Test
+    fun framesWithoutCrLf85msApartAreSplitByPause() {
+        val frames = runBlocking(listOf(100L to "00", 185L to "10 07"))
+        assertEquals(listOf("00", "10 07"), frames.map { it.first })
+    }
+
+    @Test
+    fun pauseInsideOneLongReadStillSplits() {
+        // Таймаут чтения длиннее паузы: между кадрами нет ни одного пустого
+        // чтения — раньше такие кадры склеивались.
+        val frames = runBlocking(listOf(100L to "00", 185L to "10 07"), readTimeoutMs = 200)
+        assertEquals(listOf("00", "10 07"), frames.map { it.first })
+    }
+
+    @Test
+    fun twoFramesInOneUsbPacketAreSplitByCrLf() {
+        val frames = runBlocking(listOf(100L to "00\r\n10 07\r\n"))
+        assertEquals(listOf("00\r\n", "10 07\r\n"), frames.map { it.first })
+    }
+
+    @Test
+    fun frameSplitAcrossPacketsIsJoined() {
+        val frames = runBlocking(listOf(100L to "01 01 19 78 ", 104L to "01 02 78 0D 1B\r\n"))
+        assertEquals(listOf("01 01 19 78 01 02 78 0D 1B\r\n"), frames.map { it.first })
+        assertEquals(1, MdbCashlessProtocol.parseSetupReply(frames[0].first)!!.scale)
+    }
+
+    @Test
+    fun incompleteFrameIsFlushedByPauseAndNotRecognized() {
+        val frames = runBlocking(listOf(100L to "10 0"))
+        assertEquals(listOf("10 0"), frames.map { it.first })
+        assertTrue(MdbCashlessProtocol.parseFrame(frames[0].first) is MdbCashlessProtocol.Event.Unrecognized)
+    }
 }
