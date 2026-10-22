@@ -38,6 +38,8 @@
   "treating.cancel_body": "Die Zahlung wird nicht automatisch erstattet. Der Vorgang wird abgebrochen.",
   "treating.cancel_yes": "Stoppen",
   "treating.cancel_no": "Fortsetzen",
+  "treating.no_refund_title": "Keine Rückerstattung",
+  "treating.no_refund_body": "Wenn Sie den Vorgang jetzt abbrechen, wird die Zahlung nicht erstattet.",
   "finished.title": "Behandlung abgeschlossen!",
   "finished.subtitle": "Der Innenraum Ihres Fahrzeugs wurde mit Trockennebel behandelt.",
   "finished.returning": "Zurück zum Start",

@@ -38,6 +38,8 @@
   "treating.cancel_body": "Maksua ei palauteta automaattisesti. Käsittely keskeytetään.",
   "treating.cancel_yes": "Lopeta",
   "treating.cancel_no": "Jatka",
+  "treating.no_refund_title": "Rahoja ei palauteta",
+  "treating.no_refund_body": "Jos keskeytät käsittelyn nyt, maksua ei palauteta.",
   "finished.title": "Käsittely valmis!",
   "finished.subtitle": "Autosi sisätila on käsitelty kuivalla sumulla.",
   "finished.returning": "Palataan alkuun",

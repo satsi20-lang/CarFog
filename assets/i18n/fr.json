@@ -38,6 +38,8 @@
   "treating.cancel_body": "Le paiement n'est pas remboursé automatiquement. La procédure sera interrompue.",
   "treating.cancel_yes": "Arrêter",
   "treating.cancel_no": "Continuer",
+  "treating.no_refund_title": "Pas de remboursement",
+  "treating.no_refund_body": "Si vous arrêtez la procédure maintenant, le paiement ne sera pas remboursé.",
   "finished.title": "Traitement terminé !",
   "finished.subtitle": "L'habitacle de votre voiture a été traité au brouillard sec.",
   "finished.returning": "Retour à l'accueil",

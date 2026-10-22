@@ -42,6 +42,7 @@ const Map<String, Map<String, String>> _i18n = {
     'st_success': 'успех',
     'st_refunded': 'возврат',
     'st_manual_refund_needed': 'нужен ручной возврат',
+    'st_client_cancelled_no_refund': 'отмена клиентом, без возврата',
     'st_pending': 'не закрыта',
   },
   'en': {
@@ -71,6 +72,7 @@ const Map<String, Map<String, String>> _i18n = {
     'st_success': 'success',
     'st_refunded': 'refunded',
     'st_manual_refund_needed': 'manual refund needed',
+    'st_client_cancelled_no_refund': 'cancelled by customer, no refund',
     'st_pending': 'not closed',
   },
   'et': {
@@ -100,6 +102,7 @@ const Map<String, Map<String, String>> _i18n = {
     'st_success': 'õnnestus',
     'st_refunded': 'tagastatud',
     'st_manual_refund_needed': 'vaja käsitsi tagastust',
+    'st_client_cancelled_no_refund': 'kliendi katkestus, tagastuseta',
     'st_pending': 'lõpetamata',
   },
 };

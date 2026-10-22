@@ -38,6 +38,8 @@
   "treating.cancel_body": "Betalningen återbetalas inte automatiskt. Behandlingen avbryts.",
   "treating.cancel_yes": "Stoppa",
   "treating.cancel_no": "Fortsätt",
+  "treating.no_refund_title": "Pengarna återbetalas inte",
+  "treating.no_refund_body": "Om du stoppar behandlingen nu återbetalas inte betalningen.",
   "finished.title": "Behandlingen är klar!",
   "finished.subtitle": "Bilens kupé har behandlats med torrdimma.",
   "finished.returning": "Återgår till start",

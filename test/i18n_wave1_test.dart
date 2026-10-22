@@ -73,7 +73,7 @@ void main() {
         expect(() => utf8.decode(File('$dir/$l.json').readAsBytesSync()), returnsNormally);
         final d = read(l);
         expect(d.keys.toSet(), en.keys.toSet());
-        expect(d.length, 76);
+        expect(d.length, 78);
         final tooLong = <String>[];
         for (final k in en.keys) {
           final v = d[k]!;

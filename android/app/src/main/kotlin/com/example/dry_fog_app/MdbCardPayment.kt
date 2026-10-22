@@ -18,9 +18,11 @@ import com.example.dry_fog_app.MdbCommandQueue.Result
 //   10 05 на другую сумму — 13 03, 13 04, ошибка. 10 06 — 13 04, «отклонён».
 //   finishSuccess() — цикл прошёл: если сессия открыта — 13 02 (ACK), затем
 //     13 04 и 10 07; иначе ничего.
-//   finishFailure() — цикл оборвался: прошло меньше окна возврата с 10 05 и
-//     сессия открыта — 13 03 (ACK, один повтор), 13 04, «refunded»; иначе —
-//     «manual_refund_needed» (терминалу только 13 04 на 10 04).
+//   finishFailure() — цикл оборвался (сбой аппарата): прошло меньше окна
+//     возврата с 10 05 и сессия открыта — 13 03 (ACK, один повтор), 13 04,
+//     «refunded»; иначе — «manual_refund_needed» (терминалу только 13 04 на 10 04).
+//   finishClientCancel() — клиент сам нажал «Отмена» (1.11.1): возврат или
+//     выдача по решению, принятому в момент нажатия.
 class MdbCardPayment(
     private val queue: MdbCommandQueue,
     private val note: (String) -> Unit,
@@ -105,18 +107,33 @@ class MdbCardPayment(
         if (state != State.APPROVED) return
         state = State.FINISHING
         outcome["cycle"] = "success"
-        if (!sessionOpen || closer.active) {
-            outcome["confirm"] = "сессия уже закрыта терминалом"
-            return complete("success")
+        confirmThen("success")
+    }
+
+    // Клиент сам остановил цикл кнопкой «Отмена» (1.11.1, ТЗ раздел 15).
+    // Возврат решает Dart в момент нажатия (только прогрев и только в окне
+    // с 10 05) — здесь исполнение, без своего таймера:
+    //   refund — как сбой в окне: 13 03, 13 04, «refunded»; сессия уже
+    //     закрыта или 13 03 не принят — ручной возврат;
+    //   без refund — услуга оказана: 13 02 (сессия открыта, подтверждение
+    //     включено), 13 04, «client_cancelled_no_refund».
+    fun finishClientCancel(stage: String, refund: Boolean) {
+        if (state != State.APPROVED) return
+        state = State.FINISHING
+        outcome["cycle"] = "client_cancel"
+        outcome["cycle_reason"] = "cancelled_by_client"
+        outcome["stage"] = stage
+        outcome["elapsed_s"] = (clock() - (approvedAt ?: clock())) / 1000
+        if (!refund) {
+            outcome["refund"] = "не положен (отмена клиентом)"
+            return confirmThen("client_cancelled_no_refund")
         }
-        if (!confirmEnabled) {
-            outcome["confirm"] = "13 02 выключен настройкой"
-            return closeThen("success")
+        if (sessionOpen && !closer.active) {
+            refund(1)
+        } else {
+            outcome["refund"] = "сессия уже закрыта терминалом"
+            complete("manual_refund_needed")
         }
-        queue.enqueue(MdbCommandQueue.Command(MdbCashlessProtocol.vendSuccess(item), "13 02 (выдача)") { r, _ ->
-            outcome["confirm"] = r.title
-            closeThen("success")
-        })
     }
 
     fun finishFailure(reason: String) {
@@ -308,6 +325,22 @@ class MdbCardPayment(
                 outcome["refund"] = "${r.title} (попыток $attempt)"
                 closeThen("manual_refund_needed")
             }
+        })
+    }
+
+    // Выдача подтверждена: 13 02, если сессия ещё открыта, затем 13 04.
+    private fun confirmThen(type: String) {
+        if (!sessionOpen || closer.active) {
+            outcome["confirm"] = "сессия уже закрыта терминалом"
+            return complete(type)
+        }
+        if (!confirmEnabled) {
+            outcome["confirm"] = "13 02 выключен настройкой"
+            return closeThen(type)
+        }
+        queue.enqueue(MdbCommandQueue.Command(MdbCashlessProtocol.vendSuccess(item), "13 02 (выдача)") { r, _ ->
+            outcome["confirm"] = r.title
+            closeThen(type)
         })
     }
 

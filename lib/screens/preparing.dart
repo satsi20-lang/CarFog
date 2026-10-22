@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_state.dart';
 import '../models/bus_map.dart';
 import '../models/out_of_service.dart';
+import '../services/card_payment_service.dart';
 import '../services/cloud_service.dart';
 import '../services/cycle_energy_service.dart';
 import '../services/cycle_summary_service.dart';
@@ -15,6 +16,7 @@ import '../services/i18n_service.dart';
 import '../services/modbus_service.dart';
 import '../services/out_of_service_service.dart';
 import '../services/session_service.dart';
+import '../widgets/cancel_confirm_dialog.dart';
 import '../widgets/fog_background.dart';
 import '../widgets/lang_switcher.dart';
 import '../widgets/portrait_ui.dart';
@@ -62,6 +64,9 @@ class _PreparingScreenState extends State<PreparingScreen> {
   // (успех/таймаут/перегрев/отмена) — Timer.periodic может успеть
   // сработать повторно, пока идут await внутри предыдущего тика.
   bool _finished = false;
+
+  // «Деньги не возвращаются» (оплата картой после окна возврата, 1.11.1).
+  final CancelConfirmDialog _cancelDialog = CancelConfirmDialog();
 
   @override
   void initState() {
@@ -179,6 +184,7 @@ class _PreparingScreenState extends State<PreparingScreen> {
   @override
   void dispose() {
     _timer?.cancel();
+    _cancelDialog.dismiss();
     // Экран закрыт, а исход не решён (удалённая команда сброса сессии,
     // смена состояния извне): ТЭН не должен остаться включённым без
     // термостата, а счётчик — опрашиваться бесконечно. Успешный прогрев
@@ -409,10 +415,29 @@ class _PreparingScreenState extends State<PreparingScreen> {
     );
   }
 
+  // Отмена в прогреве при оплате картой (1.11.1, ТЗ раздел 15): в окне
+  // возврата — сразу и с автовозвратом; после окна — сначала предупреждение
+  // «Деньги не возвращаются», услуга закрывается как оказанная. Решение
+  // берётся в момент нажатия. Монеты — как раньше, без окна.
   Future<void> _onCancel() async {
-    if (_finished) return;
+    if (_finished || _cancelDialog.isOpen) return;
+    final quote = CardPaymentService.quoteClientCancel('preheat');
+    if (quote != null && !quote.refund) {
+      String t(String key) =>
+          I18n.tr(context.read<AppNotifier>().lang, 'treating.$key');
+      final ok = await _cancelDialog.ask(
+        context,
+        title: t('no_refund_title'),
+        body: t('no_refund_body'),
+        no: t('cancel_no'),
+        yes: t('cancel_yes'),
+      );
+      // Пока шло окно, прогрев мог дойти до цели или оборваться сам.
+      if (!ok || !mounted || _finished) return;
+    }
     _finished = true;
     _timer?.cancel();
+    if (quote != null) unawaited(CardPaymentService.clientCancel(quote));
     CycleSummary.preheatAborted('HEAT_USER_CANCEL');
     final notifier = context.read<AppNotifier>();
     // Подтверждённое выключение: аппарат возвращается в ожидание, и ТЭН

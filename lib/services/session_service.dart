@@ -32,8 +32,14 @@ class SessionService {
 
   // Итог цикла для оплаты картой (1.11.0): успех → 13 02/13 04, сбой → возврат
   // в окне или ручной возврат. Вызывается сразу, до чтения счётчика по шине —
-  // окно возврата считается секундами.
-  static void Function(String sessionId, bool completed, String? reason)? onFinished;
+  // окно возврата считается секундами. extra — поля записи (stage при отмене
+  // клиентом, 1.11.1).
+  static void Function(
+    String sessionId,
+    bool completed,
+    String? reason, [
+    Map<String, dynamic>? extra,
+  ])? onFinished;
 
   // Вызывается с payment.dart в момент, когда внесённой суммы достаточно,
   // до перехода к подготовке. Отдельно снимает базовое показание общего
@@ -132,7 +138,7 @@ class SessionService {
     session.ended = true;
     _current = null;
     try {
-      onFinished?.call(session.id, completed, reason);
+      onFinished?.call(session.id, completed, reason, extra);
     } catch (e) {
       debugPrint('SessionService.onFinished error: $e');
     }

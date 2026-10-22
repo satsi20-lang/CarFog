@@ -38,6 +38,8 @@
   "treating.cancel_body": "Оплата не возвращается автоматически. Процедура будет прервана.",
   "treating.cancel_yes": "Остановить",
   "treating.cancel_no": "Продолжить",
+  "treating.no_refund_title": "Деньги не возвращаются",
+  "treating.no_refund_body": "Если остановить процедуру сейчас, оплата не будет возвращена.",
   "finished.title": "Обработка завершена!",
   "finished.subtitle": "Салон вашего автомобиля обработан сухим туманом.",
   "finished.returning": "Возврат к началу",

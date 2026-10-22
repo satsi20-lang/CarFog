@@ -38,6 +38,8 @@
   "treating.cancel_body": "Makset ei tagastata automaatselt. Protseduur katkestatakse.",
   "treating.cancel_yes": "Peata",
   "treating.cancel_no": "Jätka",
+  "treating.no_refund_title": "Raha ei tagastata",
+  "treating.no_refund_body": "Kui peatate protseduuri nüüd, makset ei tagastata.",
   "finished.title": "Töötlus lõpetatud!",
   "finished.subtitle": "Teie auto salon on töödeldud kuiva uduga.",
   "finished.returning": "Naaseb algusesse",

@@ -356,6 +356,147 @@ class MdbCardPaymentTest {
         assertNull("2,50 € без знаков после запятой — не целое", MdbCashlessProtocol.unitsFromCents(250, 1, 0))
     }
 
+    // ---- отмена клиентом после одобрения (1.11.1, ТЗ раздел 15) ----
+
+    @Test
+    fun clientCancelAfterPreheatConfirmsDeliveryWithoutRefund() {
+        val r = Rig().approved()
+        r.advance(10_000)
+        r.pay.finishClientCancel("compressor", refund = false)
+        assertEquals("13 02, не 13 03", listOf("13 02 00 03"), r.sent)
+        r.ack(); r.advance(300)
+        assertEquals("13 04", r.sent.last())
+        r.ack(); r.rx("10 07\r\n")
+        val (type, data) = r.last()
+        assertEquals("client_cancelled_no_refund", type)
+        assertEquals("compressor", data["stage"])
+        assertEquals("cancelled_by_client", data["cycle_reason"])
+        assertEquals("ACK 00", data["confirm"])
+        assertTrue(r.sent.none { it.startsWith("13 03") })
+        assertFalse(r.types().contains("manual_refund_needed"))
+        assertEquals(State.IDLE, r.pay.state)
+        assertFalse(r.owns)
+    }
+
+    @Test
+    fun clientCancelInPreheatWithRefundRefundsLikeFailureInWindow() {
+        val r = Rig().approved()
+        r.advance(29_000)
+        r.pay.finishClientCancel("preheat", refund = true)
+        assertEquals(listOf("13 03"), r.sent)
+        r.ack(); r.advance(300)
+        assertEquals("13 04", r.sent.last())
+        r.ack(); r.rx("10 07\r\n")
+        val (type, data) = r.last()
+        assertEquals("refunded", type)
+        assertEquals("preheat", data["stage"])
+        assertEquals("cancelled_by_client", data["cycle_reason"])
+    }
+
+    @Test
+    fun clientCancelDecisionIsNotRecheckedByTimer() {
+        // Решение принято при нажатии (в окне); остановка заняла ещё секунды —
+        // автомат не пересчитывает окно по своим часам.
+        val r = Rig().approved()
+        r.advance(33_000)
+        r.pay.finishClientCancel("preheat", refund = true)
+        assertEquals(listOf("13 03"), r.sent)
+        // И наоборот: без возврата — 13 03 нет даже на 1-й секунде.
+        val r2 = Rig().approved()
+        r2.pay.finishClientCancel("preheat", refund = false)
+        assertEquals(listOf("13 02 00 03"), r2.sent)
+    }
+
+    @Test
+    fun clientCancelAfterTerminalClosedSessionCompletesWithoutCommands() {
+        val r = Rig().approved()
+        r.advance(35_000); r.rx("10 04\r\n"); r.ack(); r.advance(96); r.rx("10 07\r\n")
+        r.sent.clear()
+        r.pay.finishClientCancel("treating", refund = false)
+        assertTrue(r.sent.isEmpty())
+        assertEquals("client_cancelled_no_refund", r.last().first)
+        assertEquals("сессия уже закрыта терминалом", r.last().second["confirm"])
+    }
+
+    @Test
+    fun clientCancelWithRefundButSessionClosedIsManual() {
+        val r = Rig().approved()
+        r.advance(5_000); r.rx("10 04\r\n"); r.ack(); r.rx("10 07\r\n")
+        r.sent.clear()
+        r.pay.finishClientCancel("preheat", refund = true)
+        assertEquals("manual_refund_needed", r.last().first)
+        assertTrue(r.sent.isEmpty())
+    }
+
+    @Test
+    fun clientCancelWithConfirmDisabledSendsOnly1304() {
+        val r = Rig()
+        r.pay.arm(200, 3, 30_000, false)
+        r.rx("10 03 03 E8\r\n"); r.advance(90); r.ack(); r.rx("10 05 00 C8\r\n")
+        r.sent.clear(); r.advance(300)
+        r.pay.finishClientCancel("treating", refund = false)
+        assertEquals(listOf("13 04"), r.sent)
+    }
+
+    @Test
+    fun clientCancelFfOn1302StillClosesWithoutRefund() {
+        val r = Rig().approved()
+        r.pay.finishClientCancel("compressor", refund = false)
+        r.rx("FF\r\n"); r.advance(300)
+        assertEquals("13 04", r.sent.last())
+        r.ack(); r.rx("10 07\r\n")
+        assertEquals("client_cancelled_no_refund", r.last().first)
+        assertTrue(r.sent.none { it.startsWith("13 03") })
+    }
+
+    @Test
+    fun repeatedClientCancelAndLateFailureAreIgnored() {
+        val r = Rig().approved()
+        r.pay.finishClientCancel("compressor", refund = false)
+        r.pay.finishClientCancel("compressor", refund = false)
+        r.pay.finishClientCancel("preheat", refund = true)
+        // итог цикла из SessionService приходит после остановки — мимо
+        r.pay.finishFailure("cancelled_by_client")
+        r.pay.finishSuccess()
+        assertEquals(listOf("13 02 00 03"), r.sent)
+        r.ack(); r.advance(300); r.ack(); r.rx("10 07\r\n")
+        assertEquals(1, r.types().count { it == "client_cancelled_no_refund" })
+        assertFalse(r.types().contains("refunded"))
+        assertFalse(r.types().contains("manual_refund_needed"))
+    }
+
+    @Test
+    fun clientCancelBeforeApprovalDoesNothing() {
+        val r = Rig().armed()
+        r.pay.finishClientCancel("preheat", refund = true)
+        assertTrue(r.sent.isEmpty())
+        assertEquals(State.ARMED, r.pay.state)
+    }
+
+    @Test
+    fun clientCancelAfterLinkLostWithoutRefundCloses() {
+        val r = Rig().approved()
+        r.pay.portLost("adapter detached")
+        r.queue.clear()
+        r.pay.finishClientCancel("treating", refund = false)
+        assertEquals("client_cancelled_no_refund", r.last().first)
+        assertEquals("adapter detached", r.last().second["link_lost"])
+        assertTrue(r.sent.isEmpty())
+    }
+
+    @Test
+    fun faultAfterWindowStillManualAndFaultInWindowStillRefunds() {
+        // Правило сбоев аппарата не меняется (ТЗ раздел 15, п. 4).
+        val r = Rig().approved() // approved() уже отсчитал 300 мс после 10 05
+        r.advance(30_000 - 300)
+        r.pay.finishFailure("heater_sensor_fault")
+        assertEquals("ровно на границе окна — уже ручной", "manual_refund_needed", r.last().first)
+        val r2 = Rig().approved()
+        r2.advance(29_999 - 300)
+        r2.pay.finishFailure("overheat")
+        assertEquals(listOf("13 03"), r2.sent)
+    }
+
     // ---- восстановление после перезапуска (ТЗ раздел 8) ----
 
     @Test

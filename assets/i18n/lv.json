@@ -38,6 +38,8 @@
   "treating.cancel_body": "Maksājums netiek atmaksāts automātiski. Procedūra tiks pārtraukta.",
   "treating.cancel_yes": "Pārtraukt",
   "treating.cancel_no": "Turpināt",
+  "treating.no_refund_title": "Nauda netiek atgriezta",
+  "treating.no_refund_body": "Ja procedūru apturēsiet tagad, maksājums netiks atgriezts.",
   "finished.title": "Apstrāde pabeigta!",
   "finished.subtitle": "Jūsu automašīnas salons ir apstrādāts ar sauso miglu.",
   "finished.returning": "Atgriešanās sākumā",

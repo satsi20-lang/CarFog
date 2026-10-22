@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../models/bus_map.dart';
 import '../models/out_of_service.dart';
+import '../services/card_payment_service.dart';
 import '../services/cloud_service.dart';
 import '../services/cycle_energy_service.dart';
 import '../services/cycle_summary_service.dart';
@@ -13,6 +14,7 @@ import '../services/i18n_service.dart';
 import '../services/modbus_service.dart';
 import '../services/out_of_service_service.dart';
 import '../services/session_service.dart';
+import '../widgets/cancel_confirm_dialog.dart';
 import '../widgets/fog_background.dart';
 import '../widgets/lang_switcher.dart';
 import '../widgets/portrait_ui.dart';
@@ -65,6 +67,7 @@ class _TreatingScreenState extends State<TreatingScreen>
   );
   bool _faulted = false;
   bool _cancelling = false;
+  final CancelConfirmDialog _cancelDialog = CancelConfirmDialog();
   // Счётчик энергии установлен — нужен подтверждению выключения ТЭНа по
   // мощности (HeaterShutdownService), в том числе из dispose, где
   // context уже недоступен.
@@ -202,31 +205,30 @@ class _TreatingScreenState extends State<TreatingScreen>
   // отказа оборудования (service_delivered:false, hardware_error) и решает
   // о возврате средств. Остановка — как при отказе: всё выключается, ТЭН с
   // подтверждением. Деньги не возвращаются автоматически.
+  // Оплата картой (1.11.1, ТЗ раздел 15): после прогрева возврата нет —
+  // окно «Деньги не возвращаются», платёж закрывается как оказанная услуга
+  // (13 02) ещё до остановки выходов.
   Future<void> _onCancel() async {
     if (_faulted || _cancelling || _phase == _Phase.shutdown) return;
+    if (_cancelDialog.isOpen) return;
+    String stageNow() => _phase == _Phase.compressor ? 'compressor' : 'treating';
+    final card = CardPaymentService.quoteClientCancel(stageNow());
     // Язык берётся при показе каждой строки: переключение языка во время
     // окна не закрывает его.
     String t(String key) =>
         I18n.tr(context.read<AppNotifier>().lang, 'treating.$key');
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(t('cancel_title')),
-        content: Text(t('cancel_body')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(t('cancel_no')),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(t('cancel_yes')),
-          ),
-        ],
-      ),
-    );
-    // Пока шёл диалог, цикл мог закончиться или сломаться сам.
-    if (confirmed != true || !mounted || _faulted || _cancelling) return;
+    final noRefund = card != null && !card.refund;
+    if (card == null || noRefund) {
+      final confirmed = await _cancelDialog.ask(
+        context,
+        title: t(noRefund ? 'no_refund_title' : 'cancel_title'),
+        body: t(noRefund ? 'no_refund_body' : 'cancel_body'),
+        no: t('cancel_no'),
+        yes: t('cancel_yes'),
+      );
+      // Пока шёл диалог, цикл мог закончиться или сломаться сам.
+      if (!confirmed || !mounted || _faulted || _cancelling) return;
+    }
     if (_phase == _Phase.shutdown) return;
     _cancelling = true;
     _faulted = true; // термостат и тики больше ничего не делают
@@ -234,7 +236,14 @@ class _TreatingScreenState extends State<TreatingScreen>
     final notifier = context.read<AppNotifier>();
     final plannedS = _treatmentDuration;
     final doneS = _treatmentDoneS(plannedS);
-    final stage = _phase == _Phase.compressor ? 'compressor' : 'treating';
+    // Стадия — на момент остановки (за время окна компрессор мог смениться
+    // обработкой); возврата после прогрева нет ни в одной из них.
+    final stage = stageNow();
+    if (card != null) {
+      unawaited(CardPaymentService.clientCancel(
+        card.stage == stage ? card : CardPaymentService.quoteClientCancel(stage) ?? card,
+      ));
+    }
     await _shutdownAll(notifier, 'treating_client_cancel');
     await SessionService.interrupt(
       'cancelled_by_client',
@@ -489,6 +498,7 @@ class _TreatingScreenState extends State<TreatingScreen>
   void dispose() {
     _timer?.cancel();
     _heaterTimer?.cancel();
+    _cancelDialog.dismiss();
     _stopRedBlink();
     _blinkController.dispose();
     // Аварийная гарантия: что бы ни случилось с экраном (уход, ошибка,

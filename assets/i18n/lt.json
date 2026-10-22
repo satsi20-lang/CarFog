@@ -38,6 +38,8 @@
   "treating.cancel_body": "Mokėjimas automatiškai negrąžinamas. Procedūra bus nutraukta.",
   "treating.cancel_yes": "Nutraukti",
   "treating.cancel_no": "Tęsti",
+  "treating.no_refund_title": "Pinigai negrąžinami",
+  "treating.no_refund_body": "Jei procedūrą sustabdysite dabar, mokėjimas nebus grąžintas.",
   "finished.title": "Apdorojimas baigtas!",
   "finished.subtitle": "Jūsų automobilio salonas apdorotas sausu rūku.",
   "finished.returning": "Grįžtama į pradžią",

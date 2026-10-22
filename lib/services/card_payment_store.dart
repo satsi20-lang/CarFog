@@ -20,10 +20,15 @@ class CardPaymentRecord {
   final String flavorName;
   final int coinsCents;
   final String? sessionId;
-  // pending | success | refunded | manual_refund_needed
+  // pending | success | refunded | manual_refund_needed |
+  // client_cancelled_no_refund
   final String status;
   final int? closedAtMs;
   final Map<String, dynamic> outcome;
+  // Клиент нажал «Отмена» (1.11.1): {stage, refund, elapsed_s, at_ms} —
+  // решение о возврате, принятое в момент нажатия. Пишется ДО команды
+  // терминалу: перезапуск во время отмены не превращает её в сбой.
+  final Map<String, dynamic>? clientCancel;
 
   const CardPaymentRecord({
     required this.id,
@@ -37,6 +42,7 @@ class CardPaymentRecord {
     this.status = 'pending',
     this.closedAtMs,
     this.outcome = const {},
+    this.clientCancel,
   });
 
   CardPaymentRecord copyWith({
@@ -44,6 +50,7 @@ class CardPaymentRecord {
     String? status,
     int? closedAtMs,
     Map<String, dynamic>? outcome,
+    Map<String, dynamic>? clientCancel,
   }) => CardPaymentRecord(
     id: id,
     approvedAtMs: approvedAtMs,
@@ -56,6 +63,7 @@ class CardPaymentRecord {
     status: status ?? this.status,
     closedAtMs: closedAtMs ?? this.closedAtMs,
     outcome: outcome ?? this.outcome,
+    clientCancel: clientCancel ?? this.clientCancel,
   );
 
   Map<String, dynamic> toJson() => {
@@ -70,6 +78,7 @@ class CardPaymentRecord {
     'status': status,
     'closed_at_ms': ?closedAtMs,
     if (outcome.isNotEmpty) 'outcome': outcome,
+    'client_cancel': ?clientCancel,
   };
 
   static CardPaymentRecord? fromJson(Object? raw) {
@@ -87,6 +96,7 @@ class CardPaymentRecord {
         status: raw['status'] as String? ?? 'pending',
         closedAtMs: (raw['closed_at_ms'] as num?)?.toInt(),
         outcome: (raw['outcome'] as Map?)?.cast<String, dynamic>() ?? const {},
+        clientCancel: (raw['client_cancel'] as Map?)?.cast<String, dynamic>(),
       );
     } catch (_) {
       return null;

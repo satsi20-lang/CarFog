@@ -38,6 +38,8 @@
   "treating.cancel_body": "Payment is not refunded automatically. The procedure will be interrupted.",
   "treating.cancel_yes": "Stop",
   "treating.cancel_no": "Continue",
+  "treating.no_refund_title": "Payment will not be refunded",
+  "treating.no_refund_body": "If you stop the procedure now, the payment will not be refunded.",
   "finished.title": "Treatment complete!",
   "finished.subtitle": "Your car interior has been treated with dry fog.",
   "finished.returning": "Returning to start",

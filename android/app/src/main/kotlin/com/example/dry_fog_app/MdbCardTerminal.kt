@@ -196,6 +196,13 @@ class MdbCardTerminal(private val context: Context) : MethodChannel.MethodCallHa
                     onLogic { if (ok) payment.finishSuccess() else payment.finishFailure(reason) }
                     result.success(null)
                 }
+                // Клиент нажал «Отмена» после одобрения (1.11.1): решение о возврате — из Dart.
+                "clientCancel" -> {
+                    val stage = call.argument<String>("stage") ?: ""
+                    val refund = call.argument<Boolean>("refund") ?: false
+                    onLogic { payment.finishClientCancel(stage, refund) }
+                    result.success(null)
+                }
                 else -> result.notImplemented()
             }
         } catch (e: Exception) {

@@ -38,6 +38,8 @@
   "treating.cancel_body": "Płatność nie jest zwracana automatycznie. Zabieg zostanie przerwany.",
   "treating.cancel_yes": "Przerwać",
   "treating.cancel_no": "Kontynuować",
+  "treating.no_refund_title": "Pieniądze nie zostaną zwrócone",
+  "treating.no_refund_body": "Jeśli zatrzymasz zabieg teraz, płatność nie zostanie zwrócona.",
   "finished.title": "Zabieg zakończony!",
   "finished.subtitle": "Wnętrze samochodu zostało poddane działaniu suchej mgły.",
   "finished.returning": "Powrót do początku",

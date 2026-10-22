@@ -19,6 +19,9 @@ import 'session_service.dart';
 //     запускает цикл (раздел 6.7);
 //   * итог цикла (SessionService.onFinished) → Kotlin: успех — 13 02/13 04,
 //     сбой — 13 03 в окне возврата или ручной возврат (разделы 6.8–6.10);
+//   * отмена клиентом (1.11.1, раздел 15) — отдельно от сбоя, по причине
+//     завершения цикла: возврат только в прогреве и в окне, иначе услуга
+//     оказана (13 02) без ручного возврата;
 //   * события в облако (раздел 10), без данных карты;
 //   * pre-flight перед «Приложите карту» (раздел 5).
 class CardPaymentEvent {
@@ -30,15 +33,64 @@ class CardPaymentEvent {
 // Что сказать клиенту на экране ошибки после сбоя цикла, оплаченного картой.
 enum CardCustomerNotice { refunded, contactOperator }
 
+// Решение о возврате при отмене клиентом — принимается в момент нажатия
+// «Отмена» и дальше не пересчитывается: остановка (подтверждение выключения
+// ТЭНа) занимает секунды, и клиент, которому не показали предупреждение,
+// не должен остаться без возврата из-за них.
+class CardCancelQuote {
+  final String stage;
+  final bool refund;
+  final int atMs;
+  final int elapsedS;
+  const CardCancelQuote({
+    required this.stage,
+    required this.refund,
+    required this.atMs,
+    required this.elapsedS,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'stage': stage,
+    'refund': refund,
+    'elapsed_s': elapsedS,
+    'at_ms': atMs,
+  };
+
+  static CardCancelQuote? fromJson(Map<String, dynamic>? j) {
+    if (j == null) return null;
+    return CardCancelQuote(
+      stage: j['stage'] as String? ?? '',
+      refund: j['refund'] == true,
+      atMs: (j['at_ms'] as num?)?.toInt() ?? 0,
+      elapsedS: (j['elapsed_s'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+// Причина завершения цикла «клиент нажал Отмена» (preparing.dart,
+// treating.dart). Любая другая причина completed=false — сбой аппарата.
+const String clientCancelReason = 'cancelled_by_client';
+
 class _ArmContext {
   final int cents;
   final int flavorIndex;
   final String flavorName;
   int coinsCents;
   final String deviceId;
+  final int refundWindowS;
   String? sessionId;
   bool approved = false;
-  _ArmContext(this.cents, this.flavorIndex, this.flavorName, this.coinsCents, this.deviceId);
+  // Время 10 05 по часам автомата (System.currentTimeMillis в Kotlin).
+  int? approvedAtMs;
+  CardCancelQuote? clientCancel;
+  _ArmContext(
+    this.cents,
+    this.flavorIndex,
+    this.flavorName,
+    this.coinsCents,
+    this.deviceId,
+    this.refundWindowS,
+  );
 }
 
 class CardPaymentService {
@@ -54,6 +106,9 @@ class CardPaymentService {
 
   static _ArmContext? _ctx;
   static bool get approvedPending => _ctx?.approved == true;
+
+  @visibleForTesting
+  static DateTime Function() clock = DateTime.now;
 
   static void install() {
     SessionService.onFinished = _onSessionFinished;
@@ -83,6 +138,7 @@ class CardPaymentService {
           cfg.flavorNameFor('ru', flavorIndex),
       coinsCents,
       cfg.deviceId,
+      cfg.cardRefundWindowS,
     );
     customerNotice.value = null;
     return units ?? 0;
@@ -92,7 +148,7 @@ class CardPaymentService {
     final c = _ctx;
     if (c == null || c.approved) return;
     await _channel.invokeMethod('updateAmount', {'cents': cents});
-    _ctx = _ArmContext(cents, c.flavorIndex, c.flavorName, coinsCents, c.deviceId);
+    _ctx = _ArmContext(cents, c.flavorIndex, c.flavorName, coinsCents, c.deviceId, c.refundWindowS);
   }
 
   static Future<void> cancel() async {
@@ -118,12 +174,97 @@ class CardPaymentService {
     }());
   }
 
+  // ---- отмена клиентом (1.11.1, ТЗ раздел 15) ----
+
+  // Правило: возврат при отмене клиентом — только в прогреве (распыления ещё
+  // не было) и только пока не прошло окно возврата с 10 05 (ровно на границе
+  // — уже нет, как у сбоя). После прогрева — никогда.
+  static bool refundOnClientCancel({
+    required String stage,
+    required int elapsedMs,
+    required int refundWindowS,
+  }) => stage == 'preheat' && elapsedMs >= 0 && elapsedMs < refundWindowS * 1000;
+
+  // Что будет с деньгами, если клиент остановит цикл сейчас. null — цикл
+  // оплачен не картой (или карта не одобрена): прежнее поведение экрана.
+  // Повторное нажатие после принятого решения — то же решение.
+  static CardCancelQuote? quoteClientCancel(String stage) {
+    final c = _ctx;
+    if (c == null || !c.approved) return null;
+    final sid = SessionService.currentSessionId;
+    if (c.sessionId != null && sid != null && c.sessionId != sid) return null;
+    final done = c.clientCancel;
+    if (done != null) return done;
+    final at = clock().millisecondsSinceEpoch;
+    final elapsedMs = at - (c.approvedAtMs ?? at);
+    return CardCancelQuote(
+      stage: stage,
+      refund: refundOnClientCancel(
+        stage: stage,
+        elapsedMs: elapsedMs,
+        refundWindowS: c.refundWindowS,
+      ),
+      atMs: at,
+      elapsedS: elapsedMs ~/ 1000,
+    );
+  }
+
+  // Клиент подтвердил остановку (или подтверждение не требовалось): решение
+  // — в запись payment_pending, затем терминалу. Вызывать ДО остановки
+  // выходов: возврат 13 03 в окне не должен ждать подтверждения выключения.
+  static Future<void> clientCancel(CardCancelQuote q) async {
+    final c = _ctx;
+    if (c == null || !c.approved || c.clientCancel != null) return;
+    c.clientCancel = q;
+    AppLog.log(
+      'CardPayment',
+      'отмена клиентом (${q.stage}, ${q.elapsedS} с после одобрения): '
+          '${q.refund ? 'автовозврат' : 'без возврата, услуга оказана'}',
+    );
+    final p = await CardPaymentStore.pending();
+    if (p != null) {
+      final ok = await CardPaymentStore.writePending(p.copyWith(clientCancel: q.toJson()));
+      if (!ok) AppLog.log('CardPayment', 'ВНИМАНИЕ: решение об отмене не записано');
+    }
+    try {
+      await _channel.invokeMethod('clientCancel', {'stage': q.stage, 'refund': q.refund});
+    } catch (e) {
+      // Автомат недоступен — итог без терминала: возврат положен, но не
+      // выполнен — ручной; без возврата — закрыть как оказанную услугу.
+      AppLog.log('CardPayment', 'отмена клиентом в терминал не передана: $e');
+      await handlePaymentEvent({
+        'type': q.refund ? 'manual_refund_needed' : 'client_cancelled_no_refund',
+        'data': {
+          'stage': q.stage,
+          'cycle_reason': clientCancelReason,
+          'elapsed_s': q.elapsedS,
+          'refund': q.refund ? 'терминал недоступен' : 'не положен (отмена клиентом)',
+          'confirm': 'терминал недоступен',
+        },
+      });
+    }
+  }
+
   // ---- итог цикла ----
 
-  static void _onSessionFinished(String sessionId, bool completed, String? reason) {
+  static void _onSessionFinished(
+    String sessionId,
+    bool completed,
+    String? reason, [
+    Map<String, dynamic>? extra,
+  ]) {
     final c = _ctx;
     if (c == null || !c.approved) return;
     if (c.sessionId != null && c.sessionId != sessionId) return;
+    // Отмена клиентом различается по причине завершения, не по таймеру.
+    // Экран уже передал решение при нажатии — здесь только запасной путь
+    // (причина пришла без clientCancel).
+    if (!completed && reason == clientCancelReason) {
+      if (c.clientCancel != null) return;
+      final q = quoteClientCancel(extra?['stage'] as String? ?? '');
+      if (q != null) unawaited(clientCancel(q));
+      return;
+    }
     AppLog.log('CardPayment', 'цикл ${completed ? 'завершён' : 'оборван ($reason)'} — итог оплаты картой');
     unawaited(
       _channel
@@ -159,6 +300,7 @@ class CardPaymentService {
         if (c != null) {
           c.approved = true;
           final at = now ?? DateTime.now();
+          c.approvedAtMs = (data['approved_at'] as num?)?.toInt() ?? at.millisecondsSinceEpoch;
           final ok = await CardPaymentStore.writePending(CardPaymentRecord(
             id: 'card-${at.microsecondsSinceEpoch}',
             approvedAtMs: at.millisecondsSinceEpoch,
@@ -190,6 +332,18 @@ class CardPaymentService {
         }));
         customerNotice.value = CardCustomerNotice.contactOperator;
         _ctx = null;
+      // Отмена клиентом без возврата (1.11.1): услуга оказана, только облако —
+      // ни ручного возврата, ни Telegram.
+      case 'client_cancelled_no_refund':
+        final closed = await CardPaymentStore.close('client_cancelled_no_refund', data, now: now);
+        final q = c?.clientCancel ?? CardCancelQuote.fromJson(closed?.clientCancel);
+        unawaited(CloudService.report('payment_client_cancelled_no_refund', data: {
+          ...base,
+          ...data,
+          'stage': q?.stage ?? data['stage'],
+          'elapsed_s': q?.elapsedS ?? data['elapsed_s'],
+        }));
+        _ctx = null;
       case 'declined':
       case 'insufficient_funds':
       case 'amount_mismatch':
@@ -217,10 +371,28 @@ class CardPaymentService {
     final cfg = n.config;
     final t = now ?? DateTime.now();
     final deadlineMs = p.approvedAtMs + cfg.cardRefundWindowS * 1000;
-    _ctx = _ArmContext(p.amountCents, p.flavorIndex, p.flavorName, p.coinsCents, cfg.deviceId)
+    final cancel = CardCancelQuote.fromJson(p.clientCancel);
+    _ctx = _ArmContext(p.amountCents, p.flavorIndex, p.flavorName, p.coinsCents, cfg.deviceId, cfg.cardRefundWindowS)
       ..sessionId = p.sessionId
-      ..approved = true;
+      ..approved = true
+      ..approvedAtMs = p.approvedAtMs
+      ..clientCancel = cancel;
     AppLog.log('CardPayment', 'при старте найдена незакрытая оплата картой ${p.amountCents} центов (${p.id})');
+    // Клиент успел отменить без возврата — это не сбой: закрыть как
+    // оказанную услугу (терминал подтвердит списание сам).
+    if (cancel != null && !cancel.refund) {
+      await handlePaymentEvent({
+        'type': 'client_cancelled_no_refund',
+        'data': {
+          'recovered': true,
+          'stage': cancel.stage,
+          'cycle_reason': clientCancelReason,
+          'elapsed_s': cancel.elapsedS,
+          'confirm': 'не отправлен (перезапуск)',
+        },
+      }, now: t);
+      return;
+    }
     final canRefund = cfg.paymentTerminalType == PaymentTerminalType.mdb &&
         t.millisecondsSinceEpoch < deadlineMs;
     if (canRefund) {
@@ -270,6 +442,7 @@ class CardPaymentService {
   static void resetForTest() {
     _ctx = null;
     customerNotice.value = null;
+    clock = DateTime.now;
   }
 
   // Статус терминала для экрана оплаты.
