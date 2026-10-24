@@ -38,7 +38,7 @@ const Map<String, Map<String, String>> _i18n = {
     'events': 'Последние события',
     'history': 'Последние оплаты картой',
     'settings_hint':
-        'Цены по запахам и окно возврата — вкладка «Настройки», тип терминала — «Датчики».',
+        'Цены по запахам — вкладка «Ароматы», окно возврата — «Настройки», тип терминала — «Датчики».',
     'st_success': 'успех',
     'st_refunded': 'возврат',
     'st_manual_refund_needed': 'нужен ручной возврат',
@@ -68,7 +68,7 @@ const Map<String, Map<String, String>> _i18n = {
     'events': 'Recent events',
     'history': 'Recent card payments',
     'settings_hint':
-        'Prices per flavour and refund window — “Settings” tab, terminal type — “Sensors”.',
+        'Prices per flavour — “Fragrances” tab, refund window — “Settings”, terminal type — “Sensors”.',
     'st_success': 'success',
     'st_refunded': 'refunded',
     'st_manual_refund_needed': 'manual refund needed',
@@ -98,7 +98,7 @@ const Map<String, Map<String, String>> _i18n = {
     'events': 'Viimased sündmused',
     'history': 'Viimased kaardimaksed',
     'settings_hint':
-        'Hinnad lõhnade kaupa ja tagastuse aken — vahekaart «Seaded», terminali tüüp — «Andurid».',
+        'Hinnad lõhnade kaupa — vahekaart «Lõhnad», tagastuse aken — «Seaded», terminali tüüp — «Andurid».',
     'st_success': 'õnnestus',
     'st_refunded': 'tagastatud',
     'st_manual_refund_needed': 'vaja käsitsi tagastust',

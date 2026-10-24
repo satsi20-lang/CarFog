@@ -260,20 +260,28 @@ void main() {
     });
   });
 
-  group('сервисное меню, «Настройки»', () {
-    Future<AppNotifier> pumpMenu(WidgetTester tester, {String type = PaymentTerminalType.off}) async {
+  // 1.11.2: цены перенесены с «Настроек» на вкладку «Ароматы» (название и
+  // цена запаха рядом); ключи настроек прежние.
+  group('сервисное меню, цены на вкладке «Ароматы»', () {
+    Future<AppNotifier> pumpMenu(
+      WidgetTester tester, {
+      String type = PaymentTerminalType.off,
+      List<int> prices = const [200, 200, 200, 200],
+      AppConfig? config,
+    }) async {
       tester.view.devicePixelRatio = 1.5;
       tester.view.physicalSize = const Size(1080, 1920);
       addTearDown(tester.view.reset);
       final n = AppNotifier()
-        ..config = AppConfig(
-          thermoInstalled: true,
-          energyMeterInstalled: true,
-          servicePin: '7351',
-          treatmentPriceCents: 300,
-          flavorPricesCents: [200, 200, 200, 200],
-          paymentTerminalType: type,
-        );
+        ..config = config ??
+            AppConfig(
+              thermoInstalled: true,
+              energyMeterInstalled: true,
+              servicePin: '7351',
+              treatmentPriceCents: 300,
+              flavorPricesCents: prices,
+              paymentTerminalType: type,
+            );
       n.setLanguage('ru');
       await tester.pumpWidget(ChangeNotifierProvider<AppNotifier>.value(
         value: n,
@@ -296,6 +304,19 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
     }
 
+    Future<void> openFlavors(WidgetTester tester) async {
+      await tester.tap(find.text('Ароматы'));
+      await tester.pump(const Duration(milliseconds: 400));
+    }
+
+    Future<void> save(WidgetTester tester) =>
+        tapVisible(tester, find.widgetWithText(ElevatedButton, 'Сохранить').first);
+
+    Finder plus(int i) => find.descendant(
+          of: find.byKey(ValueKey('flavor_price_$i')),
+          matching: find.byIcon(Icons.add),
+        );
+
     Future<void> disposeMenu(WidgetTester tester) async {
       await tester.pumpWidget(const SizedBox());
       for (var i = 0; i < 6; i++) {
@@ -303,55 +324,147 @@ void main() {
       }
     }
 
+    testWidgets('«Настройки»: цен нет, окно возврата осталось', (tester) async {
+      await pumpMenu(tester);
+      for (final k in ['default_price', 'one_price_btn', 'flavor_price_0', 'pulse_prices_warn']) {
+        expect(find.byKey(ValueKey(k)), findsNothing, reason: k);
+      }
+      expect(find.text('Цена по умолчанию (для новых запахов)'), findsNothing);
+      expect(find.byKey(const ValueKey('refund_window')), findsOneWidget);
+      await disposeMenu(tester);
+    });
+
+    testWidgets('«Ароматы»: цена по умолчанию вверху, у каждого активного запаха своя цена', (tester) async {
+      await pumpMenu(tester, prices: const [150, 250, 300, 350]);
+      await openFlavors(tester);
+      expect(find.byKey(const ValueKey('default_price')), findsOneWidget);
+      expect(find.text('Цена по умолчанию (для новых запахов)'), findsOneWidget);
+      expect(find.text('3.00 €'), findsWidgets);
+      for (var i = 0; i < 4; i++) {
+        expect(find.byKey(ValueKey('flavor_price_$i')), findsOneWidget, reason: '$i');
+      }
+      expect(find.byKey(const ValueKey('flavor_price_4')), findsNothing, reason: 'насосов 4');
+      final d0 = tester.getTopLeft(find.byKey(const ValueKey('default_price')));
+      final p0 = tester.getTopLeft(find.byKey(const ValueKey('flavor_price_0')));
+      expect(d0.dy, lessThan(p0.dy), reason: 'общая цена — над ценами запахов');
+      for (final p in ['1.50 €', '2.50 €', '3.50 €']) {
+        expect(find.text(p), findsOneWidget, reason: p);
+      }
+      expect(tester.takeException(), isNull);
+      await disposeMenu(tester);
+    });
+
+    testWidgets('mdb: разные цены сохраняются вместе с названиями', (tester) async {
+      final n = await pumpMenu(tester, type: PaymentTerminalType.mdb);
+      await openFlavors(tester);
+      expect(find.byKey(const ValueKey('pulse_prices_warn')), findsNothing);
+      await tester.enterText(find.byType(TextField).first, 'Мята');
+      await tapVisible(tester, plus(1));
+      await save(tester);
+      expect(n.config.flavorPricesCents.take(4), [200, 250, 200, 200]);
+      expect(n.config.flavorNames['ru']!.first, 'Мята');
+      expect(n.config.treatmentPriceCents, 300);
+      await disposeMenu(tester);
+    });
+
+    testWidgets('цена по умолчанию сохраняется и не перезаписывает цены запахов', (tester) async {
+      final n = await pumpMenu(tester);
+      await openFlavors(tester);
+      await tapVisible(tester, find.descendant(
+        of: find.byKey(const ValueKey('default_price')), matching: find.byIcon(Icons.add)));
+      await save(tester);
+      expect(n.config.treatmentPriceCents, 350);
+      expect(n.config.flavorPricesCents.take(4), [200, 200, 200, 200]);
+      await disposeMenu(tester);
+    });
+
+    testWidgets('pulse: цена одного запаха меняет цены всех, пояснение видно', (tester) async {
+      final n = await pumpMenu(tester, type: PaymentTerminalType.pulse);
+      await openFlavors(tester);
+      expect(find.byKey(const ValueKey('pulse_prices_warn')), findsOneWidget);
+      expect(find.textContaining('изменение цены любого запаха меняет все'), findsOneWidget);
+      await tapVisible(tester, plus(1));
+      expect(find.text('2.50 €'), findsNWidgets(4));
+      await save(tester);
+      expect(n.config.flavorPricesCents.take(4), [250, 250, 250, 250]);
+      expect(n.config.pulsePricesConflict, isFalse);
+      await disposeMenu(tester);
+    });
+
+    testWidgets('pulse: уже разные цены (сменили тип) не сохраняются — прежняя проверка', (tester) async {
+      final n = await pumpMenu(tester, type: PaymentTerminalType.pulse, prices: const [200, 250, 200, 200]);
+      await openFlavors(tester);
+      await save(tester);
+      expect(n.config.flavorPricesCents.take(4), [200, 250, 200, 200]);
+      expect(find.textContaining('Импульсный терминал списывает одну сумму'), findsWidgets);
+      await disposeMenu(tester);
+    });
+
     testWidgets('«Одна цена всем запахам» — только после подтверждения', (tester) async {
       final n = await pumpMenu(tester);
+      await openFlavors(tester);
       final btn = find.byKey(const ValueKey('one_price_btn'));
       await tapVisible(tester, btn);
       expect(find.text('Одна цена всем запахам'), findsWidgets);
       await tester.tap(find.widgetWithText(TextButton, 'Отмена'));
       await tester.pump(const Duration(milliseconds: 400));
-      await tapVisible(tester, find.widgetWithText(ElevatedButton, 'Сохранить').first);
+      await save(tester);
       expect(n.config.flavorPricesCents.take(4), [200, 200, 200, 200]);
-      // В тестах переводы клиента не загружены (язык аппарата только en), и
-      // сохранение вне сервисного состояния возвращает язык на en — снова ru.
+      // Сохранение вне сервисного состояния возвращает язык на en — снова ru.
       n.setLanguage('ru');
       await tester.pump(const Duration(milliseconds: 100));
-      // Сообщение «Сохранено» внизу экрана может перекрыть кнопку — ждём, пока уйдёт.
       await tester.pump(const Duration(seconds: 6));
       await tester.pump(const Duration(seconds: 1));
 
       await tapVisible(tester, btn);
       await tester.tap(find.widgetWithText(TextButton, 'Поставить'));
       await tester.pump(const Duration(milliseconds: 400));
-      await tapVisible(tester, find.widgetWithText(ElevatedButton, 'Сохранить').first);
+      await save(tester);
       expect(n.config.flavorPricesCents.take(4), [300, 300, 300, 300]);
       await disposeMenu(tester);
     });
 
-    testWidgets('pulse: разные цены не сохраняются, предупреждение видно', (tester) async {
-      final n = await pumpMenu(tester, type: PaymentTerminalType.pulse);
-      expect(find.byKey(const ValueKey('pulse_prices_warn')), findsOneWidget);
-      final plus = find.descendant(
-        of: find.byKey(const ValueKey('flavor_price_1')),
-        matching: find.byIcon(Icons.add),
-      );
-      await tapVisible(tester, plus);
-      await tapVisible(tester, find.widgetWithText(ElevatedButton, 'Сохранить').first);
-      expect(n.config.flavorPricesCents.take(4), [200, 200, 200, 200]);
-      expect(find.textContaining('Импульсный терминал списывает одну сумму'), findsOneWidget);
+    testWidgets('сохранение «Настроек» не трогает цены', (tester) async {
+      final n = await pumpMenu(tester, type: PaymentTerminalType.mdb, prices: const [150, 250, 300, 350]);
+      await save(tester);
+      expect(n.config.flavorPricesCents.take(4), [150, 250, 300, 350]);
+      expect(n.config.treatmentPriceCents, 300);
       await disposeMenu(tester);
     });
 
-    testWidgets('mdb: разные цены сохраняются', (tester) async {
-      final n = await pumpMenu(tester, type: PaymentTerminalType.mdb);
-      expect(find.byKey(const ValueKey('pulse_prices_warn')), findsNothing);
-      final plus = find.descendant(
-        of: find.byKey(const ValueKey('flavor_price_1')),
-        matching: find.byIcon(Icons.add),
-      );
-      await tapVisible(tester, plus);
-      await tapVisible(tester, find.widgetWithText(ElevatedButton, 'Сохранить').first);
-      expect(n.config.flavorPricesCents.take(4), [200, 250, 200, 200]);
+    testWidgets('после обновления: старые ключи прочитаны, вкладка показывает те же цены и названия', (tester) async {
+      // Сохранённые 1.11.1 настройки (ключи не менялись).
+      await tester.runAsync(() async {
+        await ConfigService.save(AppConfig(
+          thermoInstalled: true,
+          energyMeterInstalled: true,
+          servicePin: '7351',
+          treatmentPriceCents: 220,
+          flavorPricesCents: [100, 250, 150, 300, 200, 200, 200, 200],
+          paymentTerminalType: PaymentTerminalType.mdb,
+          flavorNames: {
+            'ru': ['Лимон', 'Вишня', 'Хвоя', 'Лаванда'],
+            'en': ['Lemon', 'Cherry', 'Pine', 'Lavender'],
+            'et': ['Sidrun', 'Kirss', 'Mänd', 'Lavendel'],
+          },
+        ));
+      });
+      final raw = jsonDecode((await tester.runAsync(SharedPreferences.getInstance))!
+          .getString('app_config')!) as Map<String, dynamic>;
+      expect(raw.containsKey('treatmentPriceCents'), isTrue);
+      expect(raw.containsKey('flavorPricesCents'), isTrue);
+      final loaded = (await tester.runAsync(ConfigService.load))!;
+      final n = await pumpMenu(tester, config: loaded);
+      await openFlavors(tester);
+      for (final p in ['2.20 €', '1.00 €', '2.50 €', '1.50 €', '3.00 €']) {
+        expect(find.text(p), findsOneWidget, reason: p);
+      }
+      expect(find.textContaining('Лаванда'), findsWidgets);
+      // сохранение без правок — ничего не теряется
+      await save(tester);
+      expect(n.config.flavorPricesCents, [100, 250, 150, 300, 200, 200, 200, 200]);
+      expect(n.config.treatmentPriceCents, 220);
+      expect(n.config.flavorNames['ru']!.take(4), ['Лимон', 'Вишня', 'Хвоя', 'Лаванда']);
       await disposeMenu(tester);
     });
   });

@@ -47,7 +47,8 @@ const Map<String, Map<String, String>> _i18n = {
     'terminal_type_mdb': 'Карта (MDB)',
     'err_pulse_prices': 'Импульсный терминал списывает одну сумму: сначала сделайте цены всех запахов одинаковыми',
     'flavor_prices_section': 'Цены по запахам',
-    'flavor_prices_pulse_warn': 'Импульсный терминал: цены всех запахов должны совпадать. Разные цены не сохранятся.',
+    'flavor_prices_pulse_warn': 'Импульсный терминал списывает одну сумму: цена одна для всех запахов, изменение цены любого запаха меняет все.',
+    'flavor_price_label': 'Цена',
     'one_price_btn': 'Одна цена всем запахам',
     'one_price_title': 'Одна цена всем запахам',
     'one_price_body': 'Поставить всем запахам цену по умолчанию',
@@ -436,7 +437,8 @@ const Map<String, Map<String, String>> _i18n = {
     'terminal_type_mdb': 'Card (MDB)',
     'err_pulse_prices': 'A pulse terminal charges one fixed amount: make all flavour prices equal first',
     'flavor_prices_section': 'Prices per flavour',
-    'flavor_prices_pulse_warn': 'Pulse terminal: all flavour prices must be equal. Different prices will not be saved.',
+    'flavor_prices_pulse_warn': 'Pulse terminal charges one amount: one price for all flavours, changing any flavour price changes them all.',
+    'flavor_price_label': 'Price',
     'one_price_btn': 'One price for all flavours',
     'one_price_title': 'One price for all flavours',
     'one_price_body': 'Set the default price for all flavours',
@@ -819,7 +821,8 @@ const Map<String, Map<String, String>> _i18n = {
     'terminal_type_mdb': 'Kaart (MDB)',
     'err_pulse_prices': 'Impulssterminal võtab ühe kindla summa: tee kõigi lõhnade hinnad enne võrdseks',
     'flavor_prices_section': 'Hinnad lõhnade kaupa',
-    'flavor_prices_pulse_warn': 'Impulssterminal: kõigi lõhnade hinnad peavad olema võrdsed. Erinevaid hindu ei salvestata.',
+    'flavor_prices_pulse_warn': 'Impulssterminal võtab ühe summa: kõigil lõhnadel üks hind, ühe lõhna hinna muutmine muudab kõiki.',
+    'flavor_price_label': 'Hind',
     'one_price_btn': 'Üks hind kõigile lõhnadele',
     'one_price_title': 'Üks hind kõigile lõhnadele',
     'one_price_body': 'Määra kõigile lõhnadele vaikimisi hind',
@@ -1363,9 +1366,7 @@ class _SettingsTab extends StatefulWidget {
 }
 
 class _SettingsTabState extends State<_SettingsTab> {
-  late int _priceCents;
-  // Цены по запахам (1.11.0): все 8, правятся активные.
-  late List<int> _flavorPrices;
+  // Цены (по умолчанию и по запахам) — на вкладке «Ароматы» (1.11.2).
   late int _refundWindowS;
   late TextEditingController _durationCtrl;
   late TextEditingController _pinCtrl;
@@ -1378,8 +1379,6 @@ class _SettingsTabState extends State<_SettingsTab> {
     super.initState();
     unawaited(_loadMasterState());
     final config = context.read<AppNotifier>().config;
-    _priceCents = config.treatmentPriceCents;
-    _flavorPrices = List<int>.from(config.flavorPricesCents);
     _refundWindowS = config.cardRefundWindowS;
     _durationCtrl = TextEditingController(
       text: config.treatmentDurationS.toString(),
@@ -1417,59 +1416,9 @@ class _SettingsTabState extends State<_SettingsTab> {
     return dailyKwh * tariff;
   }
 
-  void _changePrice(int deltaCents) {
-    setState(() {
-      _priceCents = (_priceCents + deltaCents).clamp(
-        ConfigLimits.priceMinCents,
-        ConfigLimits.priceMaxCents,
-      );
-    });
-  }
-
-  void _changeFlavorPrice(int index, int deltaCents) {
-    setState(() {
-      _flavorPrices[index] = (_flavorPrices[index] + deltaCents).clamp(
-        ConfigLimits.priceMinCents,
-        ConfigLimits.priceMaxCents,
-      );
-    });
-  }
-
   void _changeRefundWindow(int delta) {
     final r = ConfigLimits.range('cardRefundWindowS')!;
     setState(() => _refundWindowS = (_refundWindowS + delta).clamp(r.min, r.max));
-  }
-
-  // «Одна цена всем запахам»: цена по умолчанию во все активные запахи — только
-  // после подтверждения; на диск — кнопкой «Сохранить».
-  Future<void> _onePriceForAll() async {
-    final notifier = context.read<AppNotifier>();
-    final t = _i18n[notifier.serviceLang]!;
-    final price = '${(_priceCents / 100).toStringAsFixed(2)} €';
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(t['one_price_title']!),
-        content: Text('${t['one_price_body']!}: $price?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(t['one_price_cancel']!),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(t['one_price_apply']!),
-          ),
-        ],
-      ),
-    );
-    if (ok != true || !mounted) return;
-    setState(() {
-      for (var i = 0; i < notifier.config.activeFlavorCount; i++) {
-        _flavorPrices[i] = _priceCents;
-      }
-    });
-    _snack(t['one_price_done']!);
   }
 
   void _save() {
@@ -1480,11 +1429,6 @@ class _SettingsTabState extends State<_SettingsTab> {
     final compressorPurge = int.tryParse(_compressorPurgeCtrl.text);
     final pumpAfterHeater = int.tryParse(_pumpAfterHeaterCtrl.text);
 
-    if (_priceCents < ConfigLimits.priceMinCents ||
-        _priceCents > ConfigLimits.priceMaxCents) {
-      _snack(t['err_price']!);
-      return;
-    }
     if (duration == null ||
         duration < ConfigLimits.treatmentDurationMinS ||
         duration > ConfigLimits.treatmentDurationMaxS) {
@@ -1520,12 +1464,6 @@ class _SettingsTabState extends State<_SettingsTab> {
       return;
     }
 
-    for (final p in _flavorPrices) {
-      if (p < ConfigLimits.priceMinCents || p > ConfigLimits.priceMaxCents) {
-        _snack(t['err_price']!);
-        return;
-      }
-    }
     final rw = ConfigLimits.range('cardRefundWindowS')!;
     if (_refundWindowS < rw.min || _refundWindowS > rw.max) {
       _snack(t['err_refund_window']!);
@@ -1533,9 +1471,6 @@ class _SettingsTabState extends State<_SettingsTab> {
     }
 
     final updated = notifier.config.copyWith(
-      // Цена по умолчанию не перезаписывает цены запахов (они ниже, свои).
-      treatmentPriceCents: _priceCents,
-      flavorPricesCents: List<int>.from(_flavorPrices),
       cardRefundWindowS: _refundWindowS,
       treatmentDurationS: duration,
       servicePin: pin,
@@ -1543,11 +1478,6 @@ class _SettingsTabState extends State<_SettingsTab> {
       pumpAfterHeaterS: pumpAfterHeater,
       idlePowerTariffPerKwh: tariff,
     );
-    // Импульсный терминал списывает одну сумму: разные цены не сохраняются.
-    if (updated.pulsePricesConflict) {
-      _snack(t['err_pulse_prices']!);
-      return;
-    }
     notifier.saveConfig(updated);
     _snack(t['saved']!);
   }
@@ -1728,52 +1658,9 @@ class _SettingsTabState extends State<_SettingsTab> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  // Цены активных запахов, кнопка «Одна цена всем запахам», окно возврата.
-  List<Widget> _flavorPricesSection(Map<String, String> t) {
-    final notifier = context.watch<AppNotifier>();
-    final cfg = notifier.config;
-    final lang = notifier.serviceLang;
+  // Окно возврата по карте (цены — на вкладке «Ароматы», 1.11.2).
+  List<Widget> _refundWindowSection(Map<String, String> t) {
     return [
-      Text(
-        t['flavor_prices_section']!,
-        style: const TextStyle(
-          color: Color(0xFF556677),
-          fontWeight: FontWeight.bold,
-          fontSize: 13,
-        ),
-      ),
-      if (cfg.paymentTerminalType == PaymentTerminalType.pulse) ...[
-        const SizedBox(height: 6),
-        Text(
-          t['flavor_prices_pulse_warn']!,
-          key: const ValueKey('pulse_prices_warn'),
-          style: const TextStyle(color: Color(0xFFFFB020), fontSize: 13),
-        ),
-      ],
-      const SizedBox(height: 8),
-      for (var i = 0; i < cfg.activeFlavorCount; i++) ...[
-        _PriceStepper(
-          key: ValueKey('flavor_price_$i'),
-          label: '${i + 1}. ${cfg.flavorNameFor(lang, i)}',
-          priceCents: _flavorPrices[i],
-          onChanged: (d) => _changeFlavorPrice(i, d),
-        ),
-        const SizedBox(height: 8),
-      ],
-      SizedBox(
-        width: double.infinity,
-        child: OutlinedButton(
-          key: const ValueKey('one_price_btn'),
-          onPressed: _onePriceForAll,
-          style: OutlinedButton.styleFrom(
-            foregroundColor: const Color(0xFF00C6B2),
-            side: const BorderSide(color: Color(0xFF00C6B2)),
-            minimumSize: const Size(0, PUi.minTouch),
-          ),
-          child: Text(t['one_price_btn']!),
-        ),
-      ),
-      const SizedBox(height: 16),
       _PriceStepper(
         key: const ValueKey('refund_window'),
         label: t['refund_window_label']!,
@@ -1797,13 +1684,7 @@ class _SettingsTabState extends State<_SettingsTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _PriceStepper(
-            label: t['price_label']!,
-            priceCents: _priceCents,
-            onChanged: _changePrice,
-          ),
-          const SizedBox(height: 16),
-          ..._flavorPricesSection(t),
+          ..._refundWindowSection(t),
           const SizedBox(height: 16),
           _Field(
             label: t['duration_label']!,
@@ -1910,11 +1791,20 @@ class _FlavorsTab extends StatefulWidget {
 class _FlavorsTabState extends State<_FlavorsTab> {
   late List<List<TextEditingController>> _ctrls;
   final _langs = ['ru', 'en', 'et'];
+  // Всё про жидкость на одной вкладке (1.11.2): название и цена запаха, цена
+  // по умолчанию для новых запахов. Ключи настроек прежние
+  // (treatmentPriceCents, flavorPricesCents).
+  late int _priceCents;
+  // Цены по запахам (1.11.0): все 8, правятся активные.
+  late List<int> _flavorPrices;
 
   @override
   void initState() {
     super.initState();
-    final names = context.read<AppNotifier>().config.flavorNames;
+    final config = context.read<AppNotifier>().config;
+    _priceCents = config.treatmentPriceCents;
+    _flavorPrices = List<int>.from(config.flavorPricesCents);
+    final names = config.flavorNames;
     // Поля заводятся для всех 8 каналов (число активных берётся из spec и
     // может смениться), показываются только активные.
     _ctrls = List.generate(PumpChannel.values.length, (i) {
@@ -1934,8 +1824,80 @@ class _FlavorsTabState extends State<_FlavorsTab> {
     super.dispose();
   }
 
+  void _changePrice(int deltaCents) {
+    setState(() {
+      _priceCents = (_priceCents + deltaCents).clamp(
+        ConfigLimits.priceMinCents,
+        ConfigLimits.priceMaxCents,
+      );
+    });
+  }
+
+  // Импульсный терминал списывает одну сумму: цена любого запаха меняет цены
+  // всех активных. off/mdb — у каждого запаха своя.
+  void _changeFlavorPrice(int index, int deltaCents) {
+    final cfg = context.read<AppNotifier>().config;
+    setState(() {
+      final v = (_flavorPrices[index] + deltaCents).clamp(
+        ConfigLimits.priceMinCents,
+        ConfigLimits.priceMaxCents,
+      );
+      if (cfg.paymentTerminalType == PaymentTerminalType.pulse) {
+        for (var i = 0; i < cfg.activeFlavorCount; i++) {
+          _flavorPrices[i] = v;
+        }
+      } else {
+        _flavorPrices[index] = v;
+      }
+    });
+  }
+
+  // «Одна цена всем запахам»: цена по умолчанию во все активные запахи — только
+  // после подтверждения; на диск — кнопкой «Сохранить».
+  Future<void> _onePriceForAll() async {
+    final notifier = context.read<AppNotifier>();
+    final t = _i18n[notifier.serviceLang]!;
+    final price = '${(_priceCents / 100).toStringAsFixed(2)} €';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(t['one_price_title']!),
+        content: Text('${t['one_price_body']!}: $price?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(t['one_price_cancel']!),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(t['one_price_apply']!),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() {
+      for (var i = 0; i < notifier.config.activeFlavorCount; i++) {
+        _flavorPrices[i] = _priceCents;
+      }
+    });
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(t['one_price_done']!)));
+  }
+
   void _save() {
     final notifier = context.read<AppNotifier>();
+    final t = _i18n[notifier.serviceLang]!;
+    void snack(String m) =>
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+    if (_priceCents < ConfigLimits.priceMinCents ||
+        _priceCents > ConfigLimits.priceMaxCents ||
+        _flavorPrices.any((p) =>
+            p < ConfigLimits.priceMinCents || p > ConfigLimits.priceMaxCents)) {
+      snack(t['err_price']!);
+      return;
+    }
     final currentNames = notifier.config.flavorNames;
     final newNames = <String, List<String>>{};
     // Правим только названия активных ароматов (spec), остальные (если число
@@ -1955,12 +1917,19 @@ class _FlavorsTabState extends State<_FlavorsTab> {
       }
       newNames[lang] = existing;
     }
-    final updated = notifier.config.copyWith(flavorNames: newNames);
+    final updated = notifier.config.copyWith(
+      flavorNames: newNames,
+      // Цена по умолчанию не перезаписывает цены запахов (они свои).
+      treatmentPriceCents: _priceCents,
+      flavorPricesCents: List<int>.from(_flavorPrices),
+    );
+    // Импульсный терминал списывает одну сумму: разные цены не сохраняются.
+    if (updated.pulsePricesConflict) {
+      snack(t['err_pulse_prices']!);
+      return;
+    }
     notifier.saveConfig(updated);
-    final t = _i18n[notifier.serviceLang]!;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(t['saved']!)));
+    snack(t['saved']!);
   }
 
   @override
@@ -1972,10 +1941,37 @@ class _FlavorsTabState extends State<_FlavorsTab> {
     // жёсткой Column: раньше при появлении клавиатуры (тап в поле имени)
     // содержимое вкладки не могло сжаться и вылезало за пределы экрана.
     // SingleChildScrollView гарантирует, что оно просто проскроллится.
+    final cfg = notifier.config;
+    final lang = notifier.serviceLang;
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          _PriceStepper(
+            key: const ValueKey('default_price'),
+            label: t['price_label']!,
+            priceCents: _priceCents,
+            onChanged: _changePrice,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            t['flavor_prices_section']!,
+            style: const TextStyle(
+              color: Color(0xFF556677),
+              fontWeight: FontWeight.bold,
+              fontSize: 13,
+            ),
+          ),
+          if (cfg.paymentTerminalType == PaymentTerminalType.pulse) ...[
+            const SizedBox(height: 6),
+            Text(
+              t['flavor_prices_pulse_warn']!,
+              key: const ValueKey('pulse_prices_warn'),
+              style: const TextStyle(color: Color(0xFFFFB020), fontSize: 13),
+            ),
+          ],
+          const SizedBox(height: 12),
           // Заголовки колонок
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
@@ -1997,51 +1993,80 @@ class _FlavorsTabState extends State<_FlavorsTab> {
               ],
             ),
           ),
-          // Список ароматов: только активные (число насосов из spec)
+          // Список ароматов: только активные (число насосов из spec) —
+          // названия и под ними цена этого запаха.
           ...List.generate(activeCount, (i) {
             return Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Row(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: Column(
                 children: [
-                  SizedBox(
-                    width: 32,
-                    child: Text(
-                      '${i + 1}',
-                      style: const TextStyle(color: Color(0xFF556677)),
-                    ),
-                  ),
-                  ...List.generate(3, (li) {
-                    return Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        child: TextField(
-                          controller: _ctrls[i][li],
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                          ),
-                          decoration: InputDecoration(
-                            isDense: true,
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 8,
-                            ),
-                            filled: true,
-                            fillColor: const Color(0xFF1A2233),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(6),
-                              borderSide: BorderSide.none,
-                            ),
-                          ),
+                  Row(
+                    children: [
+                      SizedBox(
+                        width: 32,
+                        child: Text(
+                          '${i + 1}',
+                          style: const TextStyle(color: Color(0xFF556677)),
                         ),
                       ),
-                    );
-                  }),
+                      ...List.generate(3, (li) {
+                        return Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            child: TextField(
+                              controller: _ctrls[i][li],
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 13,
+                              ),
+                              decoration: InputDecoration(
+                                isDense: true,
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 8,
+                                ),
+                                filled: true,
+                                fillColor: const Color(0xFF1A2233),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(6),
+                                  borderSide: BorderSide.none,
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 32),
+                    child: _PriceStepper(
+                      key: ValueKey('flavor_price_$i'),
+                      label:
+                          '${t['flavor_price_label']!}: ${i + 1}. ${cfg.flavorNameFor(lang, i)}',
+                      priceCents: _flavorPrices[i],
+                      onChanged: (d) => _changeFlavorPrice(i, d),
+                    ),
+                  ),
                 ],
               ),
             );
           }),
-          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              key: const ValueKey('one_price_btn'),
+              onPressed: _onePriceForAll,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF00C6B2),
+                side: const BorderSide(color: Color(0xFF00C6B2)),
+                minimumSize: const Size(0, PUi.minTouch),
+              ),
+              child: Text(t['one_price_btn']!),
+            ),
+          ),
+          const SizedBox(height: 16),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
