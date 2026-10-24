@@ -8,6 +8,7 @@ import 'app_log_service.dart';
 import 'card_payment_store.dart';
 import 'card_terminal_service.dart';
 import 'cloud_service.dart';
+import 'heater_safety_monitor.dart';
 import 'modbus_service.dart';
 import 'session_service.dart';
 
@@ -433,7 +434,12 @@ class CardPaymentService {
     final levels = n.levels;
     if (flavorIndex >= levels.length || !levels[flavorIndex]) return 'level';
     if (cfg.dioInstalled && await ModbusService.readAllInputs() == null) return 'io_module';
-    if (cfg.thermoInstalled && await ModbusService.readTemperature() == null) return 'thermocouple';
+    // Негодное показание (null, обрыв −500, вне диапазона) — то же, что нет
+    // показания (1.11.2): греть по нему нельзя.
+    if (cfg.thermoInstalled &&
+        !HeaterSafetyMonitor.isUsable(await ModbusService.readTemperature())) {
+      return 'thermocouple';
+    }
     if (cfg.energyMeterInstalled && await ModbusService.readEnergy() == null) return 'energy_meter';
     return null;
   }

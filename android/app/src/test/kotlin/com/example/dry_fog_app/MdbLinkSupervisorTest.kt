@@ -267,6 +267,63 @@ class MdbLinkSupervisorTest {
         assertEquals(2, r.opens)
     }
 
+    // ---- 10 00 — Just Reset (1.11.2) ----
+
+    @Test
+    fun justResetOutsidePaymentReinitializesImmediately() {
+        val r = Rig().startReady()
+        r.advance(10_000)
+        r.rx("10 00\r\n")
+        // сразу, не через 60 с опроса
+        assertEquals(listOf(SETUP), r.sent)
+        assertEquals(State.INITIALIZING, r.sup.state)
+        assertFalse(r.sup.cardAvailable)
+        r.rx("01 01 19 78 01 02 78 0D 1B\r\n")
+        r.advance(100)
+        assertEquals("пауза ≥300 мс после ACK", listOf(SETUP), r.sent)
+        r.advance(200); r.rx("00\r\n")
+        r.advance(300); r.rx("00\r\n")
+        assertEquals(listOf(SETUP, PRICES, "14 01"), r.sent)
+        assertEquals(State.READY, r.sup.state)
+        assertTrue(r.sup.cardAvailable)
+        assertEquals(listOf("terminal_reset"), r.eventTypes())
+        assertEquals(false, r.events.single().second["during_payment"])
+        assertEquals(0, r.sup.unexpectedFrames)
+    }
+
+    @Test
+    fun justResetDuringPaymentOnlyLogsAndReports() {
+        val r = Rig().startReady()
+        r.sup.paymentOwnsSession = true
+        r.rx("10 00\r\n")
+        r.advance(5_000)
+        assertTrue("никаких команд во время оплаты", r.sent.isEmpty())
+        assertEquals(State.READY, r.sup.state)
+        assertEquals(listOf("terminal_reset"), r.eventTypes())
+        assertEquals(true, r.events.single().second["during_payment"])
+        assertFalse(r.eventTypes().contains("terminal_unexpected_frame"))
+    }
+
+    @Test
+    fun justResetDuringInitRestartsSetupOnce() {
+        val r = Rig()
+        r.sup.setDesiredEnabled(true)
+        r.sup.setActive(true)
+        r.rx("01 01 19 78 01 02 78 0D 1B\r\n")
+        r.advance(300)
+        assertEquals(listOf(SETUP, PRICES), r.sent)
+        r.rx("10 00\r\n")
+        // prices в полёте — новая настройка ждёт его ответа, затем setup
+        r.rx("00\r\n")
+        r.advance(300)
+        assertEquals(SETUP, r.sent.last())
+        r.rx("01 01 19 78 01 02 78 0D 1B\r\n")
+        r.advance(300); r.rx("00\r\n")
+        r.advance(300); r.rx("00\r\n")
+        assertEquals(State.READY, r.sup.state)
+        assertEquals(0, r.sup.consecutiveFailures)
+    }
+
     companion object {
         const val SETUP = "11 00 01 00 00 00"
         const val PRICES = "11 01 FF FF 00 00"

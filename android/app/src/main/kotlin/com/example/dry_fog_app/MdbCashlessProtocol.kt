@@ -173,6 +173,12 @@ object MdbCashlessProtocol {
         object Cancelled : Event() {
             override fun toString() = "Cancelled"
         }
+        // "10 00" — Just Reset: терминал перезапустился (по смыслу MDB;
+        // документации адаптера Wafer на этот кадр нет, наблюдали после
+        // перезагрузки планшета и восстановления связи, 1.11.2).
+        object JustReset : Event() {
+            override fun toString() = "JustReset"
+        }
         data class Unrecognized(val reason: String) : Event()
     }
 
@@ -190,6 +196,7 @@ object MdbCashlessProtocol {
             val code = u(1)
             val n = data.size
             return when {
+                code == 0x00 && n == 2 -> Event.JustReset
                 code == 0x03 && n == 4 -> Event.BeginSession(word(2))
                 code == 0x03 && n == 2 -> Event.BeginSession(null)
                 code == 0x04 && n == 2 -> Event.SessionCancelRequest
@@ -239,6 +246,7 @@ object MdbCashlessProtocol {
         Event.VendDenied -> "отказ в оплате"
         Event.EndSession -> "конец сессии"
         Event.Cancelled -> "отменено"
+        Event.JustReset -> "терминал перезапустился (Just Reset)"
         is Event.Unrecognized -> "не распознано (${event.reason})"
     }
 

@@ -307,7 +307,9 @@ class MdbTestPaymentTest {
         r.pay.portLost("адаптер отключён")
         r.queue.clear()
         assertFalse(r.pay.active)
-        assertTrue(r.pay.outcome!!.text.contains("кабинет Nayax"))
+        // 1.11.2: без «исход неизвестен» — флаг, нейтральную строку даёт вкладка
+        assertTrue(r.pay.outcome!!.vendUnsettled)
+        assertFalse(r.pay.outcome!!.text.contains("исход неизвестен"))
     }
 
     @Test

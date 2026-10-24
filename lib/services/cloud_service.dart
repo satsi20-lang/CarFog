@@ -85,15 +85,19 @@ class CloudEvent {
   })  : ts = ts ?? DateTime.now(),
         data = data ?? const {};
 
+  // ts — всегда UTC с «Z» (1.11.2): сервер приводит строку к timestamptz,
+  // и локальное время Таллина без смещения ложилось в базу на 3 ч позже.
   Map<String, dynamic> toJson() => {
         'type': type,
-        'ts': ts.toIso8601String(),
+        'ts': ts.toUtc().toIso8601String(),
         'data': data,
       };
 
+  // Из очереди/истории: новые записи в UTC, старые (до 1.11.2) — локальные
+  // без смещения; в памяти — местное время, как у DateTime.now().
   factory CloudEvent.fromJson(Map<String, dynamic> j) => CloudEvent(
         type: j['type'] as String? ?? 'unknown',
-        ts: DateTime.tryParse(j['ts'] as String? ?? '') ?? DateTime.now(),
+        ts: DateTime.tryParse(j['ts'] as String? ?? '')?.toLocal() ?? DateTime.now(),
         data: (j['data'] as Map<String, dynamic>?) ?? const {},
       );
 }

@@ -85,15 +85,86 @@ void main() {
       expect(f?.reason, 'above_max');
     });
 
-    test('при ВЫКЛЮЧЕННОМ ТЭНе плохие чтения не копятся', () {
-      final m = monitor();
-      for (var i = 0; i < 10; i++) {
-        tick();
-        expect(m.observeTemperature(null), isNull);
-      }
-      m.heaterCommanded(true, tempC: 20.0);
+  });
+
+  // 1.11.2: «нет годного показания» — независимо от состояния ТЭНа (раньше
+  // при выключенном ТЭНе плохие чтения молча отбрасывались).
+  group('нет годного показания при выключенном ТЭНе', () {
+    test('горячий старт: ТЭН выключен на первом тике, дальше −500 — отказ на 3-м (≈9 с)', () {
+      final m = monitor(noRise: false, energy: false)..heaterCommanded(true, tempC: 194.9);
       tick();
-      expect(m.observeTemperature(null), isNull); // счёт начался заново
+      expect(m.observeTemperature(194.9), isNull);
+      m.heaterCommanded(false, tempC: 194.9); // термостат: > 190
+      tick();
+      expect(m.observeTemperature(-500.0), isNull);
+      tick();
+      expect(m.observeTemperature(-500.0), isNull);
+      tick();
+      final f = m.observeTemperature(-500.0);
+      expect(f?.kind, HeaterFaultKind.outOfRange);
+      expect(f?.reason, 'below_min');
+      expect(f?.details['heater_on'], false);
+      expect(f?.details['consecutive_unusable_reads'], 3);
+    });
+
+    test('то же с null — no_reading', () {
+      final m = monitor();
+      HeaterFault? f;
+      for (var i = 0; i < 3; i++) {
+        tick();
+        f = m.observeTemperature(null);
+      }
+      expect(f?.reason, 'no_reading');
+    });
+
+    test('выше диапазона — above_max', () {
+      final m = monitor();
+      HeaterFault? f;
+      for (var i = 0; i < 3; i++) {
+        tick();
+        f = m.observeTemperature(HeaterThresholds.sensorPlausibleMaxC + 50);
+      }
+      expect(f?.reason, 'above_max');
+    });
+
+    test('одиночный плохой отсчёт отказом не считается', () {
+      final m = monitor();
+      for (final t in [190.0, null, 189.5, -500.0, 189.0]) {
+        tick();
+        expect(m.observeTemperature(t), isNull, reason: '$t');
+      }
+    });
+
+    test('годное чтение сбрасывает счётчик: 2 плохих, годное, 2 плохих — нет отказа', () {
+      final m = monitor();
+      for (final t in [null, -500.0, 188.0, null, -500.0]) {
+        tick();
+        expect(m.observeTemperature(t), isNull, reason: '$t');
+      }
+      tick();
+      expect(m.observeTemperature(null), isNotNull, reason: 'третье подряд');
+    });
+
+    test('переключение ТЭНа счётчик не сбрасывает', () {
+      final m = monitor(noRise: false, energy: false);
+      m.heaterCommanded(true, tempC: 185.0);
+      tick();
+      expect(m.observeTemperature(null), isNull);
+      m.heaterCommanded(false);
+      tick();
+      expect(m.observeTemperature(null), isNull);
+      m.heaterCommanded(true);
+      tick();
+      expect(m.observeTemperature(null)?.kind, HeaterFaultKind.outOfRange);
+    });
+
+    test('скачок при выключенном ТЭНе (в диапазоне) не копится как негодное', () {
+      final m = monitor();
+      m.observeTemperature(40.0);
+      for (var i = 0; i < 4; i++) {
+        tick();
+        expect(m.observeTemperature(i.isEven ? 317.5 : 40.0), isNull);
+      }
     });
   });
 

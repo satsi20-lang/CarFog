@@ -137,6 +137,9 @@ class MdbCashlessProtocolTest {
         assertEquals(Event.VendDenied, frame("10 06\r\n"))
         assertEquals(Event.EndSession, frame("10 07\r\n"))
         assertEquals(Event.Cancelled, frame("10 08\r\n"))
+        // 10 00 — Just Reset (терминал перезапустился, 1.11.2); с хвостом — не угадываем
+        assertEquals(Event.JustReset, frame("10 00\r\n"))
+        assertTrue(frame("10 00 01") is Event.Unrecognized)
         // сумма не пришла — событие есть, суммы нет (тестовая оплата не шлёт vend / делает возврат)
         assertEquals(Event.BeginSession(null), frame("10 03"))
         assertEquals(Event.VendApproved(null), frame("10 05"))

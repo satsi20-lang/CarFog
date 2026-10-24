@@ -52,6 +52,8 @@ class MdbBenchStatus {
   final String? testState;
   final bool? testOutcomeOk;
   final String? testOutcome;
+  // vend отправлен, итога списания нет (1.11.2) — строка на языке меню.
+  final bool testVendUnsettled;
   // Команд в очереди (одна за раз, после ACK предыдущей).
   final int queueSize;
   // «сессия может висеть, нажмите done» — до прихода 10 07.
@@ -73,6 +75,7 @@ class MdbBenchStatus {
     this.testState,
     this.testOutcomeOk,
     this.testOutcome,
+    this.testVendUnsettled = false,
     this.queueSize = 0,
     this.sessionWarning,
     this.testMode,
@@ -92,6 +95,7 @@ class MdbBenchStatus {
       testState = m['testState'] as String?,
       testOutcomeOk = m['testOutcomeOk'] as bool?,
       testOutcome = m['testOutcome'] as String?,
+      testVendUnsettled = m['testVendUnsettled'] == true,
       queueSize = m['queueSize'] as int? ?? 0,
       sessionWarning = m['sessionWarning'] as String?,
       testMode = m['testMode'] as String?,

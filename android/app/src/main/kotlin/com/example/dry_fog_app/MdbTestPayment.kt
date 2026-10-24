@@ -60,6 +60,9 @@ class MdbTestPayment(
         val text: String,
         // Сессия на терминале могла остаться открытой — владельцу: «нажмите done».
         val sessionMayHang: Boolean,
+        // vend отправлен, а итога списания терминал не прислал (1.11.2): строку
+        // на языке меню добавляет вкладка стенда — сверить в кабинете Nayax.
+        val vendUnsettled: Boolean = false,
     )
 
     var state = State.IDLE
@@ -441,7 +444,6 @@ class MdbTestPayment(
             steps += "кадров после 13 03 не было"
         }
         if (hang) steps += MdbSessionCloser.HANGING_TEXT
-        if (vendSent && !moneySettled) steps += "vend был отправлен, исход неизвестен — проверьте кабинет Nayax"
         val head = when {
             mode == Mode.REFUND && approved -> "возврат запрошен: " +
                 (if (refundResult == Result.ACK) "ACK получен" else "ACK нет (${refundResult?.title ?: "не отправлен"})") +
@@ -450,8 +452,9 @@ class MdbTestPayment(
             else -> "НЕ УДАЛАСЬ — "
         }
         val text = head + steps.joinToString("; ")
-        outcome = Outcome(ok, text, hang)
-        note("${mode.title}: $text")
+        val unsettled = vendSent && !moneySettled
+        outcome = Outcome(ok, text, hang, unsettled)
+        note("${mode.title}: $text" + if (unsettled) "; итог списания терминал не сообщил — сверьте в кабинете Nayax" else "")
     }
 
     private fun sec(ms: Long): String =

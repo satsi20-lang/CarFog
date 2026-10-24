@@ -32,7 +32,9 @@
   сорвавшийся платёж сообщается отдельно.
 * **Оплата картой (1.11.0).** Время оплаты показывается по Таллину. Остальные
   события оплаты (`payment_card_*`, `payment_refunded_auto`,
-  `terminal_recovered`, `terminal_unexpected_frame`) идут только в облако.
+  `terminal_recovered`, `terminal_unexpected_frame`, с 1.11.1
+  `payment_client_cancelled_no_refund`, с 1.11.2 `terminal_reset`) идут только
+  в облако.
   Частоту `terminal_offline` ограничивает и само приложение: не чаще раза в
   5 минут и только при смене статуса. **Эти два вида есть в исходниках
   функции, но работают только после повторного развёртывания

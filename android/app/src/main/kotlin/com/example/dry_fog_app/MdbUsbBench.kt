@@ -469,6 +469,7 @@ class MdbUsbBench(
                 "testState" to testPayment.state.title,
                 "testOutcomeOk" to testPayment.outcome?.ok,
                 "testOutcome" to testPayment.outcome?.text,
+                "testVendUnsettled" to (testPayment.outcome?.vendUnsettled == true),
                 "testMode" to testPayment.mode.title,
                 "holdRemainingMs" to testPayment.holdRemainingMs,
                 "queueSize" to queue.size,

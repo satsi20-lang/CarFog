@@ -5,14 +5,19 @@ import '../models/bus_map.dart';
 // на вход подаются команды на ТЭН и показания, на выходе вердикт; часы
 // подменяются в тестах.
 //
-// Работает ТОЛЬКО пока ТЭН включён. Четыре детектора (пороги и их
-// происхождение — HeaterThresholds в bus_map.dart):
+// Четыре детектора (пороги и их происхождение — HeaterThresholds в
+// bus_map.dart):
 //   out_of_range  — показание вне допустимого диапазона / служебный код
-//                   обрыва / null и ошибки чтения ПОДРЯД несколько раз;
+//                   обрыва / null и ошибки чтения ПОДРЯД несколько раз —
+//                   НЕЗАВИСИМО от состояния ТЭНа (1.11.2: на горячем старте
+//                   термостат выключает ТЭН на первом тике, и отключённая
+//                   термопара иначе не замечалась бы до конца цикла); пока
+//                   ТЭН включён, сюда же идут подряд нереальные скачки;
 //   stale         — при непрерывно включённом ТЭНе показание не менялось;
 //   no_rise       — после команды температура не выросла на минимум за окно;
 //   energy_budget — набежало больше энергии, чем нужно на прогрев, а цель
 //                   по показаниям не достигнута.
+// stale, no_rise и energy_budget работают только пока ТЭН включён.
 // Одиночный сбой чтения (шину дёрнуло) отказом не считается: нужно
 // HeaterThresholds.sensorBadReadConfirmCount плохих чтений подряд.
 
@@ -76,6 +81,9 @@ class HeaterSafetyMonitor {
   DateTime? _lastGoodAt;
   bool _lastReadBad = false;
   int _consecutiveBad = 0;
+  // Негодные показания подряд (null / обрыв / вне диапазона) без учёта
+  // ТЭНа: сбрасывается только годным показанием, не командой на ТЭН.
+  int _consecutiveUnusable = 0;
   final List<Map<String, dynamic>> _recent = [];
 
   bool get heaterOn => _heaterOn;
@@ -159,23 +167,29 @@ class HeaterSafetyMonitor {
       _lastGoodAt = now;
     }
 
+    _consecutiveUnusable = outOfBounds ? _consecutiveUnusable + 1 : 0;
+    String rangeReason() => temp == null
+        ? 'no_reading'
+        : jump
+        ? 'implausible_jump'
+        : (temp <= HeaterThresholds.sensorPlausibleMinC
+              ? 'below_min'
+              : 'above_max');
+
     if (!_heaterOn) {
       _consecutiveBad = 0;
       if (!bad) _lastTemp = temp;
+      if (_consecutiveUnusable >= HeaterThresholds.sensorBadReadConfirmCount) {
+        return HeaterFault(HeaterFaultKind.outOfRange, rangeReason(), _details(now));
+      }
       return null;
     }
 
     if (bad) {
       _consecutiveBad++;
-      if (_consecutiveBad >= HeaterThresholds.sensorBadReadConfirmCount) {
-        final reason = temp == null
-            ? 'no_reading'
-            : jump
-            ? 'implausible_jump'
-            : (temp <= HeaterThresholds.sensorPlausibleMinC
-                  ? 'below_min'
-                  : 'above_max');
-        return HeaterFault(HeaterFaultKind.outOfRange, reason, _details(now));
+      if (_consecutiveBad >= HeaterThresholds.sensorBadReadConfirmCount ||
+          _consecutiveUnusable >= HeaterThresholds.sensorBadReadConfirmCount) {
+        return HeaterFault(HeaterFaultKind.outOfRange, rangeReason(), _details(now));
       }
       return null;
     }
@@ -255,6 +269,8 @@ class HeaterSafetyMonitor {
       'start_temp_c': _startTemp,
       'last_temp_c': _lastTemp,
       'consecutive_bad_reads': _consecutiveBad,
+      'consecutive_unusable_reads': _consecutiveUnusable,
+      'heater_on': _heaterOn,
       'recent_temps': List<Map<String, dynamic>>.from(_recent),
     };
   }

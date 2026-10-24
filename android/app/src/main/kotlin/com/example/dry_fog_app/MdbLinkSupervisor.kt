@@ -19,6 +19,10 @@ import com.example.dry_fog_app.MdbCommandQueue.Result
 //   * 10 04 вне оплаты — 13 04; 10 03 вне оплаты (клиент приложил карту, не
 //     выбрав запах) — 13 04 без vend и событие для подсказки (решение
 //     владельца 21.10.2026). Нераспознанный кадр — в журнал и событие.
+//   * 10 00 (Just Reset, терминал перезапустился, 1.11.2) — событие
+//     terminal_reset; вне оплаты — сразу заново setup, prices, enable, не
+//     дожидаясь опроса; во время оплаты — только журнал и событие (сессию
+//     ведёт MdbCardPayment, его восстановление не меняется).
 class MdbLinkSupervisor(
     private val queue: MdbCommandQueue,
     private val io: Io,
@@ -134,6 +138,7 @@ class MdbLinkSupervisor(
                 closer.start("10 04 вне оплаты")
             }
             Event.EndSession -> inSession = false
+            Event.JustReset -> onJustReset()
             is Event.Unrecognized -> {
                 unexpectedFrames++
                 emit("terminal_unexpected_frame", mapOf("reason" to e.reason))
@@ -155,6 +160,21 @@ class MdbLinkSupervisor(
     }
 
     // ---- внутреннее ----
+
+    private fun onJustReset() {
+        if (paymentOwnsSession) {
+            note("10 00: терминал перезапустился во время оплаты — без повторной настройки")
+            emit("terminal_reset", mapOf("during_payment" to true, "state" to state.name))
+            return
+        }
+        note("10 00: терминал перезапустился — заново setup, prices, enable")
+        emit("terminal_reset", mapOf("during_payment" to false, "state" to state.name))
+        // Сессия и настройка на терминале сброшены вместе с ним.
+        if (closer.active) closer.abandon()
+        inSession = false
+        pollInFlight = false
+        initialize()
+    }
 
     private fun wake() {
         if (!active || service) return

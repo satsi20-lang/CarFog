@@ -161,6 +161,8 @@ class CardTerminalService {
     switch (type) {
       case 'terminal_offline':
       case 'terminal_recovered':
+      // Терминал перезапустился (кадр 10 00, 1.11.2) — только облако, без Telegram.
+      case 'terminal_reset':
         AppLog.log('CardTerminal', '$type ${data.isEmpty ? '' : data}');
         unawaited(CloudService.report(type, data: {...data, 'device_id': deviceId}));
       case 'terminal_unexpected_frame':

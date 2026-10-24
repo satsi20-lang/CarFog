@@ -3,6 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'package:provider/provider.dart';
+
+import '../../models/app_state.dart';
 import '../../services/mdb_bench_service.dart';
 import '../../widgets/portrait_ui.dart';
 
@@ -33,6 +36,23 @@ class _MdbBenchTabState extends State<MdbBenchTab> {
     'prolific': 'PL2303',
     'cdc': 'CDC ACM',
   };
+
+  // vend отправлен, итога списания нет (1.11.2): нейтрально, без «исход
+  // неизвестен». Язык меню обслуживания — ru/en/et, как у других вкладок.
+  static const _vendUnsettled = {
+    'ru': 'Терминал не сообщил итог списания — сверьте операцию в кабинете Nayax.',
+    'en': 'The terminal did not report the final charge status — check the transaction in the Nayax portal.',
+    'et': 'Terminal ei teatanud makse lõpptulemust — kontrollige tehingut Nayaxi portaalis.',
+  };
+
+  // Язык меню; вкладка без AppNotifier (отдельный тест) — русский.
+  static String _lang(BuildContext context) {
+    try {
+      return Provider.of<AppNotifier>(context, listen: false).serviceLang;
+    } on ProviderNotFoundException {
+      return 'ru';
+    }
+  }
 
   final _amount = TextEditingController(text: '0.10');
   final _raw = TextEditingController();
@@ -379,6 +399,11 @@ class _MdbBenchTabState extends State<MdbBenchTab> {
                     s.testOutcome!,
                     color: s.testOutcomeOk == true ? PUi.accent : _red,
                     bold: true,
+                  ),
+                if (s.testOutcome != null && s.testVendUnsettled)
+                  _text(
+                    _vendUnsettled[_lang(context)] ?? _vendUnsettled['ru']!,
+                    color: _red,
                   ),
               ],
               if (_message != null) ...[
