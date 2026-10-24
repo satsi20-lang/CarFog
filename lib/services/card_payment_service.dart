@@ -94,6 +94,28 @@ class _ArmContext {
   );
 }
 
+// Итог pre-flight (раздел 5): reason null — всё в порядке; details — поля
+// для события hardware_error card_preflight (1.11.3).
+class PreflightResult {
+  final String? reason;
+  final Map<String, dynamic> details;
+  const PreflightResult(this.reason, [this.details = const {}]);
+}
+
+class _Probe {
+  final bool ok;
+  final List<Map<String, dynamic>> readings;
+  const _Probe(this.ok, this.readings);
+
+  Map<String, dynamic> details({DateTime? lastOkAt}) => {
+    'attempts': readings.length,
+    'readings': readings,
+    'last_usable_age_s': lastOkAt == null
+        ? null
+        : ModbusService.clock().difference(lastOkAt).inSeconds,
+  };
+}
+
 class CardPaymentService {
   CardPaymentService._();
 
@@ -427,21 +449,81 @@ class CardPaymentService {
   // Может ли аппарат выдать услугу: только существующие проверки и узлы,
   // отмеченные установленными (датчика давления в аппарате нет — решение
   // владельца 21.10.2026). null — всё в порядке, иначе код причины.
-  static Future<String?> preflight(AppNotifier n, int flavorIndex) async {
+  static Future<String?> preflight(AppNotifier n, int flavorIndex) async =>
+      (await preflightDetailed(n, flavorIndex)).reason;
+
+  // Модули (ввод-вывод, термопара, счётчик) — до preflightAttempts СВЕЖИХ
+  // чтений подряд с паузой preflightRetryPause (1.11.3): одиночный сбой
+  // обмена по RS-485 больше не закрывает оплату. Первое годное — модуль в
+  // порядке; «недоступно» — только если все чтения негодные (тот же
+  // критерий «3 подряд», что у детектора в цикле). Кэш для решения не
+  // используется. details — для события hardware_error card_preflight.
+  static const int preflightAttempts = 3;
+  static const Duration preflightRetryPause = Duration(milliseconds: 300);
+  @visibleForTesting
+  static Future<void> Function(Duration) preflightPause = Future<void>.delayed;
+
+  static Future<PreflightResult> preflightDetailed(AppNotifier n, int flavorIndex) async {
     final cfg = n.config;
-    if (n.isPaymentBlocked) return 'payment_blocked';
-    if (!n.busHealthy) return 'bus';
+    if (n.isPaymentBlocked) return const PreflightResult('payment_blocked');
+    if (!n.busHealthy) return const PreflightResult('bus');
     final levels = n.levels;
-    if (flavorIndex >= levels.length || !levels[flavorIndex]) return 'level';
-    if (cfg.dioInstalled && await ModbusService.readAllInputs() == null) return 'io_module';
+    if (flavorIndex >= levels.length || !levels[flavorIndex]) {
+      return const PreflightResult('level');
+    }
+    if (cfg.dioInstalled) {
+      final p = await _probe<List<bool>>(ModbusService.readAllInputsDetailed, (_) => true);
+      if (!p.ok) {
+        return PreflightResult('io_module', p.details(lastOkAt: ModbusService.lastInputsOkAt));
+      }
+    }
     // Негодное показание (null, обрыв −500, вне диапазона) — то же, что нет
     // показания (1.11.2): греть по нему нельзя.
-    if (cfg.thermoInstalled &&
-        !HeaterSafetyMonitor.isUsable(await ModbusService.readTemperature())) {
-      return 'thermocouple';
+    if (cfg.thermoInstalled) {
+      final p = await _probe<double>(
+        ModbusService.readTemperatureDetailed,
+        HeaterSafetyMonitor.isUsable,
+        keepValue: true,
+      );
+      if (!p.ok) {
+        final last = ModbusService.lastUsableTemperature;
+        return PreflightResult('thermocouple', {
+          ...p.details(lastOkAt: last?.at),
+          'last_usable_c': last?.c,
+        });
+      }
     }
-    if (cfg.energyMeterInstalled && await ModbusService.readEnergy() == null) return 'energy_meter';
-    return null;
+    if (cfg.energyMeterInstalled) {
+      final p = await _probe<Map<String, double>>(ModbusService.readEnergyDetailed, (_) => true);
+      if (!p.ok) {
+        return PreflightResult('energy_meter', p.details(lastOkAt: ModbusService.lastEnergyOkAt));
+      }
+    }
+    return const PreflightResult(null);
+  }
+
+  // keepValue — значение негодного чтения в readings (термопара: −500, 450);
+  // у модулей без значения — только вид ошибки.
+  static Future<_Probe> _probe<T>(
+    Future<ModbusRead<T>> Function() read,
+    bool Function(T) usable, {
+    bool keepValue = false,
+  }) async {
+    final readings = <Map<String, dynamic>>[];
+    for (var i = 0; i < preflightAttempts; i++) {
+      if (i > 0) await preflightPause(preflightRetryPause);
+      final t0 = ModbusService.clock();
+      final r = await read();
+      final ms = ModbusService.clock().difference(t0).inMilliseconds;
+      final v = r.value;
+      if (v != null && usable(v)) return _Probe(true, readings);
+      readings.add({
+        'value': keepValue ? v : null,
+        'error': r.error ?? 'out_of_range',
+        'ms': ms,
+      });
+    }
+    return _Probe(false, readings);
   }
 
   @visibleForTesting
@@ -449,6 +531,7 @@ class CardPaymentService {
     _ctx = null;
     customerNotice.value = null;
     clock = DateTime.now;
+    preflightPause = Future<void>.delayed;
   }
 
   // Статус терминала для экрана оплаты.

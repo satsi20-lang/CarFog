@@ -141,7 +141,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
     final n = context.read<AppNotifier>();
     final flavorIndex = n.selectedFlavor ?? 0;
     // Pre-flight (ТЗ раздел 5): аппарат должен суметь выдать услугу.
-    final reason = await CardPaymentService.preflight(n, flavorIndex);
+    final pre = await CardPaymentService.preflightDetailed(n, flavorIndex);
+    final reason = pre.reason;
     if (!mounted) return;
     if (reason != null) {
       AppLog.log(
@@ -151,7 +152,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
       unawaited(
         CloudService.report(
           CloudEventType.hardwareError,
-          data: {'code': 'card_preflight', 'reason': reason},
+          // attempts, readings, last_usable_* (1.11.3) — что именно пришло.
+          data: {'code': 'card_preflight', 'reason': reason, ...pre.details},
         ),
       );
       setState(() => _machineUnavailable = true);

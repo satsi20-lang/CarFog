@@ -16,6 +16,7 @@ import 'package:dry_fog_app/services/cloud_service.dart';
 import 'package:dry_fog_app/services/i18n_service.dart';
 import 'package:dry_fog_app/services/modbus_service.dart';
 import 'package:dry_fog_app/services/session_service.dart';
+import 'package:dry_fog_app/widgets/card_hint_banner.dart';
 
 // Поток оплаты картой (1.11.0, этап 3, ТЗ раздел 6) — Dart-сторона: запись
 // payment_pending до запуска цикла, итог цикла → терминал, события в облако,
@@ -45,6 +46,9 @@ void main() {
     CardTerminalService.resetForTest();
     CardPaymentService.resetForTest();
     CardPaymentService.install();
+    // pre-flight: пауза между повторами чтения без реального ожидания (1.11.3).
+    CardPaymentService.preflightPause = (_) async {};
+    ModbusService.resetLastReadsForTest();
     ModbusService.paymentBlocked = false;
     cardCalls = [];
     modbusCalls = [];
@@ -431,16 +435,23 @@ void main() {
     }
 
     testWidgets('карта без выбранного запаха — подсказка на экране выбора на 6 с', (tester) async {
+      // Подставные часы баннера: без реального ожидания 6 с (1.11.3).
+      var now = DateTime(2026, 10, 24, 15, 31, 37);
+      CardHintBanner.clock = () => now;
+      addTearDown(() => CardHintBanner.clock = DateTime.now);
       final n = notifier();
       await pump(tester, n, const SelectFlavorScreen());
       expect(find.text('Сначала выберите запах'), findsNothing);
-      CardTerminalService.tappedWithoutFlavorAt.value = DateTime.now();
+      CardTerminalService.tappedWithoutFlavorAt.value = now;
       await tester.pump(const Duration(milliseconds: 100));
       expect(find.text('Сначала выберите запах'), findsOneWidget);
-      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 6100)));
-      await tester.pump(const Duration(seconds: 7));
+      now = now.add(const Duration(seconds: 5, milliseconds: 900));
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text('Сначала выберите запах'), findsOneWidget, reason: '5,9 с — ещё видна');
+      now = now.add(const Duration(milliseconds: 200));
+      await tester.pump(const Duration(seconds: 6));
       expect(find.text('Сначала выберите запах'), findsNothing);
-    }, timeout: const Timeout(Duration(seconds: 30)));
+    });
   });
 
   group('восстановление после перезапуска (раздел 8)', () {

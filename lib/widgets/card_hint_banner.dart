@@ -14,6 +14,10 @@ class CardHintBanner extends StatefulWidget {
 
   static const Duration showFor = Duration(seconds: 6);
 
+  // Подменяется в тестах (без реального ожидания 6 с).
+  @visibleForTesting
+  static DateTime Function() clock = DateTime.now;
+
   @override
   State<CardHintBanner> createState() => _CardHintBannerState();
 }
@@ -23,7 +27,7 @@ class _CardHintBannerState extends State<CardHintBanner> {
 
   bool get _visible {
     final at = CardTerminalService.tappedWithoutFlavorAt.value;
-    return at != null && DateTime.now().difference(at) < CardHintBanner.showFor;
+    return at != null && CardHintBanner.clock().difference(at) < CardHintBanner.showFor;
   }
 
   void _changed() {

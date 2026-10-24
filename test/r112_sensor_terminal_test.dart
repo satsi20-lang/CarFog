@@ -44,6 +44,9 @@ void main() {
     CardTerminalService.resetForTest();
     CardPaymentService.resetForTest();
     CardPaymentService.install();
+    // pre-flight: пауза между повторами чтения без реального ожидания (1.11.3).
+    CardPaymentService.preflightPause = (_) async {};
+    ModbusService.resetLastReadsForTest();
     ModbusService.paymentBlocked = false;
     cardCalls = [];
     modbusCalls = [];

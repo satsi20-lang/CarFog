@@ -3,10 +3,51 @@ import 'package:flutter/foundation.dart';
 import '../models/bus_map.dart';
 import '../models/device_spec.dart';
 import 'app_log_service.dart';
+import 'heater_safety_monitor.dart';
+
+// Одно чтение с причиной неудачи (1.11.3, pre-flight оплаты картой):
+// value == null — ошибка; error: 'read_failed' (нативная сторона ответила
+// ошибкой — нет ответа, CRC, порт), 'no_plugin' (нет нативной части).
+class ModbusRead<T> {
+  final T? value;
+  final String? error;
+  const ModbusRead(this.value, this.error);
+}
 
 class ModbusService {
   static const _channel = MethodChannel('com.carfog.dryfog/modbus');
   static bool _open = false;
+
+  // Последнее годное показание из любого места приложения (1.11.3) — только
+  // для диагностики события card_preflight, решения по нему не принимаются.
+  // clock подменяется в тестах.
+  static DateTime Function() clock = DateTime.now;
+  static ({double c, DateTime at})? lastUsableTemperature;
+  static DateTime? lastInputsOkAt;
+  static DateTime? lastEnergyOkAt;
+
+  @visibleForTesting
+  static void resetLastReadsForTest() {
+    lastUsableTemperature = null;
+    lastInputsOkAt = null;
+    lastEnergyOkAt = null;
+    clock = DateTime.now;
+  }
+
+  static Future<ModbusRead<T>> _detailed<T>(
+    String what,
+    Future<T?> Function() call,
+  ) async {
+    try {
+      final v = await call();
+      return ModbusRead<T>(v, v == null ? 'read_failed' : null);
+    } on MissingPluginException {
+      return ModbusRead<T>(null, 'no_plugin');
+    } catch (e) {
+      debugPrint('ModbusService.$what error: $e');
+      return ModbusRead<T>(null, 'read_failed');
+    }
+  }
 
   // Открыть порт. Вызывать один раз при старте.
   //
@@ -70,14 +111,16 @@ class ModbusService {
   // монетоприёмник/терминал). Один запрос на 16 входов стоит по времени
   // столько же, сколько на 8 — служебная часть кадра одинакова.
   // null = ошибка чтения.
-  static Future<List<bool>?> readAllInputs() async {
-    try {
+  static Future<List<bool>?> readAllInputs() async =>
+      (await readAllInputsDetailed()).value;
+
+  static Future<ModbusRead<List<bool>>> readAllInputsDetailed() async {
+    final r = await _detailed<List<bool>>('readAllInputs', () async {
       final result = await _channel.invokeMethod<List>('readAllInputs');
       return result?.map((e) => e as bool).toList();
-    } catch (e) {
-      debugPrint('ModbusService.readAllInputs error: $e');
-      return null;
-    }
+    });
+    if (r.value != null) lastInputsOkAt = clock();
+    return r;
   }
 
   // Уровни канистр (каналы датчиков PumpChannel.sensorDI) — тонкая
@@ -483,15 +526,25 @@ class ModbusService {
 
   // Читает температуру термопары, канал 0-3. Возвращает °C,
   // либо null при ошибке чтения (не путать с настоящим 0°C).
-  static Future<double?> readTemperature({int channel = 0}) async {
-    try {
-      return await _channel.invokeMethod<double>('readTemperature', {
+  static Future<double?> readTemperature({int channel = 0}) async =>
+      (await readTemperatureDetailed(channel: channel)).value;
+
+  // Значение отдаётся как прочитано (в том числе −500 и вне диапазона —
+  // годность решает вызывающий); годное запоминается для диагностики.
+  static Future<ModbusRead<double>> readTemperatureDetailed({
+    int channel = 0,
+  }) async {
+    final r = await _detailed<double>(
+      'readTemperature',
+      () => _channel.invokeMethod<double>('readTemperature', {
         'channel': channel,
-      });
-    } catch (e) {
-      debugPrint('ModbusService.readTemperature error: $e');
-      return null;
+      }),
+    );
+    final v = r.value;
+    if (channel == 0 && HeaterSafetyMonitor.isUsable(v)) {
+      lastUsableTemperature = (c: v!, at: clock());
     }
+    return r;
   }
 
   // Отладочная "заморозка" показания термопары (задача "детектор отказа
@@ -548,15 +601,17 @@ class ModbusService {
   // сессию (Шаг 33, задача 1) в принципе нельзя было отличить от честного
   // "не потребили ничего": разница показаний старт/финиш с подменённым
   // нулём вместо null считалась бы неверно, а не пропускалась.
-  static Future<Map<String, double>?> readEnergy() async {
-    try {
+  static Future<Map<String, double>?> readEnergy() async =>
+      (await readEnergyDetailed()).value;
+
+  static Future<ModbusRead<Map<String, double>>> readEnergyDetailed() async {
+    final r = await _detailed<Map<String, double>>('readEnergy', () async {
       final result = await _channel.invokeMethod<Map>('readEnergy');
       if (result == null) return null;
       return result.map((k, v) => MapEntry(k as String, (v as num).toDouble()));
-    } catch (e) {
-      debugPrint('ModbusService.readEnergy error: $e');
-      return null;
-    }
+    });
+    if (r.value != null) lastEnergyOkAt = clock();
+    return r;
   }
 
   // Расход за текущий календарный месяц (кВт⋅ч).
