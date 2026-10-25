@@ -64,6 +64,12 @@ class MdbLinkSupervisor(
     // Последнее неожиданное событие/кадр — для диагностики.
     var unexpectedFrames = 0
         private set
+    // Обрывки кадров (1.11.5): всего и ещё не отправленные в облако.
+    var frameFragments = 0
+        private set
+    private var pendingFragments = 0
+    private var lastFragmentReason: String? = null
+    private var lastFragmentsEventAt: Long? = null
 
     // Поток оплаты держит сессию сам — тогда 10 03/10 04 не наши.
     var paymentOwnsSession = false
@@ -147,8 +153,32 @@ class MdbLinkSupervisor(
         }
     }
 
+    // Обрывок кадра (закрыт аварийной паузой без \r\n, не разобран): только
+    // счётчик; в облако — terminal_frame_fragments не чаще раза в час.
+    fun onFrameFragment(reason: String) {
+        frameFragments++
+        pendingFragments++
+        lastFragmentReason = reason
+        note("обрывок кадра терминала: $reason (всего ${frameFragments})")
+        reportFragments()
+    }
+
+    private fun reportFragments() {
+        if (pendingFragments == 0) return
+        val last = lastFragmentsEventAt
+        if (last != null && clock() - last < FRAGMENTS_EVENT_MIN_INTERVAL_MS) return
+        lastFragmentsEventAt = clock()
+        emit("terminal_frame_fragments", mapOf(
+            "count" to pendingFragments,
+            "total" to frameFragments,
+            "last_reason" to lastFragmentReason,
+        ))
+        pendingFragments = 0
+    }
+
     fun tick() {
         closer.tick()
+        reportFragments()
         val now = clock()
         when (state) {
             State.INACTIVE, State.SERVICE, State.INITIALIZING -> Unit
@@ -323,5 +353,6 @@ class MdbLinkSupervisor(
         const val RETRY_SOON_MS = 5_000L
         const val RETRY_OFFLINE_MS = 60_000L
         const val OFFLINE_EVENT_MIN_INTERVAL_MS = 5 * 60_000L
+        const val FRAGMENTS_EVENT_MIN_INTERVAL_MS = 60 * 60_000L
     }
 }

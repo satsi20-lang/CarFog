@@ -106,6 +106,30 @@ void main() {
       expect(events[1].data['count'], 3, reason: 'три кадра с прошлого отчёта');
     });
 
+    test('обрывки кадров (1.11.5): сводное terminal_frame_fragments как пришло, без счётчика неожиданных', () async {
+      final t0 = DateTime(2026, 10, 25, 12);
+      CardTerminalService.handleEvent(
+        {'kind': 'event', 'type': 'terminal_frame_fragments', 'data': {'count': 2, 'total': 5, 'last_reason': 'кадр 78… не из паспорта'}},
+        'CARFOG-T',
+        now: t0,
+      );
+      // неожиданный кадр сразу после — отчёт идёт как обычно (count 1): обрывки его не копят
+      CardTerminalService.handleEvent(
+        {'kind': 'event', 'type': 'terminal_unexpected_frame', 'data': {'reason': 'код 09'}},
+        'CARFOG-T',
+        now: t0.add(const Duration(seconds: 1)),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      final h = await CloudService.history();
+      final f = h.where((e) => e.type == 'terminal_frame_fragments').single;
+      expect(f.data['count'], 2);
+      expect(f.data['total'], 5);
+      expect(f.data['last_reason'], 'кадр 78… не из паспорта');
+      expect(f.data['device_id'], 'CARFOG-T');
+      expect(h.where((e) => e.type == 'terminal_unexpected_frame').single.data['count'], 1);
+      expect(CardTerminalService.recent.value.last, contains('terminal_unexpected_frame'));
+    });
+
     test('карта без выбранного запаха — подсказка экрану, в облако не уходит', () async {
       final at = DateTime(2026, 10, 22, 12, 30);
       CardTerminalService.handleEvent(

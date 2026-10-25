@@ -324,6 +324,45 @@ class MdbLinkSupervisorTest {
         assertEquals(0, r.sup.consecutiveFailures)
     }
 
+    // ---- обрывки кадров (1.11.5) ----
+
+    @Test
+    fun fragmentsAreCountedNotUnexpectedAndReportedHourly() {
+        val r = Rig().startReady()
+        r.sup.onFrameFragment("не hex: нужна чётная длина")
+        r.sup.onFrameFragment("кадр 78… не из паспорта")
+        // первое — сразу (count 1), второе ждёт часа
+        assertEquals(listOf("terminal_frame_fragments"), r.eventTypes())
+        assertEquals(1, r.events[0].second["count"])
+        assertEquals(0, r.sup.unexpectedFrames)
+        assertEquals(2, r.sup.frameFragments)
+        r.advance(30 * 60_000L)
+        r.sup.onFrameFragment("кадр 19… не из паспорта")
+        assertEquals(1, r.eventTypes().count { it == "terminal_frame_fragments" })
+        // через час — сводно за период, даже без нового обрывка
+        r.advance(31 * 60_000L)
+        val e = r.events.filter { it.first == "terminal_frame_fragments" }
+        assertEquals(2, e.size)
+        assertEquals(2, e[1].second["count"])
+        assertEquals(3, e[1].second["total"])
+        assertEquals("кадр 19… не из паспорта", e[1].second["last_reason"])
+        assertFalse(r.eventTypes().contains("terminal_unexpected_frame"))
+        // нет новых — нет события
+        r.advance(2 * 60 * 60_000L)
+        assertEquals(2, r.eventTypes().count { it == "terminal_frame_fragments" })
+    }
+
+    @Test
+    fun fragmentDoesNotBreakLinkAndWholeUnknownLineIsStillUnexpected() {
+        val r = Rig().startReady()
+        r.sup.onFrameFragment("кадр 78… не из паспорта")
+        assertEquals(State.READY, r.sup.state)
+        assertEquals(0, r.sup.consecutiveFailures)
+        r.rx("10 09\r\n") // целая строка с \r\n, не из паспорта
+        assertTrue(r.eventTypes().contains("terminal_unexpected_frame"))
+        assertEquals(1, r.sup.unexpectedFrames)
+    }
+
     companion object {
         const val SETUP = "11 00 01 00 00 00"
         const val PRICES = "11 01 FF FF 00 00"

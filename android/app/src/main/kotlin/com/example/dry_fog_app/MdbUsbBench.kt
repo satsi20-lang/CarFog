@@ -384,8 +384,11 @@ class MdbUsbBench(
     private fun onFrame(data: ByteArray, firstMs: Long, lastMs: Long, frameSession: Long) {
         val e = MdbCashlessProtocol.parseFrame(String(data, Charsets.US_ASCII))
         val current = frameSession == session
+        // Обрывок (1.11.5): закрыт аварийной паузой без \r\n и не разобран.
+        val fragment = !MdbFrameReader.isComplete(data) && e is MdbCashlessProtocol.Event.Unrecognized
         log.rx(firstMs, lastMs, data,
-            (if (current) "" else "[порт уже закрыт, не принят] ") + "разбор: " + MdbCashlessProtocol.describe(e))
+            (if (current) "" else "[порт уже закрыт, не принят] ") +
+                (if (fragment) "обрывок кадра, " else "") + "разбор: " + MdbCashlessProtocol.describe(e))
         if (current) postLogic { dispatch(e, frameSession) }
     }
 

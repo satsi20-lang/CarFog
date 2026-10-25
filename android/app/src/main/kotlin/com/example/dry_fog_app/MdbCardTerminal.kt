@@ -307,9 +307,16 @@ class MdbCardTerminal(private val context: Context) : MethodChannel.MethodCallHa
     // Поток чтения: кадр сразу в журнал, разбор — на логическом потоке.
     private fun onFrame(data: ByteArray, firstMs: Long, lastMs: Long, frameSession: Long) {
         val e = MdbCashlessProtocol.parseFrame(String(data, Charsets.US_ASCII))
-        log.rx(firstMs, lastMs, data, "разбор: " + MdbCashlessProtocol.describe(e))
+        // Обрывок (1.11.5): закрыт аварийной паузой без \r\n и не разобран —
+        // не «неожиданный кадр», а счётчик и сводное событие раз в час.
+        val fragment = !MdbFrameReader.isComplete(data) && e is MdbCashlessProtocol.Event.Unrecognized
+        log.rx(firstMs, lastMs, data, (if (fragment) "обрывок кадра, " else "") + "разбор: " + MdbCashlessProtocol.describe(e))
         post {
             if (frameSession != portSession) return@post
+            if (fragment) {
+                supervisor.onFrameFragment((e as MdbCashlessProtocol.Event.Unrecognized).reason)
+                return@post
+            }
             queue.onEvent(e)
             supervisor.onEvent(e)
             payment.onEvent(e)

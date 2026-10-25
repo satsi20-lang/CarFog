@@ -47,9 +47,17 @@ class MdbFrameReaderTest {
     }
 
     @Test
-    fun pauseSplitsMessages() {
-        val frames = run(mapOf(20L to "03FFFE", 200L to "07"), 400)
+    fun pauseLongerThanGapSplitsMessages() {
+        // 1.11.5: аварийная пауза 500 мс (было 60).
+        val frames = run(mapOf(20L to "03FFFE", 700L to "07"), 1400)
         assertEquals(listOf("03FFFE", "07"), frames.map { it.first })
+    }
+
+    @Test
+    fun pauseShorterThanGapNoLongerSplits() {
+        // Раньше 180 мс резали строку на два «кадра».
+        val frames = run(mapOf(20L to "03FFFE", 200L to "07"), 1400)
+        assertEquals(listOf("03FFFE07"), frames.map { it.first })
     }
 
     @Test
@@ -169,17 +177,95 @@ class MdbFrameReaderTest {
     }
 
     @Test
-    fun framesWithoutCrLf85msApartAreSplitByPause() {
-        val frames = runBlocking(listOf(100L to "00", 185L to "10 07"))
+    fun framesWithoutCrLfAreSplitOnlyByEmergencyPause() {
+        // Без \r\n (по паспорту не бывает) — закрытие только аварийной паузой.
+        val frames = runBlocking(listOf(100L to "00", 700L to "10 07"))
         assertEquals(listOf("00", "10 07"), frames.map { it.first })
+        assertTrue(frames.none { MdbFrameReader.isComplete(it.first.toByteArray()) })
     }
 
     @Test
     fun pauseInsideOneLongReadStillSplits() {
         // Таймаут чтения длиннее паузы: между кадрами нет ни одного пустого
         // чтения — раньше такие кадры склеивались.
-        val frames = runBlocking(listOf(100L to "00", 185L to "10 07"), readTimeoutMs = 200)
+        val frames = runBlocking(listOf(100L to "00", 700L to "10 07"), readTimeoutMs = 600)
         assertEquals(listOf("00", "10 07"), frames.map { it.first })
+    }
+
+    // ---- 1.11.5: сборка до \n, аварийная пауза 500 мс, пустые строки ----
+
+    @Test
+    fun setupReplyInChunksWithPauses80To300msIsOneFrame() {
+        val frames = runBlocking(listOf(
+            100L to "01 01 19",
+            180L to " 78 01",
+            480L to " 02 78 0D 1",
+            700L to "B \r\n",
+        ))
+        assertEquals(listOf("01 01 19 78 01 02 78 0D 1B \r\n"), frames.map { it.first })
+        assertEquals(1, MdbCashlessProtocol.parseSetupReply(frames[0].first)!!.scale)
+    }
+
+    @Test
+    fun loneCrLfIsIgnored() {
+        val frames = runBlocking(listOf(100L to "\r\n", 300L to "  \r\n", 900L to "00 \r\n"))
+        assertEquals(listOf("00 \r\n"), frames.map { it.first })
+    }
+
+    @Test
+    fun crLfTailAfterEmergencyPauseIsIgnoredNotAFrame() {
+        // Обрывок «… 0D 1B », пауза > 500 мс, затем хвост «\r\n» — хвост не кадр.
+        val frames = runBlocking(listOf(100L to "01 01 19 78 01 02 78 0D 1B ", 800L to "\r\n"))
+        assertEquals(listOf("01 01 19 78 01 02 78 0D 1B "), frames.map { it.first })
+    }
+
+    @Test
+    fun frameWithoutCrLfClosesAfter500msNotEarlier() {
+        val port = BlockingFakePort(listOf(100L to "10 0"), 2000)
+        val closedAt = mutableListOf<Long>()
+        val reader = MdbFrameReader(
+            port = port,
+            onFrame = { _, _, _ -> closedAt += port.now },
+            onError = { throw AssertionError() },
+            clock = { port.now },
+        )
+        port.reader = reader
+        reader.run()
+        assertEquals(1, closedAt.size)
+        assertTrue("закрыт в ${closedAt[0]}", closedAt[0] >= 100L + MdbFrameReader.GAP_MS)
+        assertTrue("закрыт в ${closedAt[0]}", closedAt[0] < 100L + MdbFrameReader.GAP_MS + 50)
+    }
+
+    @Test
+    fun ackAndNakAreRecognizedImmediatelyByCrLf() {
+        // Как на железе: «00 \r\n» и «FF \r\n» — кадр закрывается \n, без ожидания паузы.
+        var closedAt = -1L
+        val port = BlockingFakePort(listOf(100L to "00 \r\n", 130L to "FF \r\n"), 2000)
+        val got = mutableListOf<Pair<String, Long>>()
+        val reader = MdbFrameReader(
+            port = port,
+            onFrame = { d, _, _ -> got += String(d) to port.now; closedAt = port.now },
+            onError = { throw AssertionError() },
+            clock = { port.now },
+        )
+        port.reader = reader
+        reader.run()
+        assertEquals(listOf("00 \r\n" to 100L, "FF \r\n" to 130L), got)
+        assertEquals(MdbCashlessProtocol.Event.Ack, MdbCashlessProtocol.parseFrame(got[0].first))
+        assertEquals(MdbCashlessProtocol.Event.Nak, MdbCashlessProtocol.parseFrame(got[1].first))
+        assertTrue(closedAt == 130L)
+    }
+
+    @Test
+    fun realCloudFragmentsAreNotCompleteAndNotRecognized() {
+        // Обрывки из облака: «не hex: нужна чётная длина», «кадр 78…», «кадр 19…».
+        for (s in listOf("01 01 1", "78 01 02 78 0D 1B ", "19 78 01 02 78 0D 1B ", "9 78 01")) {
+            val d = s.toByteArray(Charsets.US_ASCII)
+            assertTrue(s, !MdbFrameReader.isComplete(d))
+            assertTrue(s, MdbCashlessProtocol.parseFrame(s) is MdbCashlessProtocol.Event.Unrecognized)
+        }
+        assertTrue(MdbFrameReader.isBlank("\r\n".toByteArray()))
+        assertTrue(MdbFrameReader.isComplete("00 \r\n".toByteArray()))
     }
 
     @Test

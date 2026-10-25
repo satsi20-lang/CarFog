@@ -12,11 +12,12 @@ fun interface MdbBytePort {
     fun read(buf: ByteArray, timeoutMs: Int): Int
 }
 
-// Цикл чтения стенда MDB. Адаптер Wafer присылает кадры текстом, кадр
-// кончается \r\n (подтверждено на железе, 1.10.11). Конец кадра — \n
-// (сразу, даже если два кадра пришли одним USB-пакетом) либо, для кадра без
-// \r\n, пауза GAP_MS без новых байтов. Паузы между кадрами на железе ~85 мс
-// (пример: "00", затем "10 07") — больше GAP_MS, такие кадры не склеиваются.
+// Цикл чтения MDB (основной поток оплаты и стенд). Адаптер Wafer присылает
+// кадры текстом, кадр кончается \r\n (подтверждено на железе: журналы
+// 21.10.2026 — все ответы, включая ACK «00 \r\n» и отказ «FF \r\n»). Конец
+// кадра — \n (сразу, даже если два кадра пришли одним USB-пакетом). Пауза
+// GAP_MS без новых байтов — только аварийное закрытие кадра без \r\n
+// («обрывок»). Пустые строки (только \r, \n, пробелы) не отдаются.
 // В журнале видно время первого и последнего байта кадра.
 class MdbFrameReader(
     private val port: MdbBytePort,
@@ -27,6 +28,9 @@ class MdbFrameReader(
     private val clock: () -> Long = System::currentTimeMillis,
     private val gapMs: Long = GAP_MS,
     private val readTimeoutMs: Int = READ_TIMEOUT_MS,
+    // Кадр из одних \r, \n и пробелов не отдавать (1.11.5): хвост «\r\n»
+    // строки, разрезанной паузой, — не событие.
+    private val skipBlank: Boolean = true,
 ) {
     @Volatile
     private var running = true
@@ -43,8 +47,9 @@ class MdbFrameReader(
         var last = 0L
         fun flush() {
             if (frame.size() > 0) {
-                onFrame(frame.toByteArray(), first, last)
+                val data = frame.toByteArray()
                 frame.reset()
+                if (!(skipBlank && isBlank(data))) onFrame(data, first, last)
             }
         }
         while (running) {
@@ -76,7 +81,21 @@ class MdbFrameReader(
     }
 
     companion object {
-        const val GAP_MS = 60L
+        // Аварийная пауза (1.11.5; было 60 мс). 60 мс резали ответ setup на
+        // куски (разброс байтов строки до 33 мс в журнале, иногда больше) —
+        // обрывок не принимался за ответ, через 2 с таймаут и переоткрытие
+        // порта (~раз в 30 мин). 500 мс < таймаута ответа 2 с; ответы с \r\n
+        // закрываются сразу и паузу не ждут.
+        const val GAP_MS = 500L
+
+        fun isBlank(data: ByteArray): Boolean =
+            data.all { it == CR || it == LF || it == SPACE }
+
+        // Кадр закрыт \n, а не паузой.
+        fun isComplete(data: ByteArray): Boolean = data.isNotEmpty() && data.last() == LF
+
+        private const val CR: Byte = 0x0D
+        private const val SPACE: Byte = 0x20
         const val READ_TIMEOUT_MS = 20
         private const val LF: Byte = 0x0A
     }
