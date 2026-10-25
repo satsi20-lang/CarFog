@@ -10,6 +10,7 @@ import 'card_terminal_service.dart';
 import 'cloud_service.dart';
 import 'heater_safety_monitor.dart';
 import 'modbus_service.dart';
+import 'module_probe.dart';
 import 'session_service.dart';
 
 // Оплата картой в основном потоке (1.11.0, ТЗ раздел 6) — Dart-сторона.
@@ -100,20 +101,6 @@ class PreflightResult {
   final String? reason;
   final Map<String, dynamic> details;
   const PreflightResult(this.reason, [this.details = const {}]);
-}
-
-class _Probe {
-  final bool ok;
-  final List<Map<String, dynamic>> readings;
-  const _Probe(this.ok, this.readings);
-
-  Map<String, dynamic> details({DateTime? lastOkAt}) => {
-    'attempts': readings.length,
-    'readings': readings,
-    'last_usable_age_s': lastOkAt == null
-        ? null
-        : ModbusService.clock().difference(lastOkAt).inSeconds,
-  };
 }
 
 class CardPaymentService {
@@ -463,6 +450,19 @@ class CardPaymentService {
   @visibleForTesting
   static Future<void> Function(Duration) preflightPause = Future<void>.delayed;
 
+  static Future<ProbeResult> _probe<T>(
+    Future<ModbusRead<T>> Function() read,
+    bool Function(T) usable, {
+    bool keepValue = false,
+  }) => probeModule<T>(
+    read,
+    usable,
+    attempts: preflightAttempts,
+    retryPause: preflightRetryPause,
+    pause: preflightPause,
+    keepValue: keepValue,
+  );
+
   static Future<PreflightResult> preflightDetailed(AppNotifier n, int flavorIndex) async {
     final cfg = n.config;
     if (n.isPaymentBlocked) return const PreflightResult('payment_blocked');
@@ -500,30 +500,6 @@ class CardPaymentService {
       }
     }
     return const PreflightResult(null);
-  }
-
-  // keepValue — значение негодного чтения в readings (термопара: −500, 450);
-  // у модулей без значения — только вид ошибки.
-  static Future<_Probe> _probe<T>(
-    Future<ModbusRead<T>> Function() read,
-    bool Function(T) usable, {
-    bool keepValue = false,
-  }) async {
-    final readings = <Map<String, dynamic>>[];
-    for (var i = 0; i < preflightAttempts; i++) {
-      if (i > 0) await preflightPause(preflightRetryPause);
-      final t0 = ModbusService.clock();
-      final r = await read();
-      final ms = ModbusService.clock().difference(t0).inMilliseconds;
-      final v = r.value;
-      if (v != null && usable(v)) return _Probe(true, readings);
-      readings.add({
-        'value': keepValue ? v : null,
-        'error': r.error ?? 'out_of_range',
-        'ms': ms,
-      });
-    }
-    return _Probe(false, readings);
   }
 
   @visibleForTesting

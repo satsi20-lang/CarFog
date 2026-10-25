@@ -6,6 +6,7 @@ import 'dart:io';
 import 'models/app_state.dart';
 import 'models/bus_map.dart';
 import 'models/device_spec.dart';
+import 'services/thermo_idle_watch_service.dart';
 import 'services/adb_network_service.dart';
 import 'services/app_log_service.dart';
 import 'screens/language_select.dart';
@@ -198,6 +199,10 @@ void main() async {
   // Сторож шины (задача "устойчивость шины"): события переоткрытия порта в
   // журнал и облако, долгий отказ шины — временный экран "не работает".
   BusWatchdogService.start(notifier);
+
+  // Фоновый контроль термопары в простое (1.11.4): раз в минуту проба, 3
+  // неудачные подряд — вывод из обслуживания temp_sensor_fault.
+  ThermoIdleWatchService.start(notifier);
 
   // Терминал Nayax по MDB (1.11.0): связь, опрос, восстановление — в Kotlin;
   // здесь включение по типу терминала и события в журнал/облако.
