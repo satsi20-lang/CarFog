@@ -81,6 +81,10 @@ class AppConfig {
   // Служебный: отправлять 13 02 по окончании цикла (этап 3). По умолчанию да.
   bool cardConfirmEnabled;
 
+  // Возврат на заставку, если на выборе языка или запаха столько секунд
+  // нет касаний (1.11.6, IdleReturn). Пределы — ConfigLimits.idleReturn*.
+  int idleReturnS;
+
   // Сторож выходов (задача "сторож выходов", шаг 37) — по умолчанию
   // ВКЛЮЧЁН (доработка 03.10.2026): подтверждён живыми тестами, штатная
   // защита. Уже сохранённое явное значение не перезаписывается.
@@ -149,6 +153,7 @@ class AppConfig {
     List<int>? flavorPricesCents,
     this.cardRefundWindowS = CardPaymentLimits.refundWindowDefaultS,
     this.cardConfirmEnabled = true,
+    this.idleReturnS = ConfigLimits.idleReturnDefaultS,
     // Включён по умолчанию (доработка после проверки 73acfe3, п.4): на
     // боевом аппарате сторож — штатная защита, а не диагностика. Уже
     // сохранённое явное значение не перезаписывается.
@@ -230,6 +235,7 @@ class AppConfig {
     List<int>? flavorPricesCents,
     int? cardRefundWindowS,
     bool? cardConfirmEnabled,
+    int? idleReturnS,
     bool? outputWatchdogEnabled,
     bool? dioInstalled,
     bool? thermoInstalled,
@@ -271,6 +277,7 @@ class AppConfig {
       flavorPricesCents: flavorPricesCents ?? this.flavorPricesCents,
       cardRefundWindowS: cardRefundWindowS ?? this.cardRefundWindowS,
       cardConfirmEnabled: cardConfirmEnabled ?? this.cardConfirmEnabled,
+      idleReturnS: idleReturnS ?? this.idleReturnS,
       outputWatchdogEnabled:
           outputWatchdogEnabled ?? this.outputWatchdogEnabled,
       dioInstalled: dioInstalled ?? this.dioInstalled,
@@ -369,6 +376,7 @@ class AppConfig {
       'payment_terminal_type': paymentTerminalType,
       'card_refund_window_s': cardRefundWindowS,
       'card_confirm_enabled': cardConfirmEnabled,
+      'idle_return_s': idleReturnS,
       'duration_s': treatmentDurationS,
       'compressor_purge_s': compressorPurgeS,
       'pump_after_heater_s': pumpAfterHeaterS,

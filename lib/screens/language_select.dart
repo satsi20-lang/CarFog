@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../services/i18n_service.dart';
 import '../widgets/fog_background.dart';
+import '../widgets/idle_return.dart';
 import '../widgets/lang_switcher.dart';
 import '../widgets/portrait_ui.dart';
 
@@ -45,34 +46,38 @@ class LanguageSelectScreen extends StatelessWidget {
       notifier.transition(AppState.standby);
     }
 
-    return Scaffold(
-      body: FogBackground(
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: PUi.gutter),
-            child: PortraitScroll(
-              child: Column(
-                children: [
-                  const Spacer(),
-                  const SizedBox(height: 32),
-                  title,
-                  SizedBox(height: grid ? 40 : 72),
-                  Center(
-                    child: LangButtonGrid(
-                      langs: langs,
-                      width: grid
-                          ? MediaQuery.sizeOf(context).width - PUi.gutter * 2
-                          : 520,
-                      columns: grid ? 2 : 1,
-                      buttonHeight: grid ? PUi.buttonH : PUi.buttonH + 16,
-                      fontSize: 32,
-                      spacing: grid ? 16 : 28,
-                      onSelect: select,
+    // 1.11.6: без касаний config.idleReturnS с — на заставку (IdleReturn).
+    return IdleReturn(
+      state: AppState.selectLanguage,
+      child: Scaffold(
+        body: FogBackground(
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: PUi.gutter),
+              child: PortraitScroll(
+                child: Column(
+                  children: [
+                    const Spacer(),
+                    const SizedBox(height: 32),
+                    title,
+                    SizedBox(height: grid ? 40 : 72),
+                    Center(
+                      child: LangButtonGrid(
+                        langs: langs,
+                        width: grid
+                            ? MediaQuery.sizeOf(context).width - PUi.gutter * 2
+                            : 520,
+                        columns: grid ? 2 : 1,
+                        buttonHeight: grid ? PUi.buttonH : PUi.buttonH + 16,
+                        fontSize: 32,
+                        spacing: grid ? 16 : 28,
+                        onSelect: select,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 32),
-                  const Spacer(),
-                ],
+                    const SizedBox(height: 32),
+                    const Spacer(),
+                  ],
+                ),
               ),
             ),
           ),

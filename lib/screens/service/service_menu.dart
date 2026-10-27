@@ -87,6 +87,9 @@ const Map<String, Map<String, String>> _i18n = {
     'pump_after_heater_label': 'Работа насоса после выключения ТЭНа (сек)',
     'err_compressor_purge': 'Продувка компрессора: 0–60 сек',
     'err_pump_after_heater': 'Работа насоса после ТЭНа: 0–60 сек',
+    'idle_return_label':
+        'Возврат на заставку без касаний на выборе языка/запаха (сек, 15–300)',
+    'err_idle_return': 'Возврат на заставку: 15–300 сек',
     'tariff_label': 'Тариф на электроэнергию (€/кВт·ч)',
     'err_tariff': 'Тариф: неотрицательное число',
     'idle_cost_label': 'Стоимость простоя за сутки (справочно)',
@@ -477,6 +480,9 @@ const Map<String, Map<String, String>> _i18n = {
     'pump_after_heater_label': 'Pump run time after heater turns off (sec)',
     'err_compressor_purge': 'Compressor purge: 0–60 sec',
     'err_pump_after_heater': 'Pump after heater: 0–60 sec',
+    'idle_return_label':
+        'Return to start screen after no touch on language/flavor (sec, 15–300)',
+    'err_idle_return': 'Return to start screen: 15–300 sec',
     'tariff_label': 'Electricity tariff (€/kWh)',
     'err_tariff': 'Tariff: non-negative number',
     'idle_cost_label': 'Daily idle cost (reference only)',
@@ -862,6 +868,9 @@ const Map<String, Map<String, String>> _i18n = {
         'Pumba töö pärast küttekeha väljalülitamist (sek)',
     'err_compressor_purge': 'Kompressori puhastus: 0–60 sek',
     'err_pump_after_heater': 'Pump pärast küttekeha: 0–60 sek',
+    'idle_return_label':
+        'Tagasi avaekraanile, kui keele/lõhna valikul ei puudutata (sek, 15–300)',
+    'err_idle_return': 'Tagasi avaekraanile: 15–300 sek',
     'tariff_label': 'Elektritariif (€/kWh)',
     'err_tariff': 'Tariif: mittenegatiivne arv',
     'idle_cost_label': 'Seisaku maksumus ööpäevas (info)',
@@ -1372,6 +1381,7 @@ class _SettingsTabState extends State<_SettingsTab> {
   late TextEditingController _pinCtrl;
   late TextEditingController _compressorPurgeCtrl;
   late TextEditingController _pumpAfterHeaterCtrl;
+  late TextEditingController _idleReturnCtrl;
   late TextEditingController _tariffCtrl;
 
   @override
@@ -1390,6 +1400,9 @@ class _SettingsTabState extends State<_SettingsTab> {
     _pumpAfterHeaterCtrl = TextEditingController(
       text: config.pumpAfterHeaterS.toString(),
     );
+    _idleReturnCtrl = TextEditingController(
+      text: config.idleReturnS.toString(),
+    );
     _tariffCtrl = TextEditingController(
       text: config.idlePowerTariffPerKwh.toStringAsFixed(2),
     )..addListener(() => setState(() {}));
@@ -1401,6 +1414,7 @@ class _SettingsTabState extends State<_SettingsTab> {
     _pinCtrl.dispose();
     _compressorPurgeCtrl.dispose();
     _pumpAfterHeaterCtrl.dispose();
+    _idleReturnCtrl.dispose();
     _tariffCtrl.dispose();
     super.dispose();
   }
@@ -1428,6 +1442,7 @@ class _SettingsTabState extends State<_SettingsTab> {
     final pin = _pinCtrl.text.trim();
     final compressorPurge = int.tryParse(_compressorPurgeCtrl.text);
     final pumpAfterHeater = int.tryParse(_pumpAfterHeaterCtrl.text);
+    final idleReturn = int.tryParse(_idleReturnCtrl.text);
 
     if (duration == null ||
         duration < ConfigLimits.treatmentDurationMinS ||
@@ -1458,6 +1473,12 @@ class _SettingsTabState extends State<_SettingsTab> {
       _snack(t['err_pump_after_heater']!);
       return;
     }
+    if (idleReturn == null ||
+        idleReturn < ConfigLimits.idleReturnMinS ||
+        idleReturn > ConfigLimits.idleReturnMaxS) {
+      _snack(t['err_idle_return']!);
+      return;
+    }
     final tariff = double.tryParse(_tariffCtrl.text.replaceAll(',', '.'));
     if (tariff == null || tariff < 0) {
       _snack(t['err_tariff']!);
@@ -1476,6 +1497,7 @@ class _SettingsTabState extends State<_SettingsTab> {
       servicePin: pin,
       compressorPurgeS: compressorPurge,
       pumpAfterHeaterS: pumpAfterHeater,
+      idleReturnS: idleReturn,
       idlePowerTariffPerKwh: tariff,
     );
     notifier.saveConfig(updated);
@@ -1714,6 +1736,14 @@ class _SettingsTabState extends State<_SettingsTab> {
           _Field(
             label: t['pump_after_heater_label']!,
             controller: _pumpAfterHeaterCtrl,
+            keyboardType: TextInputType.number,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          ),
+          const SizedBox(height: 16),
+          _Field(
+            key: const ValueKey('idle_return_s'),
+            label: t['idle_return_label']!,
+            controller: _idleReturnCtrl,
             keyboardType: TextInputType.number,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
           ),
@@ -4313,6 +4343,7 @@ class _Field extends StatelessWidget {
   final bool obscure;
 
   const _Field({
+    super.key,
     required this.label,
     required this.controller,
     required this.keyboardType,

@@ -122,6 +122,13 @@ class ConfigLimits {
   static const int pumpAfterHeaterMinS = 0;
   static const int pumpAfterHeaterMaxS = 60;
 
+  // Возврат на заставку при бездействии на выборе языка и запаха, с (1.11.6).
+  // 60 с и пределы 15–300 — ЗАДАНО владельцем 27.10.2026. Только сервисное
+  // меню: в numericFields (удалённая set_config) не входит.
+  static const int idleReturnDefaultS = 60;
+  static const int idleReturnMinS = 15;
+  static const int idleReturnMaxS = 300;
+
   // Диапазон поля или null, если для поля пределов нет.
   static ({int min, int max})? range(String field) {
     switch (field) {
@@ -138,6 +145,8 @@ class ConfigLimits {
           min: CardPaymentLimits.refundWindowMinS,
           max: CardPaymentLimits.refundWindowMaxS,
         );
+      case 'idleReturnS':
+        return (min: idleReturnMinS, max: idleReturnMaxS);
     }
     return null;
   }

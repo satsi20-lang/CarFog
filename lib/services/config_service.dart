@@ -61,6 +61,7 @@ class ConfigService {
     'flavorPricesCents': c.flavorPricesCents,
     'cardRefundWindowS': c.cardRefundWindowS,
     'cardConfirmEnabled': c.cardConfirmEnabled,
+    'idleReturnS': c.idleReturnS,
     'outputWatchdogEnabled': c.outputWatchdogEnabled,
     'dioInstalled': c.dioInstalled,
     'thermoInstalled': c.thermoInstalled,
@@ -138,6 +139,14 @@ class ConfigService {
         : CardPaymentLimits.refundWindowDefaultS;
   }
 
+  // Возврат на заставку вне 15–300 с (или не число) — значение по умолчанию.
+  static int _idleReturnFromJson(Object? raw) {
+    final r = ConfigLimits.range('idleReturnS')!;
+    return raw is int && raw >= r.min && raw <= r.max
+        ? raw
+        : ConfigLimits.idleReturnDefaultS;
+  }
+
   static AppConfig _fromJson(Map<String, dynamic> j) {
     final spec = _specFromJson(j);
     return AppConfig(
@@ -150,6 +159,7 @@ class ConfigService {
       flavorPricesCents: _pricesFromJson(j['flavorPricesCents']),
       cardRefundWindowS: _refundWindowFromJson(j['cardRefundWindowS']),
       cardConfirmEnabled: (j['cardConfirmEnabled'] as bool?) ?? true,
+      idleReturnS: _idleReturnFromJson(j['idleReturnS']),
       treatmentDurationS: (j['treatmentDurationS'] as int?) ?? 40,
       servicePin: (j['servicePin'] as String?) ?? '1234',
       compressorPurgeS: (j['compressorPurgeS'] as int?) ?? 5,

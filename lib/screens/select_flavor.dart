@@ -4,6 +4,7 @@ import '../models/app_state.dart';
 import '../services/i18n_service.dart';
 import '../widgets/card_hint_banner.dart';
 import '../widgets/fog_background.dart';
+import '../widgets/idle_return.dart';
 import '../widgets/lang_switcher.dart';
 import '../widgets/portrait_ui.dart';
 
@@ -26,85 +27,89 @@ class SelectFlavorScreen extends StatelessWidget {
     ];
     String t(String key) => I18n.tr(lang, 'select_flavor.$key');
 
-    return Scaffold(
-      body: FogBackground(
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(
-              PUi.gutter,
-              24,
-              PUi.gutter,
-              PUi.gutter,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: LangSwitcher(
-                    current: lang,
-                    langs: notifier.displayLangs,
-                    onChanged: notifier.setLanguage,
-                  ),
-                ),
-                const SizedBox(height: 32),
-                Text(
-                  t('title'),
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: PUi.titleSp,
-                    fontWeight: FontWeight.bold,
-                    height: 1.2,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  t('hint'),
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.white60,
-                    fontSize: PUi.minBodySp,
-                  ),
-                ),
-                // Карту приложили до выбора запаха (1.11.0).
-                CardHintBanner(text: t('card_hint')),
-                const SizedBox(height: 28),
-                // Сетка: 2 колонки; число карточек = число насосов из spec (4…8):
-                // 4 → 2 ряда, 5–6 → 3, 7–8 → 4. Нечётная последняя карточка
-                // ЦЕНТРИРУЕТСЯ в своём ряду. Не помещается — прокрутка.
-                Expanded(
-                  child: _FlavorGrid(
-                    count: count,
-                    names: names,
-                    prices: prices,
-                    levels: levels,
-                    unavailable: t('unavailable'),
-                    onSelect: (i) =>
-                        context.read<AppNotifier>().selectFlavor(i),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                SizedBox(
-                  height: PUi.buttonH,
-                  child: OutlinedButton(
-                    onPressed: () => context.read<AppNotifier>().transition(
-                      AppState.standby,
+    // 1.11.6: без касаний config.idleReturnS с — на заставку (IdleReturn).
+    return IdleReturn(
+      state: AppState.selectFlavor,
+      child: Scaffold(
+        body: FogBackground(
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                PUi.gutter,
+                24,
+                PUi.gutter,
+                PUi.gutter,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: LangSwitcher(
+                      current: lang,
+                      langs: notifier.displayLangs,
+                      onChanged: notifier.setLanguage,
                     ),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.white70,
-                      side: const BorderSide(color: Colors.white38, width: 2),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
+                  ),
+                  const SizedBox(height: 32),
+                  Text(
+                    t('title'),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: PUi.titleSp,
+                      fontWeight: FontWeight.bold,
+                      height: 1.2,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    t('hint'),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white60,
+                      fontSize: PUi.minBodySp,
+                    ),
+                  ),
+                  // Карту приложили до выбора запаха (1.11.0).
+                  CardHintBanner(text: t('card_hint')),
+                  const SizedBox(height: 28),
+                  // Сетка: 2 колонки; число карточек = число насосов из spec (4…8):
+                  // 4 → 2 ряда, 5–6 → 3, 7–8 → 4. Нечётная последняя карточка
+                  // ЦЕНТРИРУЕТСЯ в своём ряду. Не помещается — прокрутка.
+                  Expanded(
+                    child: _FlavorGrid(
+                      count: count,
+                      names: names,
+                      prices: prices,
+                      levels: levels,
+                      unavailable: t('unavailable'),
+                      onSelect: (i) =>
+                          context.read<AppNotifier>().selectFlavor(i),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    height: PUi.buttonH,
+                    child: OutlinedButton(
+                      onPressed: () => context.read<AppNotifier>().transition(
+                        AppState.standby,
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white70,
+                        side: const BorderSide(color: Colors.white38, width: 2),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      child: Text(
+                        t('cancel'),
+                        style: const TextStyle(fontSize: 28),
                       ),
                     ),
-                    child: Text(
-                      t('cancel'),
-                      style: const TextStyle(fontSize: 28),
-                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
