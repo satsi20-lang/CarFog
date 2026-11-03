@@ -168,6 +168,23 @@ class SystemService {
     }
   }
 
+  // Сторож системных панелей (SystemBarsGuard.kt): включается при старте
+  // только для профиля с guardSystemBars (IXP101M1). Ошибка канала не мешает
+  // запуску.
+  static Future<void> setSystemBarsGuard(
+    bool enabled, {
+    int hideDelayMs = 2000,
+  }) async {
+    try {
+      await _channel.invokeMethod('setSystemBarsGuard', {
+        'enabled': enabled,
+        'hideDelayMs': hideDelayMs,
+      });
+    } catch (e) {
+      debugPrint('SystemService.setSystemBarsGuard error: $e');
+    }
+  }
+
   // Удалённая команда restart_app (R1): нативная сторона планирует подъём
   // приложения через AlarmManager и завершает процесс. Вызывающий код ОБЯЗАН
   // сам проверить, что аппарат в покое (RemoteCommands), и отправить ack

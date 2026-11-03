@@ -38,6 +38,12 @@ import 'services/update_service.dart';
 import 'services/system_service.dart';
 
 
+// Сторож системных панелей — только для профиля, которому он нужен.
+Future<void> applySystemBarsGuard(HardwareProfile p) async {
+  if (!p.guardSystemBars) return;
+  await SystemService.setSystemBarsGuard(true);
+}
+
 // Ориентации интерфейса для профиля (тест: test/landscape_layout_test.dart).
 List<DeviceOrientation> preferredOrientations(HardwareProfile p) =>
     p.landscape
@@ -79,6 +85,9 @@ void main() async {
   SystemChrome.setPreferredOrientations(
     preferredOrientations(HardwareProfile.current),
   );
+  // IXP101M1: полоска навигации после свайпа снизу не должна оставаться на
+  // экране (SystemBarsGuard). На SY156-A510 вызова нет.
+  await applySystemBarsGuard(HardwareProfile.current);
   // Заводская конфигурация облака (файл на общем каталоге): применяется до
   // настройки облачного слоя; остальные настройки не трогаются.
   final config = await FactoryConfigService.applyOnStartup(

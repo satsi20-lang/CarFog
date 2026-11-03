@@ -39,6 +39,9 @@ class MainActivity : FlutterActivity() {
     // инициализируется только после attachBaseContext, поэтому lazy.
     private val outOfServiceStore by lazy { OutOfServiceStore(filesDir) }
     private var modbusChannel: ModbusChannel? = null
+    // Сторож системных панелей: включается из Dart только для профиля
+    // ixp101m1 (setSystemBarsGuard), на SY156-A510 выключен.
+    private val systemBarsGuard by lazy { SystemBarsGuard(this) }
     // Стенд терминала MDB через USB-адаптер (1.10.9) — отдельно от шины.
     private var mdbBench: MdbUsbBench? = null
     // Терминал Nayax в основном потоке оплаты (1.11.0) — тот же слой MDB.
@@ -237,6 +240,13 @@ class MainActivity : FlutterActivity() {
                     // Свойства для выбора аппаратного профиля при старте
                     // (HardwareProfile.detect): чип и физический размер экрана.
                     "getHardwareIdentity" -> result.success(collectHardwareIdentity())
+                    "setSystemBarsGuard" -> {
+                        val on = call.argument<Boolean>("enabled") == true
+                        val delay = call.argument<Number>("hideDelayMs")?.toLong()
+                            ?: SystemBarsGuard.DEFAULT_DELAY_MS
+                        systemBarsGuard.setEnabled(on, delay)
+                        result.success(null)
+                    }
                     // ---- R2: удалённое обновление ----
                     "getAppInfo" -> result.success(getAppInfo())
                     "verifyApk" -> {
@@ -653,11 +663,19 @@ class MainActivity : FlutterActivity() {
         }
         // Lock Task, если приложение — Device Owner и блокировка включена.
         KioskPolicy.onActivityResumed(this)
+        // После входа в Lock Task — спрятать панели (только если сторож включён).
+        systemBarsGuard.onResume()
     }
 
     override fun onPause() {
         isForeground = false
+        systemBarsGuard.onPause()
         super.onPause()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        systemBarsGuard.onWindowFocusChanged(hasFocus)
     }
 
     override fun onDestroy() {

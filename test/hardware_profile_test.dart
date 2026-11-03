@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:dry_fog_app/main.dart' show applySystemBarsGuard;
 import 'package:dry_fog_app/models/app_state.dart';
 import 'package:dry_fog_app/models/bus_map.dart';
 import 'package:dry_fog_app/models/device_spec.dart';
@@ -153,6 +154,34 @@ void main() {
           expect(BusParams.applyConfigured(bad), isFalse);
         }
       }
+    });
+  });
+
+  group('сторож системных панелей', () {
+    test('включён только у ixp101m1', () {
+      expect(HardwareProfile.ixp101m1.guardSystemBars, isTrue);
+      expect(HardwareProfile.sy156a510.guardSystemBars, isFalse);
+    });
+
+    test('при старте вызов уходит только для ixp101m1', () async {
+      final calls = <MethodCall>[];
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        return null;
+      });
+      await applySystemBarsGuard(HardwareProfile.sy156a510);
+      expect(calls, isEmpty);
+      await applySystemBarsGuard(HardwareProfile.ixp101m1);
+      expect(calls, hasLength(1));
+      expect(calls.single.method, 'setSystemBarsGuard');
+      expect(calls.single.arguments, {'enabled': true, 'hideDelayMs': 2000});
+    });
+
+    test('ошибка канала не роняет запуск', () async {
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        throw PlatformException(code: 'x');
+      });
+      await applySystemBarsGuard(HardwareProfile.ixp101m1);
     });
   });
 

@@ -86,6 +86,11 @@ class HardwareProfile {
   final ScreenOrientation orientation;
   final UiMetrics ui;
 
+  // Сторож системных панелей (SystemBarsGuard.kt): прячет полоску навигации,
+  // если она осталась на экране после свайпа снизу. Нужен на IXP101M1
+  // (прошивка Lztek, 03.11.2026); на SY156-A510 не включается.
+  final bool guardSystemBars;
+
   const HardwareProfile._({
     required this.id,
     required this.title,
@@ -96,6 +101,7 @@ class HardwareProfile {
     required this.socTags,
     required this.orientation,
     required this.ui,
+    this.guardSystemBars = false,
   });
 
   bool get landscape => orientation == ScreenOrientation.landscape;
@@ -133,6 +139,7 @@ class HardwareProfile {
     socTags: ['rk3568'],
     orientation: ScreenOrientation.landscape,
     ui: UiMetrics.landscape,
+    guardSystemBars: true,
   );
 
   static const List<HardwareProfile> all = [sy156a510, ixp101m1];
