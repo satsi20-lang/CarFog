@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import '../models/hardware_profile.dart';
 import 'app_log_service.dart';
 
 // Состояние киоска через Device Owner (KioskPolicy на нативной стороне).
@@ -144,6 +145,26 @@ class SystemService {
     } catch (e) {
       debugPrint('SystemService.getFilesDir error: $e');
       return null;
+    }
+  }
+
+  // Аппаратный профиль этого запуска (вызывается один раз при старте, до
+  // чтения настроек: от профиля зависит порт шины по умолчанию). Ошибка
+  // канала — профиль по умолчанию.
+  static Future<HardwareProfile> detectHardwareProfile() async {
+    try {
+      final m = await _channel.invokeMethod<Map>('getHardwareIdentity');
+      if (m == null) return HardwareProfile.fallback;
+      final w = m['width_px'], h = m['height_px'];
+      return HardwareProfile.detect(
+        props: [m['board'], m['device'], m['model'], m['hardware']]
+            .map((v) => v?.toString())
+            .toList(),
+        longSidePx: w is int && h is int ? (w > h ? w : h) : null,
+      );
+    } catch (e) {
+      debugPrint('SystemService.detectHardwareProfile error: $e');
+      return HardwareProfile.fallback;
     }
   }
 

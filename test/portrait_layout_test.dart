@@ -40,7 +40,10 @@ void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     for (final c in channels) {
-      messenger.setMockMethodCallHandler(MethodChannel(c), (call) async => null);
+      messenger.setMockMethodCallHandler(
+        MethodChannel(c),
+        (call) async => null,
+      );
     }
   });
 
@@ -50,14 +53,27 @@ void main() {
     }
   });
 
-  void portrait(WidgetTester tester) {
-    tester.view.devicePixelRatio = 1.5;
-    tester.view.physicalSize = const Size(1080, 1920);
+  void portrait(
+    WidgetTester tester, [
+    HardwareProfile prof = HardwareProfile.sy156a510,
+  ]) {
+    tester.view.devicePixelRatio = prof.densityDpi / 160;
+    tester.view.physicalSize = Size(
+      prof.screenWidthPx.toDouble(),
+      prof.screenHeightPx.toDouble(),
+    );
     addTearDown(tester.view.reset);
   }
 
-  AppNotifier notifier(String lang,
-      {List<bool>? levels, String? error, bool meter = true}) {
+  String dp(HardwareProfile p) =>
+      '${p.logicalWidthDp.round()}x${p.logicalHeightDp.round()}';
+
+  AppNotifier notifier(
+    String lang, {
+    List<bool>? levels,
+    String? error,
+    bool meter = true,
+  }) {
     final n = AppNotifier()
       ..config = AppConfig(thermoInstalled: true, energyMeterInstalled: meter);
     n.setLanguage(lang);
@@ -89,11 +105,9 @@ void main() {
     }
   }
 
-  test('профиль: логический размер соответствует 1080x1920 при density 240', () {
-    expect(HardwareProfile.screenWidthPx / (HardwareProfile.densityDpi / 160),
-        HardwareProfile.logicalWidthDp);
-    expect(HardwareProfile.screenHeightPx / (HardwareProfile.densityDpi / 160),
-        HardwareProfile.logicalHeightDp);
+  test('профиль SY156-A510: 1080x1920 при density 240 → 720x1280 dp', () {
+    expect(HardwareProfile.sy156a510.logicalWidthDp, 720);
+    expect(HardwareProfile.sy156a510.logicalHeightDp, 1280);
     expect(HardwareProfile.orientation, 'portrait');
   });
 
@@ -110,40 +124,54 @@ void main() {
     'service_pin': () => const ServicePinScreen(),
   };
 
-  for (final lang in ['ru', 'en', 'et']) {
-    for (final e in screens.entries) {
-      testWidgets('${e.key} [$lang] 720x1280 без переполнения', (tester) async {
-        portrait(tester);
-        final n = notifier(
-          lang,
-          // Один аромат «недоступен» — самый длинный текст карточки.
-          levels: [true, false, true, true, true, true, true, true],
-          error: e.key == 'error' ? 'bus_unavailable' : null,
-          // preparing при установленном счётчике ждёт мощность по реальному
-          // времени (DateTime.now) — для проверки макета счётчик не нужен.
-          meter: e.key != 'preparing',
-        );
-        await pumpScreen(tester, e.value(), n);
-        expect(tester.takeException(), isNull);
-        await dispose(tester);
-      });
+  for (final prof in HardwareProfile.all) {
+    for (final lang in ['ru', 'en', 'et']) {
+      for (final e in screens.entries) {
+        testWidgets('${e.key} [$lang] ${dp(prof)} без переполнения', (
+          tester,
+        ) async {
+          portrait(tester, prof);
+          final n = notifier(
+            lang,
+            // Один аромат «недоступен» — самый длинный текст карточки.
+            levels: [true, false, true, true, true, true, true, true],
+            error: e.key == 'error' ? 'bus_unavailable' : null,
+            // preparing при установленном счётчике ждёт мощность по реальному
+            // времени (DateTime.now) — для проверки макета счётчик не нужен.
+            meter: e.key != 'preparing',
+          );
+          await pumpScreen(tester, e.value(), n);
+          expect(tester.takeException(), isNull);
+          await dispose(tester);
+        });
+      }
     }
   }
 
-  testWidgets('переключатель языка: высота не меньше 64 dp, ширина кнопки ≥ 64',
-      (tester) async {
-    portrait(tester);
-    await tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: LangSwitcher(current: 'et', langs: const ['et', 'en', 'ru'], onChanged: (_) {}))),
-    );
-    final items = find.text('ET');
-    final box = tester.getSize(find
-        .ancestor(of: items, matching: find.byType(Container))
-        .first);
-    expect(box.height, greaterThanOrEqualTo(PUi.langH));
-    expect(box.width, greaterThanOrEqualTo(64));
-    expect(PUi.langH, greaterThanOrEqualTo(64));
-  });
+  testWidgets(
+    'переключатель языка: высота не меньше 64 dp, ширина кнопки ≥ 64',
+    (tester) async {
+      portrait(tester);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: LangSwitcher(
+              current: 'et',
+              langs: const ['et', 'en', 'ru'],
+              onChanged: (_) {},
+            ),
+          ),
+        ),
+      );
+      final items = find.text('ET');
+      final box = tester.getSize(
+        find.ancestor(of: items, matching: find.byType(Container)).first,
+      );
+      expect(box.height, greaterThanOrEqualTo(PUi.langH));
+      expect(box.width, greaterThanOrEqualTo(64));
+      expect(PUi.langH, greaterThanOrEqualTo(64));
+    },
+  );
 
   test('константы размеров не мельче требований', () {
     expect(PUi.titleSp, greaterThanOrEqualTo(36));
@@ -156,71 +184,94 @@ void main() {
   });
 
   const tabNames = {
-    'ru': ['Настройки', 'Ароматы', 'Диагностика', 'Датчики', 'Журнал', 'Облако', 'Сканер', 'Киоск', 'Карта', 'Терминал (стенд)'],
+    'ru': [
+      'Настройки',
+      'Ароматы',
+      'Диагностика',
+      'Датчики',
+      'Журнал',
+      'Облако',
+      'Сканер',
+      'Киоск',
+      'Карта',
+      'Терминал (стенд)',
+    ],
   };
 
-  for (final lang in ['ru', 'en', 'et']) {
-    for (var i = 0; i < 10; i++) {
-      testWidgets('сервисное меню, вкладка $i [$lang] 720x1280', (tester) async {
-        portrait(tester);
-        final n = notifier(lang);
-        await pumpScreen(tester, const ServiceMenuScreen(), n);
-        // Вкладки — в горизонтальной прокрутке; листаем до нужной по позиции.
-        final scroll = find.byType(SingleChildScrollView).first;
-        final tabRow = find.descendant(of: scroll, matching: find.byType(GestureDetector));
-        await tester.ensureVisible(tabRow.at(i));
-        await tester.tap(tabRow.at(i), warnIfMissed: false);
-        await tester.pump(const Duration(milliseconds: 300));
-        await tester.pump(const Duration(milliseconds: 300));
-        expect(tester.takeException(), isNull);
-        await dispose(tester);
-      });
+  for (final prof in HardwareProfile.all) {
+    for (final lang in ['ru', 'en', 'et']) {
+      for (var i = 0; i < 10; i++) {
+        testWidgets('сервисное меню, вкладка $i [$lang] ${dp(prof)}', (
+          tester,
+        ) async {
+          portrait(tester, prof);
+          final n = notifier(lang);
+          await pumpScreen(tester, const ServiceMenuScreen(), n);
+          // Вкладки — в горизонтальной прокрутке; листаем до нужной по позиции.
+          final scroll = find.byType(SingleChildScrollView).first;
+          final tabRow = find.descendant(
+            of: scroll,
+            matching: find.byType(GestureDetector),
+          );
+          await tester.ensureVisible(tabRow.at(i));
+          await tester.tap(tabRow.at(i), warnIfMissed: false);
+          await tester.pump(const Duration(milliseconds: 300));
+          await tester.pump(const Duration(milliseconds: 300));
+          expect(tester.takeException(), isNull);
+          await dispose(tester);
+        });
+      }
     }
   }
   // Подсказка прокрутки вкладок: на старте виден только правый край; листая
   // стрелкой вправо, доходим до последней вкладки целиком (все 10 достижимы).
   for (final lang in ['ru', 'en', 'et']) {
-    testWidgets('вкладки сервисного меню: подсказка и все 10 достижимы [$lang]',
-        (tester) async {
-      portrait(tester);
-      await pumpScreen(tester, const ServiceMenuScreen(), notifier(lang));
-      // При первом входе меню показывает окно «Мастер-код этого аппарата».
-      final dlg = find.descendant(
-        of: find.byType(AlertDialog),
-        matching: find.byType(TextButton),
-      );
-      if (dlg.evaluate().isNotEmpty) {
-        await tester.tap(dlg.last);
-        await tester.pump(const Duration(milliseconds: 600));
-      }
-      final left = find.byKey(const ValueKey('tabs_hint_left'));
-      final right = find.byKey(const ValueKey('tabs_hint_right'));
-      expect(left, findsNothing);
-      expect(right, findsOneWidget); // не помещаются: есть что листать
-      final row = find.byType(SingleChildScrollView).first;
-      final tabs = find.descendant(of: row, matching: find.byType(GestureDetector));
-      expect(tabs, findsNWidgets(10));
-      for (var i = 0; i < 12 && right.evaluate().isNotEmpty; i++) {
-        await tester.tap(right);
-        await tester.pump(const Duration(milliseconds: 400));
-        await tester.pump(const Duration(milliseconds: 400));
-      }
-      expect(right, findsNothing); // дошли до конца
-      expect(left, findsOneWidget); // слева есть что вернуть
-      final last = tester.getRect(tabs.at(9));
-      expect(last.right, lessThanOrEqualTo(720.0 + 0.5));
-      expect(last.left, greaterThanOrEqualTo(0));
-      expect(tester.takeException(), isNull);
-      // и обратно: стрелка влево возвращает первые вкладки
-      for (var i = 0; i < 12 && left.evaluate().isNotEmpty; i++) {
-        await tester.tap(left);
-        await tester.pump(const Duration(milliseconds: 400));
-        await tester.pump(const Duration(milliseconds: 400));
-      }
-      expect(left, findsNothing);
-      expect(tester.getRect(tabs.at(0)).left, greaterThanOrEqualTo(0));
-      await dispose(tester);
-    });
+    testWidgets(
+      'вкладки сервисного меню: подсказка и все 10 достижимы [$lang]',
+      (tester) async {
+        portrait(tester);
+        await pumpScreen(tester, const ServiceMenuScreen(), notifier(lang));
+        // При первом входе меню показывает окно «Мастер-код этого аппарата».
+        final dlg = find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.byType(TextButton),
+        );
+        if (dlg.evaluate().isNotEmpty) {
+          await tester.tap(dlg.last);
+          await tester.pump(const Duration(milliseconds: 600));
+        }
+        final left = find.byKey(const ValueKey('tabs_hint_left'));
+        final right = find.byKey(const ValueKey('tabs_hint_right'));
+        expect(left, findsNothing);
+        expect(right, findsOneWidget); // не помещаются: есть что листать
+        final row = find.byType(SingleChildScrollView).first;
+        final tabs = find.descendant(
+          of: row,
+          matching: find.byType(GestureDetector),
+        );
+        expect(tabs, findsNWidgets(10));
+        for (var i = 0; i < 12 && right.evaluate().isNotEmpty; i++) {
+          await tester.tap(right);
+          await tester.pump(const Duration(milliseconds: 400));
+          await tester.pump(const Duration(milliseconds: 400));
+        }
+        expect(right, findsNothing); // дошли до конца
+        expect(left, findsOneWidget); // слева есть что вернуть
+        final last = tester.getRect(tabs.at(9));
+        expect(last.right, lessThanOrEqualTo(720.0 + 0.5));
+        expect(last.left, greaterThanOrEqualTo(0));
+        expect(tester.takeException(), isNull);
+        // и обратно: стрелка влево возвращает первые вкладки
+        for (var i = 0; i < 12 && left.evaluate().isNotEmpty; i++) {
+          await tester.tap(left);
+          await tester.pump(const Duration(milliseconds: 400));
+          await tester.pump(const Duration(milliseconds: 400));
+        }
+        expect(left, findsNothing);
+        expect(tester.getRect(tabs.at(0)).left, greaterThanOrEqualTo(0));
+        await dispose(tester);
+      },
+    );
   }
 
   // Чтобы список имён не считался неиспользуемым.

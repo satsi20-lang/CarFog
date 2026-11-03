@@ -234,6 +234,9 @@ class MainActivity : FlutterActivity() {
                     // пакета диагностики (R1). Каждая группа в своём try:
                     // сбой одной не лишает остальных.
                     "getDeviceInfo" -> result.success(collectDeviceInfo())
+                    // Свойства для выбора аппаратного профиля при старте
+                    // (HardwareProfile.detect): чип и физический размер экрана.
+                    "getHardwareIdentity" -> result.success(collectHardwareIdentity())
                     // ---- R2: удалённое обновление ----
                     "getAppInfo" -> result.success(getAppInfo())
                     "verifyApk" -> {
@@ -484,6 +487,29 @@ class MainActivity : FlutterActivity() {
             out["error"] = e.toString()
         }
         return out
+    }
+
+    private fun collectHardwareIdentity(): Map<String, Any?> {
+        val info = mutableMapOf<String, Any?>()
+        try {
+            info["board"] = Build.BOARD
+            info["device"] = Build.DEVICE
+            info["model"] = Build.MODEL
+            info["hardware"] = Build.HARDWARE
+        } catch (e: Throwable) {
+            info["error"] = e.toString()
+        }
+        try {
+            val m = android.util.DisplayMetrics()
+            @Suppress("DEPRECATION")
+            windowManager.defaultDisplay.getRealMetrics(m)
+            info["width_px"] = m.widthPixels
+            info["height_px"] = m.heightPixels
+            info["density_dpi"] = m.densityDpi
+        } catch (e: Throwable) {
+            info["display_error"] = e.toString()
+        }
+        return info
     }
 
     private fun collectDeviceInfo(): Map<String, Any?> {

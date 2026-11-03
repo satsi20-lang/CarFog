@@ -6,6 +6,7 @@ import 'dart:io';
 import 'models/app_state.dart';
 import 'models/bus_map.dart';
 import 'models/device_spec.dart';
+import 'models/hardware_profile.dart';
 import 'services/thermo_idle_watch_service.dart';
 import 'services/adb_network_service.dart';
 import 'services/app_log_service.dart';
@@ -59,8 +60,11 @@ void main() async {
   // показываемых языков зависит от manifest. Ошибки не прерывают запуск.
   await I18n.load();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-  // Основной планшет Syoung SY156-A510 стоит в портрете (профиль —
-  // models/hardware_profile.dart); весь UI спроектирован под него.
+  // Аппаратный профиль по реальному устройству — до чтения настроек: от него
+  // зависит порт шины по умолчанию (models/hardware_profile.dart). Оба
+  // планшета (SY156-A510 и IXP101M1) стоят в портрете.
+  HardwareProfile.current = await SystemService.detectHardwareProfile();
+  AppLog.log('Hw', 'профиль ${HardwareProfile.current.id}');
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
