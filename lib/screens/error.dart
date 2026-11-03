@@ -110,8 +110,8 @@ class _ErrorScreenState extends State<ErrorScreen>
             children: [
               // Lang switcher
               Positioned(
-                top: 24,
-                right: 24,
+                top: PUi.landscape ? 12 : 24,
+                right: PUi.landscape ? 12 : 24,
                 child: LangSwitcher(
                   current: lang,
                   langs: notifier.displayLangs,
@@ -139,6 +139,9 @@ class _ErrorScreenState extends State<ErrorScreen>
               ),
 
               // Main content
+              if (PUi.landscape)
+                _buildLandscape(lang, code)
+              else
               Center(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.fromLTRB(PUi.gutter, 112, PUi.gutter, 24),
@@ -290,6 +293,138 @@ class _ErrorScreenState extends State<ErrorScreen>
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  // Альбом 853x533 dp (IXP101M1): значок слева, текст, итог по карте и
+  // отсчёт справа (для bus_unavailable отсчёта нет — как в портрете).
+  Widget _buildLandscape(String lang, String code) {
+    final m = PUi.m;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(m.gutter + 24, m.langH + 20, m.gutter + 24, 12),
+      child: Row(
+        children: [
+          AnimatedBuilder(
+            animation: _shakeAnimation,
+            builder: (context, child) => Transform.translate(
+              offset: Offset(_shakeAnimation.value, 0),
+              child: child,
+            ),
+            child: Container(
+              width: 148,
+              height: 148,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: const Color(0xFFE53935).withValues(alpha: 0.12),
+                border: Border.all(color: const Color(0xFFE53935), width: 4),
+              ),
+              child: const Icon(
+                Icons.error_outline_rounded,
+                color: Color(0xFFE53935),
+                size: 88,
+              ),
+            ),
+          ),
+          const SizedBox(width: 36),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _t('title', lang, code),
+                  style: const TextStyle(
+                    color: Color(0xFFE53935),
+                    fontSize: 34,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  _t('detail', lang, code),
+                  style: TextStyle(
+                    color: const Color(0xFF8899AA),
+                    fontSize: m.bodySp + 2,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _t('contact', lang),
+                  style: TextStyle(
+                    color: const Color(0xFF8899AA),
+                    fontSize: m.minBodySp,
+                    height: 1.4,
+                  ),
+                ),
+                ValueListenableBuilder<CardCustomerNotice?>(
+                  valueListenable: CardPaymentService.customerNotice,
+                  builder: (context, notice, _) => notice == null
+                      ? const SizedBox.shrink()
+                      : Padding(
+                          padding: const EdgeInsets.only(top: 10),
+                          child: Text(
+                            I18n.tr(
+                              lang,
+                              notice == CardCustomerNotice.refunded
+                                  ? 'error.card_refunded'
+                                  : 'error.card_operator',
+                            ),
+                            key: const ValueKey('card_notice'),
+                            style: TextStyle(
+                              color: notice == CardCustomerNotice.refunded
+                                  ? const Color(0xFF2EC4B6)
+                                  : const Color(0xFFFFB020),
+                              fontSize: m.bodySp + 2,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                ),
+                if (code != 'bus_unavailable') ...[
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      Container(
+                        width: 64,
+                        height: 64,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: const Color(0xFFE53935).withValues(alpha: 0.4),
+                            width: 2,
+                          ),
+                        ),
+                        child: Center(
+                          child: Text(
+                            _t('countdown', lang),
+                            style: const TextStyle(
+                              color: Color(0xFFE53935),
+                              fontSize: 26,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Text(
+                          _t('returning', lang),
+                          style: TextStyle(
+                            color: const Color(0xFF8899AA),
+                            fontSize: m.minBodySp,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

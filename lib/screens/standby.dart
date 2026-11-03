@@ -255,14 +255,16 @@ class _StandbyScreenState extends State<StandbyScreen> {
                   ),
                 ),
               )
+            else if (PUi.landscape)
+              _buildLandscapePlaceholder(captionLangs)
             else
               _buildPlaceholder(captionLangs),
 
             // Переключатель языка в правом верхнем углу (один язык — нет).
             if (notifier.displayLangs.length > 1)
               Positioned(
-                top: 24,
-                right: 24,
+                top: PUi.landscape ? 12 : 24,
+                right: PUi.landscape ? 12 : 24,
                 child: Container(
                   padding: const EdgeInsets.fromLTRB(8, 8, 16, 8),
                   decoration: BoxDecoration(
@@ -278,48 +280,84 @@ class _StandbyScreenState extends State<StandbyScreen> {
               ),
 
             // Подсказка внизу
-            Positioned(
-              bottom: 64,
-              left: PUi.gutter,
-              right: PUi.gutter,
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 32,
-                    vertical: 20,
+            if (PUi.landscape)
+              Positioned(
+                bottom: 24,
+                left: PUi.m.gutter,
+                right: PUi.m.gutter,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 28,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: PUi.accent, width: 2),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (final l in captionLangs)
+                          Text(
+                            I18n.tr(l, 'standby.tap_to_start'),
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: PUi.m.bodySp,
+                              height: 1.4,
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
-                  decoration: BoxDecoration(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: PUi.accent, width: 2),
-                  ),
-                  // Строки одна под другой: в портрете одна длинная строка
-                  // на 22+ sp не помещается в ширину.
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      for (final l in captionLangs)
-                        Text(
-                          I18n.tr(l, 'standby.tap_to_start'),
-                          textAlign: TextAlign.center,
-                          style: _hintStyle,
-                        ),
-                    ],
+                ),
+              )
+            else
+              Positioned(
+                bottom: 64,
+                left: PUi.gutter,
+                right: PUi.gutter,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 32,
+                      vertical: 20,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: PUi.accent, width: 2),
+                    ),
+                    // Строки одна под другой: в портрете одна длинная строка
+                    // на 22+ sp не помещается в ширину.
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (final l in captionLangs)
+                          Text(
+                            I18n.tr(l, 'standby.tap_to_start'),
+                            textAlign: TextAlign.center,
+                            style: _hintStyle,
+                          ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
 
             // Карту приложили, не выбрав запах (1.11.0): терминал закрыл
             // сессию без списания — подсказка на языках заставки.
             Positioned(
-              top: 120,
+              top: PUi.landscape ? 84 : 120,
               left: PUi.gutter,
               right: PUi.gutter,
               child: Center(
                 child: CardHintBanner(
                   text: {
-                    for (final l in captionLangs) I18n.tr(l, 'standby.card_hint'),
+                    for (final l in captionLangs)
+                      I18n.tr(l, 'standby.card_hint'),
                   }.join('\n'),
                 ),
               ),
@@ -342,6 +380,79 @@ class _StandbyScreenState extends State<StandbyScreen> {
       ),
     );
   }
+
+  // Альбом 853x533 dp (IXP101M1): QR слева, название и подпись справа;
+  // нижняя полоса свободна под подсказку (Positioned в build).
+  Widget _buildLandscapePlaceholder(List<String> captionLangs) {
+    final m = PUi.m;
+    return SizedBox.expand(
+      child: ColoredBox(
+        color: const Color(0xFF0B2545),
+        child: LayoutBuilder(
+          builder: (context, c) {
+            final qr = (c.maxHeight * 0.5).clamp(160.0, c.maxWidth * 0.32);
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                m.gutter + 24,
+                m.langH + 24,
+                m.gutter + 24,
+                _landscapeHintReserve(captionLangs.length),
+              ),
+              child: Row(
+                children: [
+                  Image.asset(
+                    'assets/qr_code.png',
+                    width: qr,
+                    errorBuilder: (_, _, _) => Icon(
+                      Icons.local_car_wash,
+                      size: qr * 0.6,
+                      color: PUi.accent,
+                    ),
+                  ),
+                  const SizedBox(width: 40),
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            'CaRFog OÜ',
+                            style: TextStyle(
+                              color: PUi.accent,
+                              fontSize: 48,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          captionLangs
+                              .map((l) => I18n.tr(l, 'standby.subtitle'))
+                              .toSet()
+                              .join('\n'),
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: m.minBodySp,
+                            height: 1.35,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  // Высота нижней полосы под подсказку в альбоме: строки + поля рамки.
+  static double _landscapeHintReserve(int lines) =>
+      24 + 20 + lines * PUi.m.bodySp * 1.4 + 24;
 
   Widget _buildPlaceholder(List<String> captionLangs) {
     // Портрет 720x1280 dp: крупный QR в верхней половине, название ниже;

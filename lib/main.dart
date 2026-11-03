@@ -37,6 +37,13 @@ import 'services/sync_service.dart';
 import 'services/update_service.dart';
 import 'services/system_service.dart';
 
+
+// Ориентации интерфейса для профиля (тест: test/landscape_layout_test.dart).
+List<DeviceOrientation> preferredOrientations(HardwareProfile p) =>
+    p.landscape
+    ? const [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]
+    : const [DeviceOrientation.portraitUp, DeviceOrientation.portraitDown];
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // Причина запуска читается ОДИН раз (нативная сторона сбрасывает признак
@@ -61,14 +68,17 @@ void main() async {
   await I18n.load();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   // Аппаратный профиль по реальному устройству — до чтения настроек: от него
-  // зависит порт шины по умолчанию (models/hardware_profile.dart). Оба
-  // планшета (SY156-A510 и IXP101M1) стоят в портрете.
+  // зависит порт шины по умолчанию (models/hardware_profile.dart) и
+  // ориентация: SY156-A510 — портрет, IXP101M1 — альбом.
   HardwareProfile.current = await SystemService.detectHardwareProfile();
-  AppLog.log('Hw', 'профиль ${HardwareProfile.current.id}');
-  SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
-  ]);
+  AppLog.log(
+    'Hw',
+    'профиль ${HardwareProfile.current.id} '
+        '(${HardwareProfile.current.orientation.name})',
+  );
+  SystemChrome.setPreferredOrientations(
+    preferredOrientations(HardwareProfile.current),
+  );
   // Заводская конфигурация облака (файл на общем каталоге): применяется до
   // настройки облачного слоя; остальные настройки не трогаются.
   final config = await FactoryConfigService.applyOnStartup(

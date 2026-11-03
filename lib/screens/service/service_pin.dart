@@ -280,6 +280,8 @@ class _ServicePinScreenState extends State<ServicePinScreen>
     final lang = notifier.serviceLang;
     final blocked = _mode != _Mode.newPin && _isLocked;
 
+    if (PUi.landscape) return _buildLandscape(notifier, lang, blocked);
+
     // Портрет 720x1280 dp: сверху язык, затем заголовок/статус, точки ввода,
     // компактная клавиатура по центру, внизу ссылки. Не помещается — прокрутка.
     return Scaffold(
@@ -454,16 +456,209 @@ class _ServicePinScreenState extends State<ServicePinScreen>
     );
   }
 
+  // Альбом 853x533 dp (IXP101M1): слева язык, заголовок, статус, точки и
+  // ссылки; справа клавиатура (те же кнопки 80x56 dp). Без прокрутки.
+  Widget _buildLandscape(AppNotifier notifier, String lang, bool blocked) {
+    final m = PUi.m;
+    final title = blocked
+        ? _t('locked_title', lang)
+        : _mode == _Mode.pin
+        ? _t('title_pin', lang)
+        : _mode == _Mode.master
+        ? _t('title_master', lang)
+        : (_newPinStep == 0
+              ? _t('title_new_pin', lang)
+              : _t('title_confirm_pin', lang));
+    final status = blocked
+        ? Column(
+            children: [
+              Text(
+                _t('locked_sub', lang),
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: const Color(0xFF8899AA),
+                  fontSize: m.minBodySp,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _formatDuration(_lockLeft),
+                style: const TextStyle(
+                  color: Color(0xFFE53935),
+                  fontSize: 48,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 2,
+                ),
+              ),
+            ],
+          )
+        : _mode == _Mode.newPin
+        ? Text(
+            _t('new_pin_hint', lang),
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: const Color(0xFFFFAA00),
+              fontSize: m.minBodySp,
+            ),
+          )
+        : _mode == _Mode.master
+        ? Text(
+            _t('master_hint', lang),
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: const Color(0xFF8899AA),
+              fontSize: m.minBodySp,
+            ),
+          )
+        : _AttemptsIndicator(
+            label: _t('attempts', lang),
+            left: _attemptsLeft,
+            total: SecurityService.maxAttempts,
+            alignStart: false,
+          );
+    return Scaffold(
+      backgroundColor: const Color(0xFF0A0E1A),
+      body: SafeArea(
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(m.gutter, 12, m.gutter, 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  children: [
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: LangSwitcher(
+                        current: lang,
+                        langs: AppNotifier.serviceLangs,
+                        onChanged: notifier.setLanguage,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      title,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: blocked ? const Color(0xFFE53935) : Colors.white,
+                        fontSize: m.titleSp,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    status,
+                    if (!blocked) ...[
+                      const SizedBox(height: 24),
+                      AnimatedBuilder(
+                        animation: _shakeAnimation,
+                        builder: (context, child) => Transform.translate(
+                          offset: Offset(_shakeAnimation.value, 0),
+                          child: child,
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: List.generate(_maxLen, (i) {
+                            final filled = i < _entered.length;
+                            return Container(
+                              margin: EdgeInsets.symmetric(
+                                horizontal: _maxLen > 4 ? 6 : 12,
+                              ),
+                              width: 24,
+                              height: 24,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: filled
+                                    ? const Color(0xFF00C6B2)
+                                    : Colors.transparent,
+                                border: Border.all(
+                                  color: const Color(0xFF00C6B2),
+                                  width: 3,
+                                ),
+                              ),
+                            );
+                          }),
+                        ),
+                      ),
+                    ],
+                    const Spacer(),
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      children: [
+                        if (_mode == _Mode.pin)
+                          _linkButton(
+                            _t('master_link', lang),
+                            const Color(0xFF00C6B2),
+                            () => setState(() {
+                              _mode = _Mode.master;
+                              _entered = '';
+                            }),
+                          )
+                        else if (_mode == _Mode.master)
+                          _linkButton(
+                            _t('back', lang),
+                            const Color(0xFF00C6B2),
+                            () => setState(() {
+                              _mode = _Mode.pin;
+                              _entered = '';
+                            }),
+                          ),
+                        _linkButton(
+                          _t('cancel', lang),
+                          const Color(0xFF8899AA),
+                          () => notifier.transition(AppState.standby),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              if (!blocked) ...[
+                SizedBox(width: m.gutter + 12),
+                Center(
+                  child: SizedBox(
+                    width: _DigitButton.gridWidth,
+                    child: GridView.count(
+                      crossAxisCount: 3,
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      mainAxisSpacing: _DigitButton.spacing,
+                      crossAxisSpacing: _DigitButton.spacing,
+                      childAspectRatio:
+                          _DigitButton.width / _DigitButton.height,
+                      children: [
+                        ...['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(
+                          (d) =>
+                              _DigitButton(label: d, onTap: () => _onDigit(d)),
+                        ),
+                        const SizedBox.shrink(),
+                        _DigitButton(label: '0', onTap: () => _onDigit('0')),
+                        _DigitButton(
+                          label: '⌫',
+                          onTap: _onBackspace,
+                          color: const Color(0xFF334455),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                SizedBox(width: m.gutter),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   // Ссылка-кнопка внизу экрана PIN: зона касания не меньше 56 dp.
   Widget _linkButton(String text, Color color, VoidCallback onTap) {
     return TextButton(
       onPressed: onTap,
       style: TextButton.styleFrom(
-        minimumSize: const Size(PUi.minTouch * 3, PUi.minTouch),
+        minimumSize: Size(PUi.m.minTouch * 3, PUi.m.minTouch),
       ),
       child: Text(
         text,
-        style: TextStyle(color: color, fontSize: PUi.minBodySp),
+        style: TextStyle(color: color, fontSize: PUi.m.minBodySp),
       ),
     );
   }

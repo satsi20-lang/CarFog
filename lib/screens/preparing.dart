@@ -496,6 +496,8 @@ class _PreparingScreenState extends State<PreparingScreen> {
     String t(String key, [Map<String, Object?> params = const {}]) =>
         I18n.tr(lang, 'preparing.$key', params: params);
 
+    if (PUi.landscape) return _buildLandscape(notifier, t);
+
     return Scaffold(
       body: FogBackground(
         // Тёплый акцент — идёт нагрев испарителя (Задача 1.4).
@@ -612,6 +614,121 @@ class _PreparingScreenState extends State<PreparingScreen> {
       ),
     );
   }
+  // Альбом 853x533 dp (IXP101M1): слева температура и прогресс, справа
+  // подсказки клиенту, внизу отмена. Без прокрутки.
+  Widget _buildLandscape(
+    AppNotifier notifier,
+    String Function(String, [Map<String, Object?>]) t,
+  ) {
+    final m = PUi.m;
+    return Scaffold(
+      body: FogBackground(
+        accentColor: const Color(0xFFFFAA00),
+        child: SafeArea(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(m.gutter, 12, m.gutter, m.gutter - 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                LandscapeHeader(
+                  title: t('title'),
+                  titleColor: const Color(0xFFFFAA00),
+                  subtitle: t('subtitle'),
+                  trailing: LangSwitcher(
+                    current: notifier.lang,
+                    langs: notifier.displayLangs,
+                    onChanged: notifier.setLanguage,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: Row(
+                    children: [
+                      Expanded(
+                        flex: 4,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Center(
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  '${_currentTemp.toStringAsFixed(0)}°C',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 96,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(10),
+                              child: LinearProgressIndicator(
+                                value: _progress,
+                                minHeight: 28,
+                                backgroundColor: const Color(0xFF2E2E2E),
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  _progress > 0.9
+                                      ? Colors.redAccent
+                                      : const Color(0xFFFF3333),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Center(
+                              child: Text(
+                                t('target', {
+                                  'temp': _targetTemp.toStringAsFixed(0),
+                                }),
+                                style: TextStyle(
+                                  color: Colors.white60,
+                                  fontSize: m.minBodySp,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      SizedBox(width: m.gutter + 8),
+                      Expanded(
+                        flex: 7,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _HintRow(text: t('hint1')),
+                            const SizedBox(height: 8),
+                            _HintRow(text: t('hint2')),
+                            const SizedBox(height: 8),
+                            _HintRow(text: t('hint3')),
+                            const SizedBox(height: 8),
+                            _HintRow(
+                              text: t('hint4', {
+                                'seconds': notifier.config.pumpAfterHeaterS,
+                              }),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                LandscapeCancelButton(
+                  text: t('cancel'),
+                  onPressed: _onCancel,
+                  color: const Color(0xFF8899AA),
+                  borderColor: const Color(0xFF8899AA),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _HintRow extends StatelessWidget {
@@ -623,15 +740,19 @@ class _HintRow extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Icon(Icons.arrow_right, color: Color(0xFF2EC4B6), size: 36),
+        Icon(
+          Icons.arrow_right,
+          color: const Color(0xFF2EC4B6),
+          size: PUi.landscape ? 28 : 36,
+        ),
         const SizedBox(width: 8),
         Expanded(
           child: Text(
             text,
-            style: const TextStyle(
+            style: TextStyle(
               color: Colors.white70,
-              fontSize: PUi.minBodySp + 2,
-              height: 1.4,
+              fontSize: PUi.landscape ? PUi.m.minBodySp : PUi.minBodySp + 2,
+              height: PUi.landscape ? 1.25 : 1.4,
             ),
           ),
         ),

@@ -563,6 +563,17 @@ class _TreatingScreenState extends State<TreatingScreen>
         break;
     }
 
+    if (PUi.landscape) {
+      return _buildLandscape(
+        notifier,
+        t,
+        title,
+        subtitle,
+        titleColor,
+        flavorName,
+      );
+    }
+
     return AnimatedBuilder(
       animation: _bgColorAnim,
       builder: (context, child) {
@@ -712,6 +723,163 @@ class _TreatingScreenState extends State<TreatingScreen>
       },
     );
   }
+  // Альбом 853x533 dp (IXP101M1): слева крупный таймер и прогресс, справа
+  // аромат, фазы и отмена. Мигание последних секунд — как в портрете.
+  Widget _buildLandscape(
+    AppNotifier notifier,
+    String Function(String, [Map<String, Object?>]) t,
+    String title,
+    String subtitle,
+    Color titleColor,
+    String flavorName,
+  ) {
+    final m = PUi.m;
+    return AnimatedBuilder(
+      animation: _bgColorAnim,
+      builder: (context, child) => Scaffold(
+        backgroundColor: _isBlinking
+            ? _bgColorAnim.value
+            : const Color(0xFF1A1A1A),
+        body: FogBackground(
+          paintBase: false,
+          intensity: _isBlinking ? 0 : 0.14,
+          child: SafeArea(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                m.gutter,
+                12,
+                m.gutter,
+                m.gutter - 4,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  LandscapeHeader(
+                    title: title,
+                    titleColor: titleColor,
+                    subtitle: subtitle,
+                    trailing: LangSwitcher(
+                      current: notifier.lang,
+                      langs: notifier.displayLangs,
+                      onChanged: notifier.setLanguage,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Expanded(
+                          flex: 6,
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Center(
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    t('seconds', {'seconds': _secondsLeft}),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 96,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(10),
+                                child: LinearProgressIndicator(
+                                  value: _progress,
+                                  minHeight: 28,
+                                  backgroundColor: const Color(0xFF2E2E2E),
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    _phase == _Phase.treating
+                                        ? const Color(0xFFFF3333)
+                                        : const Color(0xFF2EC4B6),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        SizedBox(width: m.gutter + 8),
+                        Expanded(
+                          flex: 5,
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Text(
+                                t('flavor', {'flavor': flavorName}),
+                                textAlign: TextAlign.center,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: const Color(0xFF2EC4B6),
+                                  fontSize: m.bodySp + 4,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+                              Row(
+                                children: [
+                                  _PhaseIndicator(
+                                    active: _phase == _Phase.compressor,
+                                    done: _phase != _Phase.compressor,
+                                    label: '1',
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Container(
+                                      height: 3,
+                                      color: Colors.white24,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  _PhaseIndicator(
+                                    active: _phase == _Phase.treating,
+                                    done: _phase == _Phase.shutdown,
+                                    label: '2',
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Container(
+                                      height: 3,
+                                      color: Colors.white24,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  _PhaseIndicator(
+                                    active: _phase == _Phase.shutdown,
+                                    done: false,
+                                    label: '3',
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (_phase != _Phase.shutdown) ...[
+                    const SizedBox(height: 8),
+                    LandscapeCancelButton(
+                      text: t('cancel'),
+                      onPressed: _onCancel,
+                    ),
+                  ] else
+                    SizedBox(height: 8 + m.buttonH),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _PhaseIndicator extends StatelessWidget {
@@ -736,9 +904,10 @@ class _PhaseIndicator extends StatelessWidget {
       color = Colors.white24;
     }
 
+    final size = PUi.landscape ? 52.0 : 64.0;
     return Container(
-      width: 64,
-      height: 64,
+      width: size,
+      height: size,
       decoration: BoxDecoration(color: color, shape: BoxShape.circle),
       child: Center(
         child: Text(
