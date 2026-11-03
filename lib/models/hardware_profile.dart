@@ -46,15 +46,17 @@ class HardwareProfile {
     socTags: ['rk3562'],
   );
 
-  // Прежний планшет CARFOG-001: RS485 на ttyS5 (COM5/COM6, метки AIRX/BITX;
-  // до 1.8.0 этот узел был зашит в код). ttyS1 там занят 4G-модемом.
+  // Прежний планшет CARFOG-001: RS485 на ttyS5 (UART5 fe690000; проба
+  // 03.11.2026 — ответили термопара, счётчик и CWT). ttyS1 там занят
+  // 4G-модемом. Матрица альбомная 1280x800, плотность 240: в портрете
+  // 533x853 dp.
   static const ixp101m1 = HardwareProfile._(
     id: 'ixp101m1',
     title: 'IXP101M1, 10.1", 800x1280, портрет',
     defaultBusPort: '/dev/ttyS5',
     screenWidthPx: 800,
     screenHeightPx: 1280,
-    densityDpi: 160,
+    densityDpi: 240,
     socTags: ['rk3568'],
   );
 

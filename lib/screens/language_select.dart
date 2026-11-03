@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
@@ -60,9 +62,14 @@ class LanguageSelectScreen extends StatelessWidget {
                   Center(
                     child: LangButtonGrid(
                       langs: langs,
+                      // 520 — на SY156-A510; на узком IXP101M1 (533 dp)
+                      // не шире экрана без полей.
                       width: grid
                           ? MediaQuery.sizeOf(context).width - PUi.gutter * 2
-                          : 520,
+                          : math.min(
+                              520,
+                              MediaQuery.sizeOf(context).width - PUi.gutter * 2,
+                            ),
                       columns: grid ? 2 : 1,
                       buttonHeight: grid ? PUi.buttonH : PUi.buttonH + 16,
                       fontSize: 32,
