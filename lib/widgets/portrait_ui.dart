@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../models/hardware_profile.dart';
 
 // Размеры портретного макета под Syoung SY156-A510 (15,6", логические
@@ -147,6 +148,40 @@ class LandscapeCancelButton extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: TextStyle(fontSize: PUi.m.bodySp + 2),
         ),
+      ),
+    );
+  }
+}
+
+// Запасной вариант для IXP101M1 (профиль с guardSystemBars): пока система
+// показывает панель навигации (флаги immersive сброшены, сигнал
+// SystemChrome.setSystemUIChangeCallback), интерфейс поднимается на её
+// высоту — кнопка «Отмена» не уходит под полоску. Сторож (SystemBarsGuard.kt)
+// прячет панель через 1–3 с, и интерфейс опускается обратно. Подключается в
+// MaterialApp.builder только для этого профиля.
+class SystemBarsLift extends StatelessWidget {
+  final Widget child;
+  const SystemBarsLift({super.key, required this.child});
+
+  // Панель навигации IXP101M1: 72 px при плотности 240 = 48 dp.
+  static const double navBarDp = 48;
+
+  static final ValueNotifier<bool> barsVisible = ValueNotifier(false);
+
+  static void listen() {
+    SystemChrome.setSystemUIChangeCallback((visible) async {
+      barsVisible.value = visible;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: barsVisible,
+      builder: (context, visible, _) => AnimatedPadding(
+        duration: const Duration(milliseconds: 150),
+        padding: EdgeInsets.only(bottom: visible ? navBarDp : 0),
+        child: child,
       ),
     );
   }

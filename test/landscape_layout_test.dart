@@ -199,6 +199,83 @@ void main() {
     });
   }
 
+  // Панель навигации видна (запасной вариант SystemBarsLift): интерфейс
+  // поднят на 48 dp, экраны не переполняются, «Отмена» выше полоски.
+  group('панель навигации видна', () {
+    tearDown(() => SystemBarsLift.barsVisible.value = false);
+
+    Future<void> pumpLifted(
+      WidgetTester tester,
+      Widget screen,
+      AppNotifier n,
+    ) async {
+      SystemBarsLift.barsVisible.value = true;
+      await tester.pumpWidget(
+        ChangeNotifierProvider<AppNotifier>.value(
+          value: n,
+          child: MaterialApp(
+            builder: (context, child) => SystemBarsLift(child: child!),
+            home: screen,
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 600));
+    }
+
+    for (final lang in ['ru', 'en', 'et']) {
+      for (final e in screens.entries) {
+        testWidgets('${e.key} [$lang] 853x485 без переполнения', (tester) async {
+          landscape(tester);
+          final n = notifier(
+            lang,
+            levels: [true, false, true, true, true, true, true, true],
+            error: e.key == 'error' ? 'bus_unavailable' : null,
+            meter: e.key != 'preparing',
+          );
+          await pumpLifted(tester, e.value(), n);
+          expect(tester.takeException(), isNull);
+          await dispose(tester);
+        });
+      }
+    }
+
+    testWidgets('«Отмена» выбора аромата выше полоски навигации', (
+      tester,
+    ) async {
+      landscape(tester);
+      await pumpLifted(
+        tester,
+        const SelectFlavorScreen(),
+        notifier('ru', pumps: 8, levels: List.filled(8, true)),
+      );
+      final cancel = find.byType(LandscapeCancelButton);
+      expect(cancel, findsOneWidget);
+      expect(
+        tester.getRect(cancel).bottom,
+        lessThanOrEqualTo(533.4 - SystemBarsLift.navBarDp),
+      );
+      await dispose(tester);
+    });
+
+    testWidgets('панель спрятана — интерфейс на прежнем месте', (tester) async {
+      landscape(tester);
+      SystemBarsLift.barsVisible.value = false;
+      await tester.pumpWidget(
+        ChangeNotifierProvider<AppNotifier>.value(
+          value: notifier('ru'),
+          child: MaterialApp(
+            builder: (context, child) => SystemBarsLift(child: child!),
+            home: const SelectFlavorScreen(),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 600));
+      final bottom = tester.getRect(find.byType(LandscapeCancelButton)).bottom;
+      expect(bottom, greaterThan(533.4 - SystemBarsLift.navBarDp));
+      await dispose(tester);
+    });
+  });
+
   testWidgets('выбор аромата: 8 карточек в 2 ряда по 4', (tester) async {
     landscape(tester);
     await pumpScreen(

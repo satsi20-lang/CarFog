@@ -36,11 +36,13 @@ import 'services/card_terminal_service.dart';
 import 'services/sync_service.dart';
 import 'services/update_service.dart';
 import 'services/system_service.dart';
+import 'widgets/portrait_ui.dart';
 
 
 // Сторож системных панелей — только для профиля, которому он нужен.
 Future<void> applySystemBarsGuard(HardwareProfile p) async {
   if (!p.guardSystemBars) return;
+  SystemBarsLift.listen();
   await SystemService.setSystemBarsGuard(true);
 }
 
@@ -278,6 +280,11 @@ class DryFogApp extends StatelessWidget {
           surface: Color(0xFF1A1A1A),
         ),
       ),
+      // IXP101M1: интерфейс поднимается над панелью навигации, пока она
+      // видна. На SY156-A510 builder не задан — дерево виджетов прежнее.
+      builder: HardwareProfile.current.guardSystemBars
+          ? (context, child) => SystemBarsLift(child: child!)
+          : null,
       home: const AppRouter(),
     );
   }
