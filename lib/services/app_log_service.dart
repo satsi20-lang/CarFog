@@ -136,7 +136,9 @@ class AppLog {
   // Вырезается, только если первая цифра 2–6 (платёжные системы) и сходится
   // контрольная сумма Luhn — время и счётчики (мс эпохи начинаются с 1) не
   // трогаются.
-  static final RegExp _cardLike = RegExp(r'(?<![0-9])[2-6](?:[ -]?[0-9]){12,18}(?![0-9])');
+  static final RegExp _cardLike = RegExp(
+    r'(?<![0-9])[2-6](?:[ -]?[0-9]){12,18}(?![0-9])',
+  );
 
   @visibleForTesting
   static bool luhnOk(String digits) {
@@ -154,11 +156,25 @@ class AppLog {
     return sum % 10 == 0;
   }
 
-  static String _redactCards(String text) => text.replaceAllMapped(_cardLike, (m) {
-    final digits = m[0]!.replaceAll(RegExp(r'[ -]'), '');
-    if (digits.length < 13 || digits.length > 19 || !luhnOk(digits)) return m[0]!;
-    return '***';
-  });
+  // Дёшево отсечь строки, где цифр меньше 13 (почти все строки журнала):
+  // регулярное выражение по каждой строке заметно замедляло log().
+  static bool _mayHoldCard(String text) {
+    var digits = 0;
+    for (var i = 0; i < text.length; i++) {
+      final c = text.codeUnitAt(i);
+      if (c >= 48 && c <= 57 && ++digits >= 13) return true;
+    }
+    return false;
+  }
+
+  static String _redactCards(String text) => !_mayHoldCard(text)
+      ? text
+      : text.replaceAllMapped(_cardLike, (m) {
+          final digits = m[0]!.replaceAll(RegExp(r'[ -]'), '');
+          final card =
+              digits.length >= 13 && digits.length <= 19 && luhnOk(digits);
+          return card ? '***' : m[0]!;
+        });
 
   // Вырезает секреты из произвольного текста (журнал, значения пакета).
   // Подстановка '***' БЕЗ кавычек: результат безопасен внутри уже
@@ -169,7 +185,10 @@ class AppLog {
         .replaceAll(_bearer, 'Bearer ***')
         .replaceAll(_jwt, '***')
         .replaceAllMapped(_kv, (m) => '${m[1]}***');
-    for (final secret in {..._secrets, ..._extraSecrets}) {
+    for (final secret in _secrets) {
+      out = out.replaceAll(secret, '***');
+    }
+    for (final secret in _extraSecrets) {
       out = out.replaceAll(secret, '***');
     }
     return _redactCards(out);
