@@ -35,6 +35,7 @@ import 'services/card_payment_service.dart';
 import 'services/card_terminal_service.dart';
 import 'services/sync_service.dart';
 import 'services/update_service.dart';
+import 'services/screenshot_service.dart';
 import 'services/system_service.dart';
 import 'widgets/portrait_ui.dart';
 
@@ -280,11 +281,15 @@ class DryFogApp extends StatelessWidget {
           surface: Color(0xFF1A1A1A),
         ),
       ),
-      // IXP101M1: интерфейс поднимается над панелью навигации, пока она
-      // видна. На SY156-A510 builder не задан — дерево виджетов прежнее.
-      builder: HardwareProfile.current.guardSystemBars
-          ? (context, child) => SystemBarsLift(child: child!)
-          : null,
+      // Корень для снимка экрана по команде capture_screen (RD1) — у обоих
+      // профилей; RepaintBoundary пикселей не меняет. IXP101M1: интерфейс
+      // ещё и поднимается над панелью навигации, пока она видна.
+      builder: (context, child) => RepaintBoundary(
+        key: ScreenshotService.boundaryKey,
+        child: HardwareProfile.current.guardSystemBars
+            ? SystemBarsLift(child: child!)
+            : child!,
+      ),
       home: const AppRouter(),
     );
   }

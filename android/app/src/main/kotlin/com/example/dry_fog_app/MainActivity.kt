@@ -240,6 +240,15 @@ class MainActivity : FlutterActivity() {
                     // Свойства для выбора аппаратного профиля при старте
                     // (HardwareProfile.detect): чип и физический размер экрана.
                     "getHardwareIdentity" -> result.success(collectHardwareIdentity())
+                    "getSystemBarsState" -> result.success(systemBarsGuard.state())
+                    // Снимок экрана (capture_screen): RGBA от Flutter → JPEG.
+                    "encodeJpeg" -> {
+                        val w = call.argument<Int>("width") ?: 0
+                        val h = call.argument<Int>("height") ?: 0
+                        val rgba = call.argument<ByteArray>("rgba")
+                        val q = (call.argument<Int>("quality") ?: 70).coerceIn(30, 95)
+                        result.success(encodeJpeg(w, h, rgba, q))
+                    }
                     "setSystemBarsGuard" -> {
                         val on = call.argument<Boolean>("enabled") == true
                         val delay = call.argument<Number>("hideDelayMs")?.toLong()
@@ -522,6 +531,34 @@ class MainActivity : FlutterActivity() {
         return info
     }
 
+    private fun encodeJpeg(w: Int, h: Int, rgba: ByteArray?, quality: Int): ByteArray? {
+        if (rgba == null || w <= 0 || h <= 0 || w > 4096 || h > 4096 ||
+            rgba.size != w * h * 4) return null
+        return try {
+            val bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+            bmp.copyPixelsFromBuffer(java.nio.ByteBuffer.wrap(rgba))
+            val out = java.io.ByteArrayOutputStream()
+            bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, quality, out)
+            bmp.recycle()
+            out.toByteArray()
+        } catch (e: Throwable) {
+            android.util.Log.e("MainActivity", "encodeJpeg: $e")
+            null
+        }
+    }
+
+    // Самая высокая температура среди термозон (°C); null — чтение закрыто
+    // или зон нет. Без root: на части прошивок SELinux не пускает.
+    private fun thermalMaxC(): Double? = try {
+        java.io.File("/sys/class/thermal").listFiles { f -> f.name.startsWith("thermal_zone") }
+            ?.mapNotNull { z ->
+                try { java.io.File(z, "temp").readText().trim().toDouble() } catch (_: Throwable) { null }
+            }
+            ?.map { if (it > 1000) it / 1000.0 else it }
+            ?.filter { it in -40.0..150.0 }
+            ?.maxOrNull()
+    } catch (_: Throwable) { null }
+
     private fun collectDeviceInfo(): Map<String, Any?> {
         val info = mutableMapOf<String, Any?>()
         try {
@@ -532,6 +569,7 @@ class MainActivity : FlutterActivity() {
             info["fingerprint"] = Build.FINGERPRINT
             info["build_type"] = Build.TYPE
             info["uptime_s"] = SystemClock.elapsedRealtime() / 1000
+            info["thermal_max_c"] = thermalMaxC()
         } catch (e: Throwable) {
             info["device_error"] = e.toString()
         }

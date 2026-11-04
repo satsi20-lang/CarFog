@@ -114,14 +114,51 @@ class AppLog {
         .toSet();
   }
 
+  // Секреты, известные только в момент появления (мастер-код при выдаче):
+  // живут до перезапуска, setSecrets их не стирает.
+  static final Set<String> _extraSecrets = {};
+
+  static void addSecret(String? value) {
+    final v = value?.trim();
+    if (v != null && v.length >= 3) _extraSecrets.add(v);
+  }
+
   static final RegExp _kv = RegExp(
-    r'''("?(?:pin|service_?pin|token|cloud_?token|p_token|anon_?key|cloud_?anon_?key|apikey|authorization|password|secret)"?\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s,}\]]+)''',
+    r'''("?(?:pin|service_?pin|token|cloud_?token|p_token|anon_?key|cloud_?anon_?key|apikey|authorization|password|secret|master_?code|claim_?code)"?\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s,}\]]+)''',
     caseSensitive: false,
   );
   static final RegExp _jwt = RegExp(
     r'eyJ[A-Za-z0-9_\-]{5,}\.[A-Za-z0-9_\-]{5,}\.[A-Za-z0-9_\-]*',
   );
   static final RegExp _bearer = RegExp(r'Bearer\s+[A-Za-z0-9._\-]+');
+
+  // Похоже на номер карты: 13–19 цифр подряд или группами через пробел/дефис.
+  // Вырезается, только если первая цифра 2–6 (платёжные системы) и сходится
+  // контрольная сумма Luhn — время и счётчики (мс эпохи начинаются с 1) не
+  // трогаются.
+  static final RegExp _cardLike = RegExp(r'(?<![0-9])[2-6](?:[ -]?[0-9]){12,18}(?![0-9])');
+
+  @visibleForTesting
+  static bool luhnOk(String digits) {
+    var sum = 0;
+    var dbl = false;
+    for (var i = digits.length - 1; i >= 0; i--) {
+      var d = digits.codeUnitAt(i) - 48;
+      if (dbl) {
+        d *= 2;
+        if (d > 9) d -= 9;
+      }
+      sum += d;
+      dbl = !dbl;
+    }
+    return sum % 10 == 0;
+  }
+
+  static String _redactCards(String text) => text.replaceAllMapped(_cardLike, (m) {
+    final digits = m[0]!.replaceAll(RegExp(r'[ -]'), '');
+    if (digits.length < 13 || digits.length > 19 || !luhnOk(digits)) return m[0]!;
+    return '***';
+  });
 
   // Вырезает секреты из произвольного текста (журнал, значения пакета).
   // Подстановка '***' БЕЗ кавычек: результат безопасен внутри уже
@@ -132,10 +169,10 @@ class AppLog {
         .replaceAll(_bearer, 'Bearer ***')
         .replaceAll(_jwt, '***')
         .replaceAllMapped(_kv, (m) => '${m[1]}***');
-    for (final secret in _secrets) {
+    for (final secret in {..._secrets, ..._extraSecrets}) {
       out = out.replaceAll(secret, '***');
     }
-    return out;
+    return _redactCards(out);
   }
 
   // Рекурсивно вырезает секреты из ЗНАЧЕНИЙ-строк дерева Map/List. Нельзя
@@ -221,6 +258,36 @@ class AppLog {
     return lines.length <= n ? lines : lines.sublist(lines.length - n);
   }
 
+  // Строки не старше [window] (по метке времени в начале строки, местное
+  // время журнала) — и в любом случае не меньше [minLines] последних строк,
+  // чтобы на тихом аппарате был контекст. Строки без метки идут вместе с
+  // соседними.
+  static Future<List<String>> tailSince(
+    Duration window, {
+    int minLines = 0,
+    DateTime? now,
+  }) async {
+    final all = await tail(1 << 30);
+    final from = (now ?? DateTime.now()).subtract(window);
+    var start = all.length;
+    for (var i = all.length - 1; i >= 0; i--) {
+      final at = lineTime(all[i]);
+      if (at != null && at.isBefore(from)) break;
+      start = i;
+    }
+    final byCount = all.length - minLines;
+    if (byCount < start) start = byCount < 0 ? 0 : byCount;
+    return all.sublist(start);
+  }
+
+  // Метка времени строки журнала ('2026-11-03T21:35:56.695 [тег] …').
+  @visibleForTesting
+  static DateTime? lineTime(String line) {
+    final sp = line.indexOf(' ');
+    if (sp < 19) return null;
+    return DateTime.tryParse(line.substring(0, sp));
+  }
+
   // Только для тестов: сбросить состояние.
   @visibleForTesting
   static void resetForTest() {
@@ -229,6 +296,7 @@ class AppLog {
     _pending.clear();
     _dir = null;
     _secrets = {};
+    _extraSecrets.clear();
     _startReason = null;
     _version = null;
     _flushing = false;

@@ -34,6 +34,15 @@ class KioskPolicyState {
   // без Device Owner: с ним роль закрепляет политика, а экран — блокировка.
   bool get legacyKioskVisible => !deviceOwner;
 
+  // Для облачного слепка (reported_config.kiosk_lock) и пакета
+  // диагностики. Старый флаг kiosk_mode_enabled — про домашний экран, это
+  // про Lock Task.
+  Map<String, dynamic> toReported() => {
+    'device_owner': deviceOwner,
+    'lock_enabled': lockEnabled,
+    'lock_task_active': lockTaskActive,
+  };
+
   // Ответ канала; любые отсутствующие/чужие поля — «нет Device Owner».
   factory KioskPolicyState.fromMap(Map? m) {
     if (m == null) return none;
@@ -182,6 +191,39 @@ class SystemService {
       });
     } catch (e) {
       debugPrint('SystemService.setSystemBarsGuard error: $e');
+    }
+  }
+
+  // Состояние сторожа панелей (только для пакета диагностики). null —
+  // канал недоступен.
+  static Future<Map<String, dynamic>?> systemBarsState() async {
+    try {
+      final m = await _channel.invokeMethod<Map>('getSystemBarsState');
+      return m?.map((k, v) => MapEntry(k.toString(), v));
+    } catch (e) {
+      debugPrint('SystemService.systemBarsState error: $e');
+      return null;
+    }
+  }
+
+  // Сжатие снимка экрана в JPEG на нативной стороне (Bitmap.compress).
+  // rgba — байты RGBA строками (ui.ImageByteFormat.rawRgba). null — ошибка.
+  static Future<Uint8List?> encodeJpeg(
+    int width,
+    int height,
+    Uint8List rgba, {
+    required int quality,
+  }) async {
+    try {
+      return await _channel.invokeMethod<Uint8List>('encodeJpeg', {
+        'width': width,
+        'height': height,
+        'rgba': rgba,
+        'quality': quality,
+      });
+    } catch (e) {
+      debugPrint('SystemService.encodeJpeg error: $e');
+      return null;
     }
   }
 

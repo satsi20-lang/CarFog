@@ -403,16 +403,19 @@ begin
     when (h ->> 'bus_ok') = 'true' then 'green'
     else 'red' end;
 
+  -- health.thermo / meter: off | ok | stale (давно нет годного показания).
   v_sens := case
     when h is null then 'grey'
-    when (h ->> 'thermo') = 'fail' or (h ->> 'meter') = 'fail' then 'red'
+    when (h ->> 'thermo') = 'stale' or (h ->> 'meter') = 'stale' then 'yellow'
     when jsonb_array_length(coalesce(c -> 'payment_blocked_by_config', '[]'::jsonb)) > 0
       then 'yellow'
     else 'green' end;
 
+  -- health.terminal: off | ok | down | unknown (импульсный: связь не
+  -- проверяется).
   v_term := case
     when h is null or h ->> 'terminal' is null then 'grey'
-    when h ->> 'terminal' = 'off' then 'grey'
+    when h ->> 'terminal' in ('off', 'unknown') then 'grey'
     when h ->> 'terminal' = 'ok' then 'green'
     else 'red' end;
 

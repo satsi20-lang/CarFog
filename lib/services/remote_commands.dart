@@ -8,6 +8,7 @@ import 'app_log_service.dart';
 import 'cloud_service.dart';
 import 'config_service.dart';
 import 'diagnostics_service.dart';
+import 'screenshot_service.dart';
 import 'pin_policy.dart';
 import 'remote_command_guard.dart';
 import 'security_service.dart';
@@ -35,7 +36,8 @@ class CommandOutcome {
 //  2. Неизвестная команда → ack с отказом + журнал.
 //  3. Просроченная → 'expired'; повторная доставка → 'duplicate'
 //     (CommandGuard).
-//  4. collect_diagnostics и restart_app ограничены по частоте ('rate_limited').
+//  4. collect_diagnostics, capture_screen и restart_app ограничены по частоте
+//     ('rate_limited').
 //  5. restart_app — только в покое, иначе 'busy' (не откладывается).
 class RemoteCommands {
   RemoteCommands._();
@@ -51,6 +53,8 @@ class RemoteCommands {
     'restart_app',
     'update_app',
     'rollback_app',
+    // RD1: снимок своего экрана (только супервизор, supervisor_request_diag).
+    'capture_screen',
   };
 
   // Явный отказ для команд, которые удалённо выполнять нельзя.
@@ -215,6 +219,9 @@ class RemoteCommands {
         final status = await DiagnosticsService.collectAndSend(
           notifier,
           trigger: 'command',
+          logMinutes: DiagnosticsService.logWindowMinutes(
+            command.params['log_minutes'],
+          ),
         );
         return CommandOutcome(
           status.sent,
@@ -226,6 +233,14 @@ class RemoteCommands {
             if (status.error != null) 'error': status.error,
           }),
         );
+
+      case 'capture_screen':
+        // Тот же лимит, что у collect_diagnostics: раз в минуту, 3 в час.
+        if (!await CommandGuard.allowRate(action, now: now)) {
+          return const CommandOutcome(false, 'rate_limited');
+        }
+        final shot = await ScreenshotService.captureAndSend(notifier);
+        return CommandOutcome(shot.ok, shot.result);
 
       case 'update_app':
       case 'rollback_app':

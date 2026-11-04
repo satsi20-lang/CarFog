@@ -107,6 +107,15 @@ class SystemBarsGuard(private val activity: Activity) {
         handler.removeCallbacks(tick)
     }
 
+    // Для пакета диагностики: включён ли, есть ли у окна управление панелью,
+    // видна ли она по вставкам, когда последний раз прерывался временный показ.
+    fun state(): Map<String, Any?> = mapOf(
+        "enabled" to enabled,
+        "nav_controllable" to navControllable,
+        "bars_visible" to barsVisible(),
+        "last_abort_ms_ago" to lastAbortMs?.let { SystemClock.elapsedRealtime() - it },
+    )
+
     fun onWindowFocusChanged(hasFocus: Boolean) {
         if (enabled && hasFocus) hide("фокус")
     }

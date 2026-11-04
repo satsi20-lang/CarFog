@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'app_log_service.dart';
 import '../models/security_limits.dart';
 
 // Мастер-код аварийного доступа — свой на КАЖДЫЙ аппарат (R2.0, п. A).
@@ -49,6 +50,8 @@ class MasterCodeService {
     await prefs.setString(_kSalt, _hex(salt));
     await prefs.setInt(_kIter, iterations);
     await prefs.setBool(_kAck, false);
+    // Открытый код существует только сейчас — в журнал и пакеты не попадёт.
+    AppLog.addSecret(code);
     return code;
   }
 
