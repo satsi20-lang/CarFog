@@ -56,7 +56,9 @@ class _CardHintBannerState extends State<CardHintBanner> {
     return Container(
       key: const ValueKey('card_hint_banner'),
       margin: const EdgeInsets.symmetric(vertical: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      padding: PUi.landscape
+          ? const EdgeInsets.symmetric(horizontal: 16, vertical: 10)
+          : const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       decoration: BoxDecoration(
         color: const Color(0xFFFFB020).withValues(alpha: 0.18),
         border: Border.all(color: const Color(0xFFFFB020), width: 2),
@@ -71,9 +73,9 @@ class _CardHintBannerState extends State<CardHintBanner> {
             child: Text(
               widget.text,
               textAlign: TextAlign.center,
-              style: const TextStyle(
+              style: TextStyle(
                 color: Colors.white,
-                fontSize: PUi.bodySp + 4,
+                fontSize: PUi.m.bodySp + 4,
                 fontWeight: FontWeight.bold,
               ),
             ),

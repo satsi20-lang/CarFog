@@ -114,14 +114,79 @@ class AppLog {
         .toSet();
   }
 
+  // Секреты, известные только в момент появления (мастер-код при выдаче):
+  // живут до перезапуска, setSecrets их не стирает.
+  static final Set<String> _extraSecrets = {};
+
+  static void addSecret(String? value) {
+    final v = value?.trim();
+    if (v != null && v.length >= 3) _extraSecrets.add(v);
+  }
+
   static final RegExp _kv = RegExp(
-    r'''("?(?:pin|service_?pin|token|cloud_?token|p_token|anon_?key|cloud_?anon_?key|apikey|authorization|password|secret)"?\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s,}\]]+)''',
+    r'''("?(?:pin|service_?pin|token|cloud_?token|p_token|anon_?key|cloud_?anon_?key|apikey|authorization|password|secret|master_?code|claim_?code)"?\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s,}\]]+)''',
     caseSensitive: false,
   );
   static final RegExp _jwt = RegExp(
     r'eyJ[A-Za-z0-9_\-]{5,}\.[A-Za-z0-9_\-]{5,}\.[A-Za-z0-9_\-]*',
   );
   static final RegExp _bearer = RegExp(r'Bearer\s+[A-Za-z0-9._\-]+');
+
+  // Похоже на номер карты: 13–19 цифр подряд или группами через пробел/дефис.
+  // Вырезается, только если первая цифра 2–6 (платёжные системы) и сходится
+  // контрольная сумма Luhn — время и счётчики (мс эпохи начинаются с 1) не
+  // трогаются.
+  // Номер карты: 13–19 цифр подряд, группы по 4 через пробел/дефис или
+  // Amex 4-6-5; первая цифра 2–6, затем проверка Luhn. НЕ трогает (живая
+  // проверка 05.11, «baseline_power_w: 16.***»): цифры внутри числа
+  // (рядом точка/запятая с цифрой, буква, подчёркивание), хвосты UUID
+  // (шестнадцатеричная группа через дефис) и значения session=/id=
+  // (в т.ч. «"session_id":"…"»). После '=', ':', кавычки, пробела —
+  // маскирует, как прежде.
+  static final RegExp _cardLike = RegExp(
+    r'(?<![0-9a-z_.,])(?<![0-9a-f]-)(?<!(?:session|id)"?\s*[=:]\s*"?)'
+    r'(?:[2-6][0-9]{12,18}'
+    r'|[2-6][0-9]{3}(?:[ -][0-9]{4}){2,3}(?:[ -][0-9]{1,3})?'
+    r'|3[47][0-9]{2}[ -][0-9]{6}[ -][0-9]{5})'
+    r'(?![0-9a-z_]|[.,][0-9]|-[0-9a-f])',
+    caseSensitive: false,
+  );
+
+  @visibleForTesting
+  static bool luhnOk(String digits) {
+    var sum = 0;
+    var dbl = false;
+    for (var i = digits.length - 1; i >= 0; i--) {
+      var d = digits.codeUnitAt(i) - 48;
+      if (dbl) {
+        d *= 2;
+        if (d > 9) d -= 9;
+      }
+      sum += d;
+      dbl = !dbl;
+    }
+    return sum % 10 == 0;
+  }
+
+  // Дёшево отсечь строки, где цифр меньше 13 (почти все строки журнала):
+  // регулярное выражение по каждой строке заметно замедляло log().
+  static bool _mayHoldCard(String text) {
+    var digits = 0;
+    for (var i = 0; i < text.length; i++) {
+      final c = text.codeUnitAt(i);
+      if (c >= 48 && c <= 57 && ++digits >= 13) return true;
+    }
+    return false;
+  }
+
+  static String _redactCards(String text) => !_mayHoldCard(text)
+      ? text
+      : text.replaceAllMapped(_cardLike, (m) {
+          final digits = m[0]!.replaceAll(RegExp(r'[ -]'), '');
+          final card =
+              digits.length >= 13 && digits.length <= 19 && luhnOk(digits);
+          return card ? '***' : m[0]!;
+        });
 
   // Вырезает секреты из произвольного текста (журнал, значения пакета).
   // Подстановка '***' БЕЗ кавычек: результат безопасен внутри уже
@@ -135,7 +200,10 @@ class AppLog {
     for (final secret in _secrets) {
       out = out.replaceAll(secret, '***');
     }
-    return out;
+    for (final secret in _extraSecrets) {
+      out = out.replaceAll(secret, '***');
+    }
+    return _redactCards(out);
   }
 
   // Рекурсивно вырезает секреты из ЗНАЧЕНИЙ-строк дерева Map/List. Нельзя
@@ -221,6 +289,68 @@ class AppLog {
     return lines.length <= n ? lines : lines.sublist(lines.length - n);
   }
 
+  // Строки журнала не старше [window] от [now] и не больше [maxLines]
+  // последних из них (0 — без потолка). Раньше здесь было «не меньше N
+  // строк»: окно 15 минут добиралось до 300 строк строками за прошлые дни
+  // (живая проверка 05.11, пакет diag-1793898735439) — теперь N только
+  // потолок, а пустое окно — пустой список (пакет помечает это явно).
+  static Future<List<String>> tailSince(
+    Duration window, {
+    int maxLines = 0,
+    DateTime? now,
+    Duration? utcOffset,
+  }) async {
+    final all = await tail(1 << 30);
+    return windowLines(
+      all,
+      window,
+      now: now ?? DateTime.now(),
+      maxLines: maxLines,
+      utcOffset: utcOffset,
+    );
+  }
+
+  // Чистая часть tailSince (для тестов). Метки журнала — местное время без
+  // пояса ('2026-11-05T19:12:14.947136'). Сравнение идёт в абсолютном
+  // времени: метка переводится в UTC по [utcOffset] (смещение пояса, в
+  // котором писался журнал), а без него — по поясу аппарата (как Dart
+  // разбирает время без пояса, с учётом перехода на летнее время). Строки
+  // без метки идут вместе с соседними; поиск идёт с конца и останавливается
+  // на первой строке старше окна.
+  static List<String> windowLines(
+    List<String> all,
+    Duration window, {
+    required DateTime now,
+    int maxLines = 0,
+    Duration? utcOffset,
+  }) {
+    final from = now.toUtc().subtract(window);
+    var start = all.length;
+    for (var i = all.length - 1; i >= 0; i--) {
+      final at = lineTime(all[i], utcOffset: utcOffset);
+      if (at != null && at.isBefore(from)) break;
+      start = i;
+    }
+    if (maxLines > 0 && all.length - start > maxLines) {
+      start = all.length - maxLines;
+    }
+    return all.sublist(start);
+  }
+
+  // Метка времени строки журнала ('2026-11-03T21:35:56.695 [тег] …') как
+  // момент времени (UTC). Метка с «Z» или смещением берётся как есть.
+  @visibleForTesting
+  static DateTime? lineTime(String line, {Duration? utcOffset}) {
+    final sp = line.indexOf(' ');
+    if (sp < 19) return null;
+    final p = DateTime.tryParse(line.substring(0, sp));
+    if (p == null) return null;
+    if (p.isUtc || utcOffset == null) return p.toUtc();
+    return DateTime.utc(p.year, p.month, p.day, p.hour, p.minute, p.second,
+            p.millisecond, p.microsecond)
+        .subtract(utcOffset);
+  }
+
   // Только для тестов: сбросить состояние.
   @visibleForTesting
   static void resetForTest() {
@@ -229,6 +359,7 @@ class AppLog {
     _pending.clear();
     _dir = null;
     _secrets = {};
+    _extraSecrets.clear();
     _startReason = null;
     _version = null;
     _flushing = false;

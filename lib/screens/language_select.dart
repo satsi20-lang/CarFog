@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
@@ -45,6 +47,10 @@ class LanguageSelectScreen extends StatelessWidget {
       notifier.transition(AppState.standby);
     }
 
+    if (PUi.landscape) {
+      return _buildLandscape(context, langs, titles, select);
+    }
+
     return Scaffold(
       body: FogBackground(
         child: SafeArea(
@@ -60,9 +66,14 @@ class LanguageSelectScreen extends StatelessWidget {
                   Center(
                     child: LangButtonGrid(
                       langs: langs,
+                      // 520 — на SY156-A510; на узком IXP101M1 (533 dp)
+                      // не шире экрана без полей.
                       width: grid
                           ? MediaQuery.sizeOf(context).width - PUi.gutter * 2
-                          : 520,
+                          : math.min(
+                              520,
+                              MediaQuery.sizeOf(context).width - PUi.gutter * 2,
+                            ),
                       columns: grid ? 2 : 1,
                       buttonHeight: grid ? PUi.buttonH : PUi.buttonH + 16,
                       fontSize: 32,
@@ -71,6 +82,60 @@ class LanguageSelectScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 32),
+                  const Spacer(),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Альбом 853x533 dp (IXP101M1): заголовки сверху, кнопки языков в ряд
+  // (до 4 в ряду). Очень много языков — прокрутка (как и в портрете).
+  Widget _buildLandscape(
+    BuildContext context,
+    List<String> langs,
+    List<String> titles,
+    void Function(String) select,
+  ) {
+    final m = PUi.m;
+    final columns = math.min(langs.length, 4);
+    return Scaffold(
+      body: FogBackground(
+        child: SafeArea(
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: m.gutter + 24),
+            child: PortraitScroll(
+              child: Column(
+                children: [
+                  const Spacer(),
+                  Text(
+                    titles.length <= 3 ? titles.join('\n') : titles.join(' · '),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: titles.length <= 3 ? m.titleSp : m.bodySp,
+                      fontWeight: FontWeight.bold,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 40),
+                  Center(
+                    child: LangButtonGrid(
+                      langs: langs,
+                      width: math.min(
+                        200.0 * columns + 20 * (columns - 1),
+                        MediaQuery.sizeOf(context).width - (m.gutter + 24) * 2,
+                      ),
+                      columns: columns,
+                      buttonHeight: m.buttonH + 12,
+                      fontSize: 26,
+                      spacing: 20,
+                      onSelect: select,
+                    ),
+                  ),
                   const Spacer(),
                 ],
               ),

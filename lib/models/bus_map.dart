@@ -28,7 +28,7 @@ import 'hardware_profile.dart';
 // ------------------------------------------------------------
 // Допустимые узлы шины. Запрещённые узлы НЕЛЬЗЯ открывать никогда, даже если
 // выбраны вручную (зеркало — android/.../BusPortPolicy.kt):
-//   /dev/ttyS1            — на Syoung занят Bluetooth;
+//   /dev/ttyS1            — на Syoung занят Bluetooth, на IXP101M1 — 4G-модем;
 //   /dev/ttyUSB0..2       — USB-модем 4G (Quectel).
 enum BusPortCheck { ok, badFormat, forbidden }
 
@@ -55,12 +55,12 @@ class BusParams {
   BusParams._();
 
   // Порт шины — НАСТРОЙКА (AppConfig.busPort, по умолчанию
-  // HardwareProfile.defaultBusPort), а не константа: на Syoung SY156-A510
+  // HardwareProfile.current.defaultBusPort), а не константа: на Syoung SY156-A510
   // UART с номером 5 нет, а узел белого 4-пинового разъёма ещё не определён. Значение
   // выставляется один раз при старте из конфигурации (applyConfigured) и
   // меняется только перезапуском приложения. Запрещённые и недопустимые
   // узлы сюда не попадают никогда: берётся значение по умолчанию.
-  static String _port = HardwareProfile.defaultBusPort;
+  static String _port = HardwareProfile.current.defaultBusPort;
   static String get port => _port;
 
   // Применяет сохранённое значение; недопустимое/запрещённое отклоняется
@@ -74,7 +74,7 @@ class BusParams {
   }
 
   @visibleForTesting
-  static void resetPortForTest() => _port = HardwareProfile.defaultBusPort;
+  static void resetPortForTest() => _port = HardwareProfile.current.defaultBusPort;
 
   static const int baud = 9600;
 

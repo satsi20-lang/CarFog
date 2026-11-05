@@ -62,7 +62,7 @@ void main() {
 
   group('значение по умолчанию и применение', () {
     test('по умолчанию /dev/ttyS4 — из профиля', () {
-      expect(HardwareProfile.defaultBusPort, '/dev/ttyS4');
+      expect(HardwareProfile.current.defaultBusPort, '/dev/ttyS4');
       expect(AppConfig().busPort, '/dev/ttyS4');
       expect(BusParams.port, '/dev/ttyS4');
     });
@@ -174,11 +174,13 @@ void main() {
     });
   });
 
-  test('литерала ttyS5 нет ни в lib/, ни в android/ (исходники)', () {
+  // ttyS5 — порт по умолчанию профиля IXP101M1; он живёт только в профиле.
+  test('литерал ttyS5 только в lib/models/hardware_profile.dart', () {
     final hits = <String>[];
     for (final root in ['lib', 'android/app/src']) {
       for (final f in Directory(root).listSync(recursive: true).whereType<File>()) {
         if (!RegExp(r'\.(dart|kt|java|xml|gradle|kts)$').hasMatch(f.path)) continue;
+        if (f.path == 'lib/models/hardware_profile.dart') continue;
         if (f.readAsStringSync().contains('ttyS5')) hits.add(f.path);
       }
     }

@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import '../models/hardware_profile.dart';
 import 'app_log_service.dart';
 
 // Состояние киоска через Device Owner (KioskPolicy на нативной стороне).
@@ -32,6 +33,15 @@ class KioskPolicyState {
   // Старый тумблер «Киоск-режим» (роль домашнего экрана через алиас) — только
   // без Device Owner: с ним роль закрепляет политика, а экран — блокировка.
   bool get legacyKioskVisible => !deviceOwner;
+
+  // Для облачного слепка (reported_config.kiosk_lock) и пакета
+  // диагностики. Старый флаг kiosk_mode_enabled — про домашний экран, это
+  // про Lock Task.
+  Map<String, dynamic> toReported() => {
+    'device_owner': deviceOwner,
+    'lock_enabled': lockEnabled,
+    'lock_task_active': lockTaskActive,
+  };
 
   // Ответ канала; любые отсутствующие/чужие поля — «нет Device Owner».
   factory KioskPolicyState.fromMap(Map? m) {
@@ -143,6 +153,76 @@ class SystemService {
       return await _channel.invokeMethod<String>('getFilesDir');
     } catch (e) {
       debugPrint('SystemService.getFilesDir error: $e');
+      return null;
+    }
+  }
+
+  // Аппаратный профиль этого запуска (вызывается один раз при старте, до
+  // чтения настроек: от профиля зависит порт шины по умолчанию). Ошибка
+  // канала — профиль по умолчанию.
+  static Future<HardwareProfile> detectHardwareProfile() async {
+    try {
+      final m = await _channel.invokeMethod<Map>('getHardwareIdentity');
+      if (m == null) return HardwareProfile.fallback;
+      final w = m['width_px'], h = m['height_px'];
+      return HardwareProfile.detect(
+        props: [m['board'], m['device'], m['model'], m['hardware']]
+            .map((v) => v?.toString())
+            .toList(),
+        longSidePx: w is int && h is int ? (w > h ? w : h) : null,
+      );
+    } catch (e) {
+      debugPrint('SystemService.detectHardwareProfile error: $e');
+      return HardwareProfile.fallback;
+    }
+  }
+
+  // Сторож системных панелей (SystemBarsGuard.kt): включается при старте
+  // только для профиля с guardSystemBars (IXP101M1). Ошибка канала не мешает
+  // запуску.
+  static Future<void> setSystemBarsGuard(
+    bool enabled, {
+    int hideDelayMs = 2000,
+  }) async {
+    try {
+      await _channel.invokeMethod('setSystemBarsGuard', {
+        'enabled': enabled,
+        'hideDelayMs': hideDelayMs,
+      });
+    } catch (e) {
+      debugPrint('SystemService.setSystemBarsGuard error: $e');
+    }
+  }
+
+  // Состояние сторожа панелей (только для пакета диагностики). null —
+  // канал недоступен.
+  static Future<Map<String, dynamic>?> systemBarsState() async {
+    try {
+      final m = await _channel.invokeMethod<Map>('getSystemBarsState');
+      return m?.map((k, v) => MapEntry(k.toString(), v));
+    } catch (e) {
+      debugPrint('SystemService.systemBarsState error: $e');
+      return null;
+    }
+  }
+
+  // Сжатие снимка экрана в JPEG на нативной стороне (Bitmap.compress).
+  // rgba — байты RGBA строками (ui.ImageByteFormat.rawRgba). null — ошибка.
+  static Future<Uint8List?> encodeJpeg(
+    int width,
+    int height,
+    Uint8List rgba, {
+    required int quality,
+  }) async {
+    try {
+      return await _channel.invokeMethod<Uint8List>('encodeJpeg', {
+        'width': width,
+        'height': height,
+        'rgba': rgba,
+        'quality': quality,
+      });
+    } catch (e) {
+      debugPrint('SystemService.encodeJpeg error: $e');
       return null;
     }
   }

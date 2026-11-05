@@ -51,11 +51,14 @@ VER_LINE=$(grep '^version:' pubspec.yaml | awk '{print $2}')
 VNAME=${VER_LINE%+*}
 VCODE=${VER_LINE#*+}
 
-# Аппаратный профиль — единственный источник правды lib/models/hardware_profile.dart
-# (свою копию не храним): версии с 1.8.0 собираются только под него.
+# Аппаратные профили — единственный источник правды lib/models/hardware_profile.dart
+# (свою копию не храним). Сборка универсальная: одна APK для SY156-A510 и
+# IXP101M1, профиль выбирается на устройстве при старте.
 HW_FILE=lib/models/hardware_profile.dart
-HW_ID=$(sed -n "s/.*static const String id = '\([^']*\)';.*/\1/p" "$HW_FILE")
-HW_NOTE=$(sed -n "s/.*static const String releaseNote = '\([^']*\)';.*/\1/p" "$HW_FILE")
+HW_ID=$(sed -n "s/^    id: '\([^']*\)',.*/\1/p; s/.*static const String fallbackId = '\([^']*\)';.*/\1/p" "$HW_FILE" \
+  | sort -u | paste -sd, -)
+HW_NOTE=$(tr -d '\n' < "$HW_FILE" \
+  | sed -n "s/.*static const String releaseNote = *'\([^']*\)';.*/\1/p")
 [ -n "$HW_ID" ] && [ -n "$HW_NOTE" ] \
   || { echo "ОШИБКА: не прочитан профиль из $HW_FILE" >&2; exit 4; }
 
@@ -95,9 +98,9 @@ cp "$APK" "$OUT_DIR/$NAME"
 {
   echo "$NAME"
   echo "версия $VNAME+$VCODE $HW_NOTE"
-  echo "профиль: $HW_ID"
+  echo "профили: $HW_ID"
   [ "$TEST_BUILD" = "1" ] && echo "ТЕСТОВАЯ СБОРКА (без сигнала здоровья)"
   echo "sha256=$SHA"
 } > "$OUT_DIR/$NAME.note.txt"
-echo "ПРИМЕЧАНИЕ: версия $VNAME+$VCODE $HW_NOTE (профиль $HW_ID)"
+echo "ПРИМЕЧАНИЕ: версия $VNAME+$VCODE $HW_NOTE (профили $HW_ID)"
 echo "OK  $NAME  sha256=$SHA  size=$SIZE"

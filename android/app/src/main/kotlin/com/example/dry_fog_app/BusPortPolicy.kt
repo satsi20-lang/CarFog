@@ -3,7 +3,8 @@ package com.example.dry_fog_app
 // Допустимые узлы шины RS485 — зеркало BusPortPolicy в lib/models/bus_map.dart
 // (проверка и там, и здесь: нативная сторона не доверяет вызывающему).
 // Запрещённые узлы нельзя открывать никогда, даже если их выбрали вручную:
-// ttyS1 занят Bluetooth на Syoung SY156-A510, ttyUSB0..2 — USB-модем 4G.
+// ttyS1 занят Bluetooth на Syoung SY156-A510 и 4G-модемом на IXP101M1,
+// ttyUSB0..2 — USB-модем 4G.
 object BusPortPolicy {
     private val shape = Regex("^/dev/(ttyS|ttyUSB|ttyACM)[0-9]+$")
 

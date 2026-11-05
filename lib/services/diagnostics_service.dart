@@ -5,14 +5,18 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import '../models/app_state.dart';
 import '../models/bus_map.dart';
+import '../models/hardware_profile.dart';
 import '../models/remote_limits.dart';
 import 'app_log_service.dart';
 import 'bus_watchdog_service.dart';
+import 'card_terminal_service.dart';
 import 'cloud_service.dart';
+import 'health_summary.dart';
 import 'heater_safety_monitor.dart';
 import 'heater_trial_service.dart';
 import 'modbus_service.dart';
 import 'output_watchdog_service.dart';
+import 'system_service.dart';
 
 // Итог последней попытки отправки пакета (для сервисного меню).
 class DiagnosticsStatus {
@@ -85,9 +89,30 @@ class DiagnosticsService {
 
   // ---------------------------------------------------------------- сбор
 
-  static Future<Map<String, dynamic>> collect(AppNotifier n) async {
-    final now = DateTime.now();
+  // Окно журнала в минутах из параметра команды: 1…60, по умолчанию 15.
+  static int logWindowMinutes(Object? requested) {
+    if (requested is num && requested.isFinite) {
+      final m = requested.round();
+      if (m >= 1) return m.clamp(1, DiagnosticsLimits.logWindowMaxMin);
+    }
+    return DiagnosticsLimits.logWindowDefaultMin;
+  }
+
+  static String? _utc(DateTime? t) => t?.toUtc().toIso8601String();
+
+  static Future<Map<String, dynamic>> collect(
+    AppNotifier n, {
+    int logMinutes = DiagnosticsLimits.logWindowDefaultMin,
+    DateTime? now,
+  }) async {
+    final at = now ?? DateTime.now();
     final cfg = n.config;
+    final minutes = logWindowMinutes(logMinutes);
+    final logTail = await AppLog.tailSince(
+      Duration(minutes: minutes),
+      maxLines: DiagnosticsLimits.logTailLines,
+      now: at,
+    );
 
     Map<String, dynamic> device = const {};
     try {
@@ -124,14 +149,55 @@ class DiagnosticsService {
         .map((e) => e.toJson())
         .toList();
 
+    final profile = HardwareProfile.current;
+    final kiosk = await SystemService.kioskPolicyState();
+    final term = CardTerminalService.status.value;
+    final lastTemp = ModbusService.lastUsableTemperature;
+
     final bundle = <String, dynamic>{
-      'bundle_version': 1,
-      'collected_at': now.toIso8601String(),
+      'bundle_version': DiagnosticsLimits.bundleVersion,
+      // Время сбора — UTC с «Z»; местное время и пояс аппарата — отдельно.
+      'collected_at': _utc(at),
+      'time': {
+        'local': at.toLocal().toIso8601String(),
+        'tz': at.toLocal().timeZoneName,
+        'utc_offset_min': at.toLocal().timeZoneOffset.inMinutes,
+      },
       'device_id': cfg.deviceId,
       'app': {
         'version': CloudService.appVersion,
+        'hardware_profile': profile.id,
+        // Пакета бренда пока нет (белый лейбл — отдельная задача).
+        'brand': null,
         'start_reason': AppLog.startReason,
         'log_ready': AppLog.isReady,
+      },
+      'kiosk': {
+        ...kiosk.toReported(),
+        // Сторож панелей навигации — только у профиля, где он включён.
+        'system_bars': profile.guardSystemBars
+            ? await SystemService.systemBarsState()
+            : null,
+      },
+      'health': HealthSummary.build(n, now: at),
+      // Последние ГОДНЫЕ показания и время (живые чтения — в reads).
+      'sensors_last_good': {
+        'temperature_c': lastTemp?.c,
+        'temperature_at': _utc(lastTemp?.at),
+        'io_module_ok_at': _utc(ModbusService.lastInputsOkAt),
+        'energy_meter_ok_at': _utc(ModbusService.lastEnergyOkAt),
+      },
+      // Статус связи терминала; сырые кадры (CardTerminalService.recent) в
+      // пакет не входят.
+      'terminal': {
+        'type': cfg.paymentTerminalType,
+        'state': term.state,
+        'card_available': term.cardAvailable,
+        'reader_enabled': term.readerEnabled,
+        'in_session': term.inSession,
+        'consecutive_failures': term.consecutiveFailures,
+        'unexpected_frames': term.unexpectedFrames,
+        'payment_state': term.paymentState,
       },
       'device': device,
       'state': {
@@ -196,9 +262,58 @@ class DiagnosticsService {
         'cloud_enabled': CloudService.isCloudEnabled,
       },
       'events_tail': events,
-      'log_tail': await AppLog.tail(DiagnosticsLimits.logTailLines),
+      // Журнал только за последние N минут (не больше 300 строк). Поля
+      // окна: log_window_minutes — применённое окно, log_lines — сколько
+      // строк вошло, log_window_empty — в окне не было ни одной строки.
+      // log_window_min — прежнее имя для портала.
+      'log_window_min': minutes,
+      'log_window_minutes': minutes,
+      'log_tail': logTail,
+      'log_lines': logTail.length,
+      'log_window_empty': logTail.isEmpty,
     };
     return bundle;
+  }
+
+  // Текст пакета не больше [maxBytes]: сначала отбрасываются старые строки
+  // журнала, затем старые события; сколько отброшено — в поле truncated.
+  static String encodeWithinCap(
+    Map<String, dynamic> bundle, {
+    int maxBytes = DiagnosticsLimits.maxBundleBytes,
+  }) {
+    var text = encode(bundle);
+    var size = utf8.encode(text).length;
+    if (size <= maxBytes) return text;
+    final log = List<Object?>.from(bundle['log_tail'] as List? ?? const []);
+    final events = List<Object?>.from(bundle['events_tail'] as List? ?? const []);
+    var droppedLog = 0;
+    var droppedEvents = 0;
+    while (size > maxBytes && (log.isNotEmpty || events.isNotEmpty)) {
+      // Убрать примерно столько, сколько лишнего (не меньше одной записи).
+      final over = size - maxBytes;
+      if (log.isNotEmpty) {
+        final avg = (utf8.encode(jsonEncode(log)).length / log.length).ceil();
+        final k = (over / (avg == 0 ? 1 : avg)).ceil().clamp(1, log.length);
+        log.removeRange(0, k);
+        droppedLog += k;
+      } else {
+        final avg = (utf8.encode(jsonEncode(events)).length / events.length).ceil();
+        final k = (over / (avg == 0 ? 1 : avg)).ceil().clamp(1, events.length);
+        events.removeRange(0, k);
+        droppedEvents += k;
+      }
+      bundle['log_tail'] = log;
+      bundle['events_tail'] = events;
+      bundle['log_lines'] = log.length;
+      bundle['truncated'] = {
+        'log_lines_dropped': droppedLog,
+        'events_dropped': droppedEvents,
+        'max_bytes': maxBytes,
+      };
+      text = encode(bundle);
+      size = utf8.encode(text).length;
+    }
+    return text;
   }
 
   static Future<Object?> _safe(Future<Object?> Function() f) async {
@@ -230,10 +345,11 @@ class DiagnosticsService {
   static Future<DiagnosticsStatus> collectAndSend(
     AppNotifier n, {
     String trigger = 'manual',
+    int logMinutes = DiagnosticsLimits.logWindowDefaultMin,
   }) async {
-    final bundle = await collect(n);
+    final bundle = await collect(n, logMinutes: logMinutes);
     bundle['trigger'] = trigger;
-    final text = encode(bundle);
+    final text = encodeWithinCap(bundle);
     final id = 'diag-${DateTime.now().millisecondsSinceEpoch}';
     final status = await _upload(id, text);
     // Квота/токен: пакет не сохраняется для повторов (они бессмысленны и

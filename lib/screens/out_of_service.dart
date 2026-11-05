@@ -33,8 +33,8 @@ class OutOfServiceScreen extends StatelessWidget {
           child: Stack(
             children: [
               Positioned(
-                top: 24,
-                right: 24,
+                top: PUi.landscape ? 12 : 24,
+                right: PUi.landscape ? 12 : 24,
                 child: LangSwitcher(
                   current: lang,
                   langs: notifier.displayLangs,
@@ -57,6 +57,9 @@ class OutOfServiceScreen extends StatelessWidget {
                 ),
               ),
 
+              if (PUi.landscape)
+                _landscape(lang)
+              else
               Center(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.fromLTRB(PUi.gutter, 112, PUi.gutter, 24),
@@ -108,6 +111,59 @@ class OutOfServiceScreen extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  // Альбом 853x533 dp (IXP101M1): значок слева, текст справа.
+  Widget _landscape(String lang) {
+    final m = PUi.m;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(m.gutter + 24, m.langH + 24, m.gutter + 24, 16),
+      child: Row(
+        children: [
+          Container(
+            width: 168,
+            height: 168,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: const Color(0xFFE53935).withValues(alpha: 0.12),
+              border: Border.all(color: const Color(0xFFE53935), width: 4),
+            ),
+            child: const Icon(
+              Icons.build_circle_outlined,
+              color: Color(0xFFE53935),
+              size: 100,
+            ),
+          ),
+          const SizedBox(width: 40),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  I18n.tr(lang, 'out_of_service.title'),
+                  style: const TextStyle(
+                    color: Color(0xFFE53935),
+                    fontSize: 38,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  I18n.tr(lang, 'out_of_service.detail'),
+                  style: TextStyle(
+                    color: const Color(0xFF8899AA),
+                    fontSize: m.bodySp + 2,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

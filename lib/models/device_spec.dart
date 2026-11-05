@@ -15,7 +15,7 @@ class DeviceSpec {
     this.pumps = defaultPumps,
     this.langs = defaultLangs,
     this.defaultLang = 'et',
-    this.hardwareProfile = HardwareProfile.id,
+    this.hardwareProfile = HardwareProfile.fallbackId,
   });
 
   static const int minPumps = 4;
@@ -110,7 +110,7 @@ class DeviceSpec {
       hardwareProfile:
           prof is String && prof.trim().isNotEmpty && prof.length <= 64
           ? prof
-          : HardwareProfile.id,
+          : HardwareProfile.fallbackId,
     );
   }
 

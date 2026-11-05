@@ -6,6 +6,7 @@ import '../../models/app_state.dart';
 import '../../models/bus_map.dart';
 import '../../services/app_log_service.dart';
 import '../../services/cloud_service.dart';
+import '../../services/screenshot_service.dart';
 
 // Секция «Порт шины RS485» в сервисном меню (вкладка «Диагностика»).
 // Порт — настройка AppConfig.busPort: менять только по указанию
@@ -163,11 +164,17 @@ class _BusPortSectionState extends State<BusPortSection> {
     ).showSnackBar(SnackBar(content: Text(t['saved']!)));
   }
 
-  Future<String?> _askPin(String port, Map<String, String> t) {
-    return showDialog<String>(
-      context: context,
-      builder: (ctx) => _PinDialog(port: port, t: t),
-    );
+  Future<String?> _askPin(String port, Map<String, String> t) async {
+    // Пока открыт ввод PIN, снимок экрана запрещён (capture_screen).
+    ScreenshotService.secretInputOpened();
+    try {
+      return await showDialog<String>(
+        context: context,
+        builder: (ctx) => _PinDialog(port: port, t: t),
+      );
+    } finally {
+      ScreenshotService.secretInputClosed();
+    }
   }
 
   @override

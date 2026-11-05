@@ -6,12 +6,14 @@ import '../models/update_limits.dart';
 import 'adb_network_service.dart';
 import 'cloud_service.dart';
 import 'diagnostics_service.dart';
+import 'health_summary.dart';
 import 'master_code_service.dart';
 import 'pin_policy.dart';
 import 'modbus_service.dart';
 import 'remote_command_guard.dart';
 import 'remote_commands.dart';
 import 'rollout_service.dart';
+import 'system_service.dart';
 import 'update_service.dart';
 
 // Периодический обмен с облаком: отправка накопленных событий,
@@ -222,6 +224,11 @@ class SyncService {
     snapshot['skip_health_signal_build'] = UpdateLimits.skipHealthSignalBuild;
     snapshot['master_code_acknowledged'] = await MasterCodeService.isAcknowledged();
     snapshot['service_pin_weak'] = PinPolicy.isWeak(notifier.config.servicePin);
+    // RD1: блокировка киоска (Lock Task) — kiosk_mode_enabled выше про
+    // старый тумблер «Киоск-режим» (домашний экран) и не меняется. health —
+    // коды для светофора клиента (customer_device_health).
+    snapshot['kiosk_lock'] = (await SystemService.kioskPolicyState()).toReported();
+    snapshot['health'] = HealthSummary.build(notifier);
 
     final last = _lastSentConfigSnapshot;
     final sentAt = _lastConfigSentAt;

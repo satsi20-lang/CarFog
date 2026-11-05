@@ -74,8 +74,8 @@ class _FinishedScreenState extends State<FinishedScreen>
             children: [
               // Lang switcher
               Positioned(
-                top: 24,
-                right: 24,
+                top: PUi.landscape ? 12 : 24,
+                right: PUi.landscape ? 12 : 24,
                 child: LangSwitcher(
                   current: lang,
                   langs: notifier.displayLangs,
@@ -84,6 +84,9 @@ class _FinishedScreenState extends State<FinishedScreen>
               ),
 
               // Main content
+              if (PUi.landscape)
+                _buildLandscape(lang)
+              else
               Center(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.only(top: 112, bottom: 24),
@@ -193,6 +196,98 @@ class _FinishedScreenState extends State<FinishedScreen>
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  // Альбом 853x533 dp (IXP101M1): галочка слева, текст и отсчёт справа.
+  Widget _buildLandscape(String lang) {
+    final m = PUi.m;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(m.gutter + 24, m.langH + 24, m.gutter + 24, 16),
+      child: Row(
+        children: [
+          ScaleTransition(
+            scale: _scaleAnimation,
+            child: Container(
+              width: 168,
+              height: 168,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: const Color(0xFF00C6B2).withValues(alpha: 0.15),
+                border: Border.all(color: const Color(0xFF00C6B2), width: 4),
+              ),
+              child: const Icon(
+                Icons.check_rounded,
+                color: Color(0xFF00C6B2),
+                size: 100,
+              ),
+            ),
+          ),
+          const SizedBox(width: 40),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _t('title', lang),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 40,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  _t('subtitle', lang),
+                  style: TextStyle(
+                    color: const Color(0xFF8899AA),
+                    fontSize: m.bodySp + 2,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 28),
+                Row(
+                  children: [
+                    Container(
+                      width: 72,
+                      height: 72,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: const Color(0xFF00C6B2).withValues(alpha: 0.4),
+                          width: 2,
+                        ),
+                      ),
+                      child: Center(
+                        child: Text(
+                          _t('countdown', lang, {'seconds': _secondsLeft}),
+                          style: const TextStyle(
+                            color: Color(0xFF00C6B2),
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Text(
+                        _t('returning', lang),
+                        style: TextStyle(
+                          color: const Color(0xFF8899AA),
+                          fontSize: m.minBodySp,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

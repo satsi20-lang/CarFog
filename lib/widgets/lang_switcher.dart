@@ -46,9 +46,9 @@ class LangSwitcher extends StatelessWidget {
           onTap: () => onChanged(lang),
           child: Container(
             margin: const EdgeInsets.only(left: 8),
-            constraints: const BoxConstraints(
-              minWidth: PUi.langW,
-              minHeight: PUi.langH,
+            constraints: BoxConstraints(
+              minWidth: PUi.m.langW,
+              minHeight: PUi.m.langH,
             ),
             alignment: Alignment.center,
             decoration: BoxDecoration(
@@ -65,7 +65,7 @@ class LangSwitcher extends StatelessWidget {
               lang.toUpperCase(),
               style: TextStyle(
                 color: isActive ? _accent : const Color(0xFF8899AA),
-                fontSize: 24,
+                fontSize: PUi.m.langSp,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -104,9 +104,9 @@ class _CompactLangButton extends StatelessWidget {
       child: Container(
         margin: const EdgeInsets.only(left: 8),
         padding: const EdgeInsets.symmetric(horizontal: 14),
-        constraints: const BoxConstraints(
-          minWidth: PUi.langW,
-          minHeight: PUi.langH,
+        constraints: BoxConstraints(
+          minWidth: PUi.m.langW,
+          minHeight: PUi.m.langH,
         ),
         decoration: BoxDecoration(
           color: _accent.withValues(alpha: 0.15),
@@ -120,9 +120,9 @@ class _CompactLangButton extends StatelessWidget {
             const SizedBox(width: 8),
             Text(
               current.toUpperCase(),
-              style: const TextStyle(
+              style: TextStyle(
                 color: _accent,
-                fontSize: 24,
+                fontSize: PUi.m.langSp,
                 fontWeight: FontWeight.bold,
               ),
             ),

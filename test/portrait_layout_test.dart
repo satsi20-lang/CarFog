@@ -90,11 +90,25 @@ void main() {
   }
 
   test('профиль: логический размер соответствует 1080x1920 при density 240', () {
-    expect(HardwareProfile.screenWidthPx / (HardwareProfile.densityDpi / 160),
-        HardwareProfile.logicalWidthDp);
-    expect(HardwareProfile.screenHeightPx / (HardwareProfile.densityDpi / 160),
-        HardwareProfile.logicalHeightDp);
-    expect(HardwareProfile.orientation, 'portrait');
+    const p = HardwareProfile.sy156a510;
+    expect(p.screenWidthPx / (p.densityDpi / 160), p.logicalWidthDp);
+    expect(p.screenHeightPx / (p.densityDpi / 160), p.logicalHeightDp);
+    expect(p.logicalWidthDp, 720);
+    expect(p.logicalHeightDp, 1280);
+    expect(p.orientation, ScreenOrientation.portrait);
+    // Портретный код читает константы PUi — они равны набору профиля.
+    expect(PUi.titleSp, p.ui.titleSp);
+    expect(PUi.bodySp, p.ui.bodySp);
+    expect(PUi.minTitleSp, p.ui.minTitleSp);
+    expect(PUi.minBodySp, p.ui.minBodySp);
+    expect(PUi.buttonH, p.ui.buttonH);
+    expect(PUi.minButtonH, p.ui.minButtonH);
+    expect(PUi.minTouch, p.ui.minTouch);
+    expect(PUi.gutter, p.ui.gutter);
+    expect(PUi.langH, p.ui.langH);
+    expect(PUi.langW, p.ui.langW);
+    expect(HardwareProfile.current, same(p)); // тесты идут на профиле по умолчанию
+    expect(PUi.landscape, isFalse);
   });
 
   final screens = <String, Widget Function()>{

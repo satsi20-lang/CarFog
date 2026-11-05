@@ -158,13 +158,14 @@ class AppConfig {
     this.energyMeterInstalled = false,
     this.coinAcceptorInstalled = false,
     this.idlePowerTariffPerKwh = 0.20,
-    this.busPort = HardwareProfile.defaultBusPort,
+    String? busPort,
     this.specPumps = DeviceSpec.defaultPumps,
     this.specLangs = DeviceSpec.defaultLangs,
     this.specDefaultLang = 'et',
     this.standbyVideoSound = false,
     Map<String, List<String>>? flavorNames,
-  }) : paymentTerminalType =
+  }) : busPort = busPort ?? HardwareProfile.current.defaultBusPort,
+       paymentTerminalType =
            PaymentTerminalType.all.contains(paymentTerminalType)
            ? paymentTerminalType!
            : (paymentTerminalEnabled
@@ -379,7 +380,7 @@ class AppConfig {
       'spec_pumps': specPumps,
       'spec_langs': specLangs,
       'spec_default_lang': specDefaultLang,
-      'hardware_profile': HardwareProfile.id,
+      'hardware_profile': HardwareProfile.current.id,
     };
   }
 }

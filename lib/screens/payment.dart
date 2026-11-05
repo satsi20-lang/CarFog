@@ -596,6 +596,16 @@ class _PaymentScreenState extends State<PaymentScreen> {
       );
     }
 
+    if (PUi.landscape) {
+      return _buildLandscape(
+        notifier,
+        t,
+        flavorName,
+        remainingCents,
+        progress,
+      );
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFF1A1A1A),
       body: FogBackground(
@@ -751,6 +761,179 @@ class _PaymentScreenState extends State<PaymentScreen> {
       ),
     );
   }
+  // Альбом 853x533 dp (IXP101M1): слева аромат, цена и таймер, справа
+  // карта/инструкция, прогресс, суммы и отмена. Без прокрутки.
+  Widget _buildLandscape(
+    AppNotifier notifier,
+    String Function(String) t,
+    String flavorName,
+    int remainingCents,
+    double progress,
+  ) {
+    final m = PUi.m;
+    return Scaffold(
+      backgroundColor: const Color(0xFF1A1A1A),
+      body: FogBackground(
+        child: SafeArea(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(m.gutter, 12, m.gutter, m.gutter - 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                LandscapeHeader(
+                  title: t('title'),
+                  trailing: LangSwitcher(
+                    current: notifier.lang,
+                    langs: notifier.displayLangs,
+                    onChanged: notifier.setLanguage,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            Column(
+                              children: [
+                                Text(
+                                  t('flavor'),
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: Colors.white60,
+                                    fontSize: m.minBodySp,
+                                  ),
+                                ),
+                                Text(
+                                  flavorName,
+                                  textAlign: TextAlign.center,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: const Color(0xFF2EC4B6),
+                                    fontSize: m.titleSp,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Column(
+                              children: [
+                                FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    '${_euro(_priceCents)} €',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 88,
+                                      fontWeight: FontWeight.bold,
+                                      height: 1.1,
+                                    ),
+                                  ),
+                                ),
+                                Text(
+                                  t('price'),
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: Colors.white60,
+                                    fontSize: m.minBodySp,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Text(
+                              _formatTime(_secondsLeft),
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Colors.white54,
+                                fontSize: 28,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      SizedBox(width: m.gutter + 4),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(
+                              child: Center(
+                                child: _cardMode && _cardMsg != null
+                                    ? _CardPrompt(
+                                        key: const ValueKey('card_prompt'),
+                                        text: t(_cardMsg!),
+                                        processing: _cardProcessing,
+                                        warning:
+                                            !_cardArmed && !_cardProcessing,
+                                      )
+                                    : Text(
+                                        _coinAcceptorDown && _terminalEnabled
+                                            ? t(
+                                                'instruction_coin_down_with_card',
+                                              )
+                                            : _terminalEnabled
+                                            ? t('instruction_with_card')
+                                            : t('instruction'),
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          color: Colors.white70,
+                                          fontSize: m.bodySp + 2,
+                                        ),
+                                      ),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(10),
+                              child: LinearProgressIndicator(
+                                value: progress,
+                                minHeight: 24,
+                                backgroundColor: const Color(0xFF2E2E2E),
+                                valueColor:
+                                    const AlwaysStoppedAnimation<Color>(
+                                      Color(0xFF2EC4B6),
+                                    ),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            _InfoRow(
+                              label: t('paid'),
+                              value: '${_euro(_balanceCents)} €',
+                              valueColor: _balanceCents >= _priceCents
+                                  ? Colors.greenAccent
+                                  : const Color(0xFF2EC4B6),
+                            ),
+                            const SizedBox(height: 4),
+                            _InfoRow(
+                              label: t('remaining'),
+                              value: '${_euro(remainingCents)} €',
+                            ),
+                            const SizedBox(height: 12),
+                            // После 10 03 и vend отмены нет — деньги в обработке.
+                            if (!_cardProcessing)
+                              LandscapeCancelButton(
+                                key: const ValueKey('payment_cancel'),
+                                text: t('cancel'),
+                                onPressed: _cancel,
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 // «Приложите карту» с рисунком и сообщения оплаты картой (ТЗ 9.2–9.3).
@@ -771,7 +954,16 @@ class _CardPrompt extends StatelessWidget {
     final color = warning ? const Color(0xFFFFB020) : const Color(0xFF2EC4B6);
     return Column(
       children: [
-        if (processing)
+        if (processing && PUi.landscape)
+          const SizedBox(
+            width: 56,
+            height: 56,
+            child: CircularProgressIndicator(
+              strokeWidth: 5,
+              color: Color(0xFF2EC4B6),
+            ),
+          )
+        else if (processing)
           const SizedBox(
             width: 72,
             height: 72,
@@ -781,14 +973,18 @@ class _CardPrompt extends StatelessWidget {
             ),
           )
         else
-          Icon(Icons.contactless, size: 96, color: color),
-        const SizedBox(height: 16),
+          Icon(
+            Icons.contactless,
+            size: PUi.landscape ? 72 : 96,
+            color: color,
+          ),
+        SizedBox(height: PUi.landscape ? 8 : 16),
         Text(
           text,
           textAlign: TextAlign.center,
           style: TextStyle(
             color: warning ? color : Colors.white,
-            fontSize: PUi.bodySp + 8,
+            fontSize: PUi.m.bodySp + (PUi.landscape ? 4 : 8),
             fontWeight: FontWeight.bold,
           ),
         ),
@@ -816,9 +1012,9 @@ class _InfoRow extends StatelessWidget {
         Flexible(
           child: Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               color: Colors.white60,
-              fontSize: PUi.bodySp + 4,
+              fontSize: PUi.m.bodySp + 4,
             ),
           ),
         ),
@@ -826,7 +1022,7 @@ class _InfoRow extends StatelessWidget {
           value,
           style: TextStyle(
             color: valueColor,
-            fontSize: PUi.bodySp + 8,
+            fontSize: PUi.m.bodySp + (PUi.landscape ? 6 : 8),
             fontWeight: FontWeight.bold,
           ),
         ),

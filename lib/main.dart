@@ -6,6 +6,7 @@ import 'dart:io';
 import 'models/app_state.dart';
 import 'models/bus_map.dart';
 import 'models/device_spec.dart';
+import 'models/hardware_profile.dart';
 import 'services/thermo_idle_watch_service.dart';
 import 'services/adb_network_service.dart';
 import 'services/app_log_service.dart';
@@ -34,7 +35,23 @@ import 'services/card_payment_service.dart';
 import 'services/card_terminal_service.dart';
 import 'services/sync_service.dart';
 import 'services/update_service.dart';
+import 'services/screenshot_service.dart';
 import 'services/system_service.dart';
+import 'widgets/portrait_ui.dart';
+
+
+// Сторож системных панелей — только для профиля, которому он нужен.
+Future<void> applySystemBarsGuard(HardwareProfile p) async {
+  if (!p.guardSystemBars) return;
+  SystemBarsLift.listen();
+  await SystemService.setSystemBarsGuard(true);
+}
+
+// Ориентации интерфейса для профиля (тест: test/landscape_layout_test.dart).
+List<DeviceOrientation> preferredOrientations(HardwareProfile p) =>
+    p.landscape
+    ? const [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]
+    : const [DeviceOrientation.portraitUp, DeviceOrientation.portraitDown];
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -59,12 +76,21 @@ void main() async {
   // показываемых языков зависит от manifest. Ошибки не прерывают запуск.
   await I18n.load();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-  // Основной планшет Syoung SY156-A510 стоит в портрете (профиль —
-  // models/hardware_profile.dart); весь UI спроектирован под него.
-  SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
-  ]);
+  // Аппаратный профиль по реальному устройству — до чтения настроек: от него
+  // зависит порт шины по умолчанию (models/hardware_profile.dart) и
+  // ориентация: SY156-A510 — портрет, IXP101M1 — альбом.
+  HardwareProfile.current = await SystemService.detectHardwareProfile();
+  AppLog.log(
+    'Hw',
+    'профиль ${HardwareProfile.current.id} '
+        '(${HardwareProfile.current.orientation.name})',
+  );
+  SystemChrome.setPreferredOrientations(
+    preferredOrientations(HardwareProfile.current),
+  );
+  // IXP101M1: полоска навигации после свайпа снизу не должна оставаться на
+  // экране (SystemBarsGuard). На SY156-A510 вызова нет.
+  await applySystemBarsGuard(HardwareProfile.current);
   // Заводская конфигурация облака (файл на общем каталоге): применяется до
   // настройки облачного слоя; остальные настройки не трогаются.
   final config = await FactoryConfigService.applyOnStartup(
@@ -254,6 +280,15 @@ class DryFogApp extends StatelessWidget {
           primary: Color(0xFF2EC4B6),
           surface: Color(0xFF1A1A1A),
         ),
+      ),
+      // Корень для снимка экрана по команде capture_screen (RD1) — у обоих
+      // профилей; RepaintBoundary пикселей не меняет. IXP101M1: интерфейс
+      // ещё и поднимается над панелью навигации, пока она видна.
+      builder: (context, child) => RepaintBoundary(
+        key: ScreenshotService.boundaryKey,
+        child: HardwareProfile.current.guardSystemBars
+            ? SystemBarsLift(child: child!)
+            : child!,
       ),
       home: const AppRouter(),
     );

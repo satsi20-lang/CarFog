@@ -32,9 +32,29 @@ class AppLogLimits {
 class DiagnosticsLimits {
   DiagnosticsLimits._();
 
-  // Хвосты, включаемые в пакет. ЗАДАНО в задании.
+  // Хвосты, включаемые в пакет. ЗАДАНО в задании; RD1 (ТЗ, п. 10.4):
+  // 100 событий; журнал — только окно в минутах, не больше 300 строк
+  // (потолок, а не минимум: правка после живой проверки 05.11).
   static const int eventsTail = 100;
   static const int logTailLines = 300;
+
+  // Версия формата пакета: 2 — RD1 (время UTC, окно журнала, киоск,
+  // сторож панелей, датчики, терминал, потолок размера).
+  static const int bundleVersion = 2;
+
+  // Окно журнала: по умолчанию 15 минут, максимум 60 (ТЗ 4.1).
+  static const int logWindowDefaultMin = 15;
+  static const int logWindowMaxMin = 60;
+
+  // Потолок пакета целиком (байт UTF-8). Сверх — обрезка журнала, затем
+  // событий, со старого конца (ТЗ 4.1, 10.4).
+  static const int maxBundleBytes = 200 * 1024;
+
+  // Показание датчика считается свежим (для светофора), если моложе.
+  // Термопару в покое читает ThermoIdleWatchService раз в минуту, счётчик —
+  // снимок раз в час. НЕ ИЗМЕРЕНО.
+  static const Duration thermoFreshFor = Duration(minutes: 10);
+  static const Duration meterFreshFor = Duration(hours: 2);
 
   // Размер одной части при отправке (символов JSON). Предел тела RPC
   // Supabase/PostgREST зависит от настроек проекта и не проверялся —
@@ -49,6 +69,23 @@ class DiagnosticsLimits {
   // Срок хранения пакетов на сервере (в миграции supabase/migrations).
   // НЕ ИЗМЕРЕНО, решает владелец.
   static const Duration serverRetention = Duration(days: 14);
+}
+
+// ------------------------------------------------------------
+// СНИМОК ЭКРАНА (capture_screen, RD1)
+// ------------------------------------------------------------
+class ScreenshotLimits {
+  ScreenshotLimits._();
+
+  // Длинная сторона снимка, px, и качество JPEG. ЗАДАНО в ТЗ (4.2).
+  static const int longSidePx = 800;
+  static const int jpegQuality = 70;
+
+  // Потолок файла (как в бакете diag-shots и device_shot_register).
+  static const int maxBytes = 409600;
+
+  // Ожидание ответа Edge Function diag-shot-upload. НЕ ИЗМЕРЕНО.
+  static const Duration uploadTimeout = Duration(seconds: 30);
 }
 
 // ------------------------------------------------------------

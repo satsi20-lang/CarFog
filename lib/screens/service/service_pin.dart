@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/app_state.dart';
+import '../../services/app_log_service.dart';
 import '../../services/cloud_service.dart';
 import '../../services/pin_policy.dart';
 import '../../services/security_service.dart';
@@ -12,6 +13,12 @@ enum _Mode { pin, master, newPin }
 
 class ServicePinScreen extends StatefulWidget {
   const ServicePinScreen({super.key});
+
+  // 1.12.1 (требование владельца 2026-11-05): экран ввода PIN без касаний
+  // столько времени — назад на заставку. Константа, не настройка; только
+  // этот экран (в сервисном меню после входа техник работает долго —
+  // там таймаута нет).
+  static const Duration idleTimeout = Duration(seconds: 30);
 
   @override
   State<ServicePinScreen> createState() => _ServicePinScreenState();
@@ -30,6 +37,7 @@ class _ServicePinScreenState extends State<ServicePinScreen>
   int _attemptsLeft = SecurityService.maxAttempts;
   Duration _lockLeft = Duration.zero;
   Timer? _ticker;
+  Timer? _idle;
 
   late AnimationController _shakeController;
   late Animation<double> _shakeAnimation;
@@ -124,13 +132,38 @@ class _ServicePinScreenState extends State<ServicePinScreen>
 
     _refresh();
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) => _refresh());
+    _armIdle();
   }
 
   @override
   void dispose() {
     _ticker?.cancel();
+    _idle?.cancel();
     _shakeController.dispose();
     super.dispose();
+  }
+
+  // Отсчёт бездействия заново: любое касание экрана (клавиши, стирание,
+  // ссылки, язык) — через Listener в build, плюс явно ввод/стирание цифры.
+  void _armIdle() {
+    _idle?.cancel();
+    _idle = Timer(ServicePinScreen.idleTimeout, _onIdle);
+  }
+
+  // Таймаут: введённое стирается, попытка НЕ засчитывается (tryPin не
+  // вызывается), переход на заставку — только если экран всё ещё PIN.
+  void _onIdle() {
+    _idle = null;
+    if (!mounted) return;
+    _entered = '';
+    _firstPin = '';
+    final notifier = context.read<AppNotifier>();
+    if (notifier.state != AppState.servicePinEntry) return;
+    AppLog.log(
+      'ServicePin',
+      '${ServicePinScreen.idleTimeout.inSeconds} с без касаний — на заставку',
+    );
+    notifier.transition(AppState.standby);
   }
 
   Future<void> _refresh() async {
@@ -144,6 +177,7 @@ class _ServicePinScreenState extends State<ServicePinScreen>
   }
 
   void _onDigit(String d) {
+    _armIdle();
     if (_mode != _Mode.newPin && _isLocked) return;
     if (_entered.length >= _maxLen) return;
     setState(() => _entered += d);
@@ -151,6 +185,7 @@ class _ServicePinScreenState extends State<ServicePinScreen>
   }
 
   void _onBackspace() {
+    _armIdle();
     if (_entered.isEmpty) return;
     setState(() => _entered = _entered.substring(0, _entered.length - 1));
   }
@@ -280,6 +315,17 @@ class _ServicePinScreenState extends State<ServicePinScreen>
     final lang = notifier.serviceLang;
     final blocked = _mode != _Mode.newPin && _isLocked;
 
+    // Listener не меняет вида и не перехватывает касания: только
+    // сбрасывает отсчёт бездействия при любом нажатии.
+    return Listener(
+      onPointerDown: (_) => _armIdle(),
+      child: PUi.landscape
+          ? _buildLandscape(notifier, lang, blocked)
+          : _buildPortrait(notifier, lang, blocked),
+    );
+  }
+
+  Widget _buildPortrait(AppNotifier notifier, String lang, bool blocked) {
     // Портрет 720x1280 dp: сверху язык, затем заголовок/статус, точки ввода,
     // компактная клавиатура по центру, внизу ссылки. Не помещается — прокрутка.
     return Scaffold(
@@ -454,16 +500,209 @@ class _ServicePinScreenState extends State<ServicePinScreen>
     );
   }
 
+  // Альбом 853x533 dp (IXP101M1): слева язык, заголовок, статус, точки и
+  // ссылки; справа клавиатура (те же кнопки 80x56 dp). Без прокрутки.
+  Widget _buildLandscape(AppNotifier notifier, String lang, bool blocked) {
+    final m = PUi.m;
+    final title = blocked
+        ? _t('locked_title', lang)
+        : _mode == _Mode.pin
+        ? _t('title_pin', lang)
+        : _mode == _Mode.master
+        ? _t('title_master', lang)
+        : (_newPinStep == 0
+              ? _t('title_new_pin', lang)
+              : _t('title_confirm_pin', lang));
+    final status = blocked
+        ? Column(
+            children: [
+              Text(
+                _t('locked_sub', lang),
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: const Color(0xFF8899AA),
+                  fontSize: m.minBodySp,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _formatDuration(_lockLeft),
+                style: const TextStyle(
+                  color: Color(0xFFE53935),
+                  fontSize: 48,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 2,
+                ),
+              ),
+            ],
+          )
+        : _mode == _Mode.newPin
+        ? Text(
+            _t('new_pin_hint', lang),
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: const Color(0xFFFFAA00),
+              fontSize: m.minBodySp,
+            ),
+          )
+        : _mode == _Mode.master
+        ? Text(
+            _t('master_hint', lang),
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: const Color(0xFF8899AA),
+              fontSize: m.minBodySp,
+            ),
+          )
+        : _AttemptsIndicator(
+            label: _t('attempts', lang),
+            left: _attemptsLeft,
+            total: SecurityService.maxAttempts,
+            alignStart: false,
+          );
+    return Scaffold(
+      backgroundColor: const Color(0xFF0A0E1A),
+      body: SafeArea(
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(m.gutter, 12, m.gutter, 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  children: [
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: LangSwitcher(
+                        current: lang,
+                        langs: AppNotifier.serviceLangs,
+                        onChanged: notifier.setLanguage,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      title,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: blocked ? const Color(0xFFE53935) : Colors.white,
+                        fontSize: m.titleSp,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    status,
+                    if (!blocked) ...[
+                      const SizedBox(height: 24),
+                      AnimatedBuilder(
+                        animation: _shakeAnimation,
+                        builder: (context, child) => Transform.translate(
+                          offset: Offset(_shakeAnimation.value, 0),
+                          child: child,
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: List.generate(_maxLen, (i) {
+                            final filled = i < _entered.length;
+                            return Container(
+                              margin: EdgeInsets.symmetric(
+                                horizontal: _maxLen > 4 ? 6 : 12,
+                              ),
+                              width: 24,
+                              height: 24,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: filled
+                                    ? const Color(0xFF00C6B2)
+                                    : Colors.transparent,
+                                border: Border.all(
+                                  color: const Color(0xFF00C6B2),
+                                  width: 3,
+                                ),
+                              ),
+                            );
+                          }),
+                        ),
+                      ),
+                    ],
+                    const Spacer(),
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      children: [
+                        if (_mode == _Mode.pin)
+                          _linkButton(
+                            _t('master_link', lang),
+                            const Color(0xFF00C6B2),
+                            () => setState(() {
+                              _mode = _Mode.master;
+                              _entered = '';
+                            }),
+                          )
+                        else if (_mode == _Mode.master)
+                          _linkButton(
+                            _t('back', lang),
+                            const Color(0xFF00C6B2),
+                            () => setState(() {
+                              _mode = _Mode.pin;
+                              _entered = '';
+                            }),
+                          ),
+                        _linkButton(
+                          _t('cancel', lang),
+                          const Color(0xFF8899AA),
+                          () => notifier.transition(AppState.standby),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              if (!blocked) ...[
+                SizedBox(width: m.gutter + 12),
+                Center(
+                  child: SizedBox(
+                    width: _DigitButton.gridWidth,
+                    child: GridView.count(
+                      crossAxisCount: 3,
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      mainAxisSpacing: _DigitButton.spacing,
+                      crossAxisSpacing: _DigitButton.spacing,
+                      childAspectRatio:
+                          _DigitButton.width / _DigitButton.height,
+                      children: [
+                        ...['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(
+                          (d) =>
+                              _DigitButton(label: d, onTap: () => _onDigit(d)),
+                        ),
+                        const SizedBox.shrink(),
+                        _DigitButton(label: '0', onTap: () => _onDigit('0')),
+                        _DigitButton(
+                          label: '⌫',
+                          onTap: _onBackspace,
+                          color: const Color(0xFF334455),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                SizedBox(width: m.gutter),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   // Ссылка-кнопка внизу экрана PIN: зона касания не меньше 56 dp.
   Widget _linkButton(String text, Color color, VoidCallback onTap) {
     return TextButton(
       onPressed: onTap,
       style: TextButton.styleFrom(
-        minimumSize: const Size(PUi.minTouch * 3, PUi.minTouch),
+        minimumSize: Size(PUi.m.minTouch * 3, PUi.m.minTouch),
       ),
       child: Text(
         text,
-        style: TextStyle(color: color, fontSize: PUi.minBodySp),
+        style: TextStyle(color: color, fontSize: PUi.m.minBodySp),
       ),
     );
   }

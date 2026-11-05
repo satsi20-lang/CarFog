@@ -178,7 +178,7 @@ class ConfigService {
           BusPortPolicy.check((j['busPort'] as String?) ?? '') ==
               BusPortCheck.ok
           ? j['busPort'] as String
-          : HardwareProfile.defaultBusPort,
+          : HardwareProfile.current.defaultBusPort,
       specPumps: spec.pumps,
       specLangs: spec.langs,
       specDefaultLang: spec.defaultLang,
