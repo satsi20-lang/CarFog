@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/app_state.dart';
+import '../../services/app_log_service.dart';
 import '../../services/cloud_service.dart';
 import '../../services/pin_policy.dart';
 import '../../services/security_service.dart';
@@ -12,6 +13,12 @@ enum _Mode { pin, master, newPin }
 
 class ServicePinScreen extends StatefulWidget {
   const ServicePinScreen({super.key});
+
+  // 1.12.1 (требование владельца 2026-11-05): экран ввода PIN без касаний
+  // столько времени — назад на заставку. Константа, не настройка; только
+  // этот экран (в сервисном меню после входа техник работает долго —
+  // там таймаута нет).
+  static const Duration idleTimeout = Duration(seconds: 30);
 
   @override
   State<ServicePinScreen> createState() => _ServicePinScreenState();
@@ -30,6 +37,7 @@ class _ServicePinScreenState extends State<ServicePinScreen>
   int _attemptsLeft = SecurityService.maxAttempts;
   Duration _lockLeft = Duration.zero;
   Timer? _ticker;
+  Timer? _idle;
 
   late AnimationController _shakeController;
   late Animation<double> _shakeAnimation;
@@ -124,13 +132,38 @@ class _ServicePinScreenState extends State<ServicePinScreen>
 
     _refresh();
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) => _refresh());
+    _armIdle();
   }
 
   @override
   void dispose() {
     _ticker?.cancel();
+    _idle?.cancel();
     _shakeController.dispose();
     super.dispose();
+  }
+
+  // Отсчёт бездействия заново: любое касание экрана (клавиши, стирание,
+  // ссылки, язык) — через Listener в build, плюс явно ввод/стирание цифры.
+  void _armIdle() {
+    _idle?.cancel();
+    _idle = Timer(ServicePinScreen.idleTimeout, _onIdle);
+  }
+
+  // Таймаут: введённое стирается, попытка НЕ засчитывается (tryPin не
+  // вызывается), переход на заставку — только если экран всё ещё PIN.
+  void _onIdle() {
+    _idle = null;
+    if (!mounted) return;
+    _entered = '';
+    _firstPin = '';
+    final notifier = context.read<AppNotifier>();
+    if (notifier.state != AppState.servicePinEntry) return;
+    AppLog.log(
+      'ServicePin',
+      '${ServicePinScreen.idleTimeout.inSeconds} с без касаний — на заставку',
+    );
+    notifier.transition(AppState.standby);
   }
 
   Future<void> _refresh() async {
@@ -144,6 +177,7 @@ class _ServicePinScreenState extends State<ServicePinScreen>
   }
 
   void _onDigit(String d) {
+    _armIdle();
     if (_mode != _Mode.newPin && _isLocked) return;
     if (_entered.length >= _maxLen) return;
     setState(() => _entered += d);
@@ -151,6 +185,7 @@ class _ServicePinScreenState extends State<ServicePinScreen>
   }
 
   void _onBackspace() {
+    _armIdle();
     if (_entered.isEmpty) return;
     setState(() => _entered = _entered.substring(0, _entered.length - 1));
   }
@@ -280,8 +315,17 @@ class _ServicePinScreenState extends State<ServicePinScreen>
     final lang = notifier.serviceLang;
     final blocked = _mode != _Mode.newPin && _isLocked;
 
-    if (PUi.landscape) return _buildLandscape(notifier, lang, blocked);
+    // Listener не меняет вида и не перехватывает касания: только
+    // сбрасывает отсчёт бездействия при любом нажатии.
+    return Listener(
+      onPointerDown: (_) => _armIdle(),
+      child: PUi.landscape
+          ? _buildLandscape(notifier, lang, blocked)
+          : _buildPortrait(notifier, lang, blocked),
+    );
+  }
 
+  Widget _buildPortrait(AppNotifier notifier, String lang, bool blocked) {
     // Портрет 720x1280 dp: сверху язык, затем заголовок/статус, точки ввода,
     // компактная клавиатура по центру, внизу ссылки. Не помещается — прокрутка.
     return Scaffold(
