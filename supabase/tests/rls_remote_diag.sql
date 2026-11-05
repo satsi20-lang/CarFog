@@ -2,11 +2,14 @@
 -- Проверка RD1 (удалённая диагностика): права и квоты.
 -- По образцу rls_rollouts.sql и carfog-portal/supabase/tests/supervisor_updates.sql.
 -- НЕ применять к рабочей базе: запускать на копии/тестовом проекте под
--- полными правами (SQL Editor) ПОСЛЕ миграции 20261104000000_rd1_remote_diag.sql.
+-- полными правами (SQL Editor) ПОСЛЕ миграций 20261104000000_rd1_remote_diag.sql
+-- и 20261105000000_rd1b_health_supervisor.sql (светофор супервайзеру с 2FA).
 -- Всё в одной транзакции, в конце rollback — данные не остаются.
 --
 -- Что подставить:
 --   <SUPERVISOR_UUID>  пользователь, для которого is_portal_supervisor() = true
+--                      (и без device_access к <DEVICE_ID> — иначе проверка
+--                      светофора «без 2FA» пройдёт как клиентская)
 --   <CUSTOMER_UUID>    клиент с доступом к <DEVICE_ID> (device_access)
 --   <DEVICE_ID>        аппарат клиента
 --   <OTHER_DEVICE_ID>  другой аппарат (к нему у клиента доступа нет)
@@ -120,6 +123,10 @@ begin
     raise notice 'ok: без 2FA снимок закрыт (%)', r->>'error';
   else raise notice 'ОШИБКА: без 2FA снимок открыт'; end if;
 
+  r := public.customer_device_health('<DEVICE_ID>');
+  if r->>'error' = 'no_access' then raise notice 'ok: без 2FA светофор супервайзеру закрыт';
+  else raise notice 'ОШИБКА: без 2FA супервайзер видит светофор: %', r; end if;
+
   select count(*) into n from storage.objects where bucket_id = 'diag-shots';
   if n = 0 then raise notice 'ok: без 2FA файлы diag-shots не видны';
   else raise notice 'ОШИБКА: без 2FA видны файлы diag-shots'; end if;
@@ -147,6 +154,14 @@ begin
   if r->>'ok' = 'true' and r->>'path' = '<DEVICE_ID>/shot-1000000000000.jpg' then
     raise notice 'ok: супервизор получает путь снимка';
   else raise notice 'ОШИБКА: снимок: %', r; end if;
+
+  r := public.customer_device_health('<DEVICE_ID>');
+  if r->>'ok' = 'true' and r ? 'connection' then raise notice 'ok: супервайзер с 2FA видит светофор';
+  else raise notice 'ОШИБКА: светофор супервайзера: %', r; end if;
+
+  r := public.customer_device_health('<OTHER_DEVICE_ID>');
+  if r->>'ok' = 'true' then raise notice 'ok: супервайзер с 2FA видит светофор любого аппарата';
+  else raise notice 'ОШИБКА: светофор супервайзера (другой аппарат): %', r; end if;
 
   r := public.supervisor_request_diag('<DEVICE_ID>', 'update_config', '{}');
   if r->>'error' = 'action_not_allowed' then raise notice 'ok: чужое действие не проходит';
