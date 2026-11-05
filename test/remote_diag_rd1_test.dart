@@ -175,27 +175,6 @@ void main() {
       expect(j['kiosk']['system_bars'], containsPair('enabled', true));
     });
 
-    test('окно журнала: старше N минут не берётся, но не меньше 300 строк', () async {
-      final f = File('${tmp.path}/${AppLog.fileName}');
-      final now = DateTime(2026, 11, 4, 12, 0);
-      final lines = <String>[
-        for (var i = 400; i >= 1; i--)
-          '${now.subtract(Duration(minutes: i)).toIso8601String()} [t] old-$i',
-        for (var i = 0; i < 10; i++)
-          '${now.subtract(Duration(seconds: 30 - i)).toIso8601String()} [t] new-$i',
-      ];
-      await f.writeAsString('${lines.join('\n')}\n');
-      final w15 = await AppLog.tailSince(const Duration(minutes: 15), now: now);
-      expect(w15.first, contains('old-15'));
-      expect(w15.last, contains('new-9'));
-      final atLeast = await AppLog.tailSince(
-        const Duration(minutes: 15),
-        minLines: 300,
-        now: now,
-      );
-      expect(atLeast.length, 300);
-    });
-
     test('окно журнала из команды: 1…60, иначе 15', () {
       expect(DiagnosticsService.logWindowMinutes(30), 30);
       expect(DiagnosticsService.logWindowMinutes(90), 60);
@@ -313,6 +292,205 @@ void main() {
       );
       expect(none['thermo'], 'off');
       expect(none['meter'], 'off');
+    });
+  });
+
+  // Правки после живой проверки 05.11 (ветка diag-fixes-1.12.1).
+  group('окно журнала (правка 1.12.1)', () {
+    // Метка журнала: местное время без пояса, как пишет AppLog.log.
+    String stamp(DateTime utc, Duration off) {
+      final s = utc.add(off).toIso8601String();
+      return s.endsWith('Z') ? s.substring(0, s.length - 1) : s;
+    }
+
+    const plus2 = Duration(hours: 2);
+    const minus5 = Duration(hours: -5);
+    // Как пакет diag-1793898735439: собран 2026-11-05 17:12 UTC.
+    final now = DateTime.utc(2026, 11, 5, 17, 12, 15);
+
+    List<String> liveLike(Duration off) => [
+          for (var i = 0; i < 251; i++)
+            '${stamp(DateTime.utc(2026, 11, 3, 18, 34).add(Duration(seconds: i)), off)} [t] d3-$i',
+          for (var i = 0; i < 45; i++)
+            '${stamp(DateTime.utc(2026, 11, 4, 18, 58).add(Duration(seconds: i)), off)} [t] d4-$i',
+          for (var i = 0; i < 4; i++)
+            '${stamp(now.subtract(Duration(minutes: 10 - i)), off)} [t] d5-$i',
+        ];
+
+    test('15 минут отсекают строки за прошлые дни (случай живой проверки)', () {
+      final w = AppLog.windowLines(liveLike(plus2), const Duration(minutes: 15),
+          now: now, maxLines: 300, utcOffset: plus2);
+      expect(w, hasLength(4));
+      expect(w.every((l) => l.contains('d5-')), isTrue);
+    });
+
+    test('60 минут: берётся больше, но не вчерашнее', () {
+      final lines = [
+        '${stamp(now.subtract(const Duration(hours: 25)), plus2)} [t] yesterday',
+        for (var m = 90; m >= 0; m -= 10)
+          '${stamp(now.subtract(Duration(minutes: m)), plus2)} [t] m$m',
+      ];
+      final w60 = AppLog.windowLines(lines, const Duration(minutes: 60),
+          now: now, utcOffset: plus2);
+      expect(w60.first, contains('m60'));
+      expect(w60, hasLength(7)); // 60, 50, …, 0
+      final w15 = AppLog.windowLines(lines, const Duration(minutes: 15),
+          now: now, utcOffset: plus2);
+      expect(w15.map((l) => l.split(' ').last), ['m10', 'm0']);
+    });
+
+    test('граница: ровно N минут назад входит, на 1 мс старше — нет', () {
+      final edge = now.subtract(const Duration(minutes: 15));
+      final lines = [
+        '${stamp(edge.subtract(const Duration(milliseconds: 1)), plus2)} [t] out',
+        '${stamp(edge, plus2)} [t] in',
+      ];
+      final w = AppLog.windowLines(lines, const Duration(minutes: 15),
+          now: now, utcOffset: plus2);
+      expect(w, hasLength(1));
+      expect(w.single, endsWith('in'));
+    });
+
+    test('местная метка при поясе +02:00 и -05:00', () {
+      // Пример из журнала: 19:12:14 при +02:00 — это 17:12:14 UTC.
+      final plus = ['2026-11-05T19:12:14.947136 [t] fresh'];
+      expect(AppLog.lineTime(plus.single, utcOffset: plus2),
+          DateTime.utc(2026, 11, 5, 17, 12, 14, 947, 136));
+      expect(AppLog.windowLines(plus, const Duration(minutes: 15),
+          now: now, utcOffset: plus2), hasLength(1));
+      // Та же метка, но журнал писался при -05:00 — это 00:12 следующего
+      // дня UTC (в будущем): входит. 11:50 при -05:00 = 16:50 UTC — нет.
+      final minus = [
+        '2026-11-05T11:50:00.000 [t] old',
+        '2026-11-05T12:05:00.000 [t] fresh',
+      ];
+      final w = AppLog.windowLines(minus, const Duration(minutes: 15),
+          now: now, utcOffset: minus5);
+      expect(w, ['2026-11-05T12:05:00.000 [t] fresh']);
+      // Метка с Z берётся как UTC независимо от пояса.
+      expect(AppLog.lineTime('2026-11-05T17:00:00Z [t] x', utcOffset: minus5),
+          DateTime.utc(2026, 11, 5, 17));
+    });
+
+    test('потолок 300 строк, а не минимум', () {
+      final many = [
+        for (var i = 600; i >= 1; i--)
+          '${stamp(now.subtract(Duration(seconds: i)), plus2)} [t] s$i',
+      ];
+      final w = AppLog.windowLines(many, const Duration(minutes: 15),
+          now: now, maxLines: 300, utcOffset: plus2);
+      expect(w, hasLength(300));
+      expect(w.last, endsWith('s1'));
+    });
+
+    test('файл журнала: tailSince берёт только окно', () async {
+      final f = File('${tmp.path}/${AppLog.fileName}');
+      await f.writeAsString('${liveLike(plus2).join('\n')}\n');
+      final w = await AppLog.tailSince(const Duration(minutes: 15),
+          maxLines: 300, now: now, utcOffset: plus2);
+      expect(w, hasLength(4));
+    });
+
+    test('пакет: log_window_minutes, log_lines; пустое окно помечено', () async {
+      final j = await DiagnosticsService.collect(notifier(), logMinutes: 30);
+      expect(j['log_window_minutes'], 30);
+      expect(j['log_window_min'], 30);
+      expect(j['log_lines'], (j['log_tail'] as List).length);
+      expect(j['log_lines'], greaterThan(0));
+      expect(j['log_window_empty'], isFalse);
+
+      // Через сутки все строки (включая отметку запуска) старше окна.
+      final later = await DiagnosticsService.collect(notifier(),
+          now: DateTime.now().add(const Duration(days: 1)));
+      expect(later['log_tail'], isEmpty);
+      expect(later['log_lines'], 0);
+      expect(later['log_window_empty'], isTrue);
+      expect(later['log_window_minutes'], 15);
+    });
+
+    test('потолок 200 КБ обновляет log_lines', () async {
+      final bundle = await DiagnosticsService.collect(notifier());
+      bundle['log_tail'] = [for (var i = 0; i < 5000; i++) 'line-$i ${'x' * 100}'];
+      final j = jsonDecode(DiagnosticsService.encodeWithinCap(bundle))
+          as Map<String, dynamic>;
+      expect(j['log_lines'], (j['log_tail'] as List).length);
+      expect(j['log_lines'], lessThan(5000));
+    });
+  });
+
+  group('номер карты: без ложных срабатываний (правка 1.12.1)', () {
+    // Дописать контрольную цифру Luhn, чтобы ложные примеры были
+    // «настоящими по Luhn» — иначе тест ничего бы не доказывал.
+    String withLuhn(String body) {
+      for (var d = 0; d <= 9; d++) {
+        if (AppLog.luhnOk('$body$d')) return '$body$d';
+      }
+      throw StateError('no digit');
+    }
+
+    final l13 = withLuhn('412345678901'); // 13 цифр
+    final l16 = withLuhn('454545454545454'); // 16 цифр
+    final l16b = withLuhn('523456789012345');
+
+    test('контроль: примеры действительно проходят Luhn', () {
+      for (final d in [l13, l16, l16b]) {
+        expect(AppLog.luhnOk(d), isTrue, reason: d);
+      }
+    });
+
+    test('дробные числа, метки времени, UUID, session=/id= — не маскируются', () {
+      final keep = [
+        'baseline_power_w: 16.$l13',
+        'energy=16.$l16 kWh',
+        'x=$l16.5',
+        'v 0,$l16b',
+        '$l16,25 €',
+        'session=1793732334613',
+        'diag-1793898735439',
+        'at_us=1793732334613123',
+        'session=$l16',
+        'id=$l16b',
+        'device_id: $l16',
+        '{"session_id":"$l16"}',
+        'trace $l16b-a716',
+        '550e8400-e29b-41d4-a716-446655440000',
+        '42424242-4242-4242-4242-424242424242',
+        'f47ac10b-58cc-4372-a567-$l13',
+        'run_$l16',
+        'm$l16b',
+      ];
+      for (final line in keep) {
+        expect(AppLog.redact(line), line, reason: line);
+      }
+    });
+
+    test('настоящие тестовые номера Visa/MC/Amex — маскируются', () {
+      final cards = [
+        '4111111111111111',
+        '4242 4242 4242 4242',
+        '4012888888881881',
+        '5555555555554444',
+        '5105-1051-0510-5100',
+        '2223003122003222',
+        '378282246310005',
+        '3782 822463 10005',
+        '371449635398431',
+        '6011111111111117',
+      ];
+      for (final c in cards) {
+        for (final line in [
+          c,
+          'card $c.',
+          'card=$c',
+          'pan: $c',
+          '{"pan":"$c"}',
+          '"$c"',
+        ]) {
+          final out = AppLog.redact(line);
+          expect(out, isNot(contains(c)), reason: line);
+          expect(out, contains('***'), reason: line);
+        }
+      }
     });
   });
 }

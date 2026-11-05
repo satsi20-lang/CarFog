@@ -136,8 +136,20 @@ class AppLog {
   // Вырезается, только если первая цифра 2–6 (платёжные системы) и сходится
   // контрольная сумма Luhn — время и счётчики (мс эпохи начинаются с 1) не
   // трогаются.
+  // Номер карты: 13–19 цифр подряд, группы по 4 через пробел/дефис или
+  // Amex 4-6-5; первая цифра 2–6, затем проверка Luhn. НЕ трогает (живая
+  // проверка 05.11, «baseline_power_w: 16.***»): цифры внутри числа
+  // (рядом точка/запятая с цифрой, буква, подчёркивание), хвосты UUID
+  // (шестнадцатеричная группа через дефис) и значения session=/id=
+  // (в т.ч. «"session_id":"…"»). После '=', ':', кавычки, пробела —
+  // маскирует, как прежде.
   static final RegExp _cardLike = RegExp(
-    r'(?<![0-9])[2-6](?:[ -]?[0-9]){12,18}(?![0-9])',
+    r'(?<![0-9a-z_.,])(?<![0-9a-f]-)(?<!(?:session|id)"?\s*[=:]\s*"?)'
+    r'(?:[2-6][0-9]{12,18}'
+    r'|[2-6][0-9]{3}(?:[ -][0-9]{4}){2,3}(?:[ -][0-9]{1,3})?'
+    r'|3[47][0-9]{2}[ -][0-9]{6}[ -][0-9]{5})'
+    r'(?![0-9a-z_]|[.,][0-9]|-[0-9a-f])',
+    caseSensitive: false,
   );
 
   @visibleForTesting
@@ -277,34 +289,66 @@ class AppLog {
     return lines.length <= n ? lines : lines.sublist(lines.length - n);
   }
 
-  // Строки не старше [window] (по метке времени в начале строки, местное
-  // время журнала) — и в любом случае не меньше [minLines] последних строк,
-  // чтобы на тихом аппарате был контекст. Строки без метки идут вместе с
-  // соседними.
+  // Строки журнала не старше [window] от [now] и не больше [maxLines]
+  // последних из них (0 — без потолка). Раньше здесь было «не меньше N
+  // строк»: окно 15 минут добиралось до 300 строк строками за прошлые дни
+  // (живая проверка 05.11, пакет diag-1793898735439) — теперь N только
+  // потолок, а пустое окно — пустой список (пакет помечает это явно).
   static Future<List<String>> tailSince(
     Duration window, {
-    int minLines = 0,
+    int maxLines = 0,
     DateTime? now,
+    Duration? utcOffset,
   }) async {
     final all = await tail(1 << 30);
-    final from = (now ?? DateTime.now()).subtract(window);
+    return windowLines(
+      all,
+      window,
+      now: now ?? DateTime.now(),
+      maxLines: maxLines,
+      utcOffset: utcOffset,
+    );
+  }
+
+  // Чистая часть tailSince (для тестов). Метки журнала — местное время без
+  // пояса ('2026-11-05T19:12:14.947136'). Сравнение идёт в абсолютном
+  // времени: метка переводится в UTC по [utcOffset] (смещение пояса, в
+  // котором писался журнал), а без него — по поясу аппарата (как Dart
+  // разбирает время без пояса, с учётом перехода на летнее время). Строки
+  // без метки идут вместе с соседними; поиск идёт с конца и останавливается
+  // на первой строке старше окна.
+  static List<String> windowLines(
+    List<String> all,
+    Duration window, {
+    required DateTime now,
+    int maxLines = 0,
+    Duration? utcOffset,
+  }) {
+    final from = now.toUtc().subtract(window);
     var start = all.length;
     for (var i = all.length - 1; i >= 0; i--) {
-      final at = lineTime(all[i]);
+      final at = lineTime(all[i], utcOffset: utcOffset);
       if (at != null && at.isBefore(from)) break;
       start = i;
     }
-    final byCount = all.length - minLines;
-    if (byCount < start) start = byCount < 0 ? 0 : byCount;
+    if (maxLines > 0 && all.length - start > maxLines) {
+      start = all.length - maxLines;
+    }
     return all.sublist(start);
   }
 
-  // Метка времени строки журнала ('2026-11-03T21:35:56.695 [тег] …').
+  // Метка времени строки журнала ('2026-11-03T21:35:56.695 [тег] …') как
+  // момент времени (UTC). Метка с «Z» или смещением берётся как есть.
   @visibleForTesting
-  static DateTime? lineTime(String line) {
+  static DateTime? lineTime(String line, {Duration? utcOffset}) {
     final sp = line.indexOf(' ');
     if (sp < 19) return null;
-    return DateTime.tryParse(line.substring(0, sp));
+    final p = DateTime.tryParse(line.substring(0, sp));
+    if (p == null) return null;
+    if (p.isUtc || utcOffset == null) return p.toUtc();
+    return DateTime.utc(p.year, p.month, p.day, p.hour, p.minute, p.second,
+            p.millisecond, p.microsecond)
+        .subtract(utcOffset);
   }
 
   // Только для тестов: сбросить состояние.

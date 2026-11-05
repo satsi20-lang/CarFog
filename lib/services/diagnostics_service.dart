@@ -108,6 +108,11 @@ class DiagnosticsService {
     final at = now ?? DateTime.now();
     final cfg = n.config;
     final minutes = logWindowMinutes(logMinutes);
+    final logTail = await AppLog.tailSince(
+      Duration(minutes: minutes),
+      maxLines: DiagnosticsLimits.logTailLines,
+      now: at,
+    );
 
     Map<String, dynamic> device = const {};
     try {
@@ -257,13 +262,15 @@ class DiagnosticsService {
         'cloud_enabled': CloudService.isCloudEnabled,
       },
       'events_tail': events,
+      // Журнал только за последние N минут (не больше 300 строк). Поля
+      // окна: log_window_minutes — применённое окно, log_lines — сколько
+      // строк вошло, log_window_empty — в окне не было ни одной строки.
+      // log_window_min — прежнее имя для портала.
       'log_window_min': minutes,
-      // Последние N минут журнала, но не меньше 300 последних строк.
-      'log_tail': await AppLog.tailSince(
-        Duration(minutes: minutes),
-        minLines: DiagnosticsLimits.logTailLines,
-        now: at,
-      ),
+      'log_window_minutes': minutes,
+      'log_tail': logTail,
+      'log_lines': logTail.length,
+      'log_window_empty': logTail.isEmpty,
     };
     return bundle;
   }
@@ -297,6 +304,7 @@ class DiagnosticsService {
       }
       bundle['log_tail'] = log;
       bundle['events_tail'] = events;
+      bundle['log_lines'] = log.length;
       bundle['truncated'] = {
         'log_lines_dropped': droppedLog,
         'events_dropped': droppedEvents,
