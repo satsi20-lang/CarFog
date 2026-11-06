@@ -419,6 +419,47 @@ export function readSupervisorCheck(raw: unknown): CheckOutcome {
   return { ok: true, actor: r.actor };
 }
 
+/**
+ * Есть ли уже такая версия в БАЗЕ. Проба — device_brand_path под сервисным
+ * ключом: она отдаёт путь, только если строка версии существует.
+ * 'unknown' — ответ непонятен или вызов не прошёл.
+ */
+export type VersionProbe = "exists" | "absent" | "unknown";
+
+export function readVersionProbe(raw: unknown): VersionProbe {
+  if (typeof raw !== "object" || raw === null) return "unknown";
+  const r = raw as Record<string, unknown>;
+  if (r.ok === true && typeof r.path === "string" && r.path.length > 0) return "exists";
+  if (r.ok === false && r.error === "not_found") return "absent";
+  return "unknown";
+}
+
+/**
+ * Файл этой версии уже лежит в бакете, а положить его не удалось. Что делать:
+ *   exists  — версия в базе есть, это настоящий повтор → conflict;
+ *   absent  — записи в базе нет, значит файл «сирота» (загрузился, а
+ *             регистрация или уборка не прошли) → разрешаем перезапись;
+ *   unknown — не знаем → ведём себя осторожно, как при повторе.
+ * Перезапись разрешается ТОЛЬКО для сироты: иначе можно затереть архив,
+ * который аппараты уже скачивают.
+ */
+export function uploadRetryDecision(probe: VersionProbe): "overwrite" | "conflict" {
+  return probe === "absent" ? "overwrite" : "conflict";
+}
+
+/**
+ * Регистрация версии не прошла, файл уже в бакете. Убирать ли его:
+ *   absent — записи в базе нет, файл наш и никому не нужен → убрать;
+ *   exists — версия в базе ЕСТЬ, значит её записал кто-то другой (или наш
+ *            же повторный запрос), и файл теперь принадлежит той записи →
+ *            НЕ трогать, иначе запись в базе останется без архива;
+ *   unknown — не знаем → не трогаем. Останется сирота, это безопаснее
+ *             удаления нужного файла; обходной путь — в docs/brands.md.
+ */
+export function cleanupDecision(probe: VersionProbe): "remove" | "keep" {
+  return probe === "absent" ? "remove" : "keep";
+}
+
 /** Разбор ответа _brand_version_register. */
 export type RegisterOutcome =
   | { ok: true; version: number }

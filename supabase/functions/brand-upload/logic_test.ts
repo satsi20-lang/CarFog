@@ -7,15 +7,18 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   checkPack,
+  cleanupDecision,
   errorResponse,
   MAX_UNPACKED_BYTES,
   MAX_ZIP_ENTRIES,
   parseInput,
   readRegister,
   readSupervisorCheck,
+  readVersionProbe,
   readZip,
   sha256Hex,
   storagePath,
+  uploadRetryDecision,
 } from "./logic.ts";
 import { CARFOG_COLORS } from "../_shared/brand_rules.ts";
 
@@ -500,6 +503,34 @@ test("ответ регистрации версии: успех, конфлик
   assert.equal(readRegister({ ok: false, error: "builtin_brand" }).code, "rejected");
   assert.equal(readRegister({ ok: false, error: "что-то новое" }).code, "internal");
   assert.equal(readRegister(null).code, "internal");
+});
+
+test("проба версии в базе: есть, нет, непонятно", () => {
+  assert.equal(readVersionProbe({ ok: true, path: "acme/v3.zip", sha256: "a" }), "exists");
+  assert.equal(readVersionProbe({ ok: false, error: "not_found" }), "absent");
+  // Любой другой ответ или сбой вызова — «не знаем».
+  assert.equal(readVersionProbe({ ok: false, error: "что-то другое" }), "unknown");
+  assert.equal(readVersionProbe({ ok: true }), "unknown");
+  assert.equal(readVersionProbe({ ok: true, path: "" }), "unknown");
+  assert.equal(readVersionProbe(null), "unknown");
+  assert.equal(readVersionProbe("мусор"), "unknown");
+});
+
+test("СИРОТА В БАКЕТЕ: перезапись только когда версии в базе нет", () => {
+  // Файл есть, записи нет — прошлая попытка не доделалась, чиним.
+  assert.equal(uploadRetryDecision("absent"), "overwrite");
+  // Версия в базе есть — настоящий повтор, архив не трогаем: его могут
+  // уже скачивать аппараты.
+  assert.equal(uploadRetryDecision("exists"), "conflict");
+  // Не знаем — ведём себя как при повторе.
+  assert.equal(uploadRetryDecision("unknown"), "conflict");
+});
+
+test("уборка после неудачной регистрации: не стираем чужой архив", () => {
+  assert.equal(cleanupDecision("absent"), "remove");
+  // Версию успел записать кто-то другой — файл принадлежит той записи.
+  assert.equal(cleanupDecision("exists"), "keep");
+  assert.equal(cleanupDecision("unknown"), "keep");
 });
 
 test("статусы кодов ошибок", () => {
