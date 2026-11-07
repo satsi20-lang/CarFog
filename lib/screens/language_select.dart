@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import '../brand/brand_colors.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../services/i18n_service.dart';
@@ -34,7 +35,7 @@ class LanguageSelectScreen extends StatelessWidget {
       titles.length <= 3 ? titles.join('\n') : titles.join(' · '),
       textAlign: TextAlign.center,
       style: TextStyle(
-        color: Colors.white,
+        color: context.brand.textPrimary,
         fontSize: titles.length <= 3 ? PUi.titleSp : PUi.bodySp + 2,
         fontWeight: FontWeight.bold,
         height: titles.length <= 3 ? 1.5 : 1.35,
@@ -115,7 +116,7 @@ class LanguageSelectScreen extends StatelessWidget {
                     titles.length <= 3 ? titles.join('\n') : titles.join(' · '),
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      color: Colors.white,
+                      color: context.brand.textPrimary,
                       fontSize: titles.length <= 3 ? m.titleSp : m.bodySp,
                       fontWeight: FontWeight.bold,
                       height: 1.4,
