@@ -1,8 +1,11 @@
 # Бренды дистрибьюторов (белый лейбл)
 
-Состояние: **этап 1 (база и Edge Functions) — только файлы в репозитории.**
-Миграция не применена, функции не развёрнуты. Применяет владелец или его
-ассистент после отдельного «да».
+Состояние (2026-11-07): **этап 1 развёрнут.** Edge Functions `brand-upload`
+(verify_jwt включён) и `brand-url` (verify_jwt выключен) развёрнуты из
+коммита e07e3fa. Миграции `brand1_brands` и `brand1b_all_devices_brand_id`
+применены (вторая добавляет `brand_id` в ответ `supervisor_all_devices`,
+файл `20261107000000_brand1b_all_devices_brand_id.sql`). Этап 3 (портал)
+сделан в репозитории carfog-portal, ветка `stage-i-brands`.
 
 Опора: **[ТЗ: бренды дистрибьюторов v1](brands_tz.md)** (копия без правок) и
 опись `docs/inventory/brand_inventory.md` (ветка `inventory-brand-diag`).
