@@ -206,10 +206,23 @@ class MainActivity : FlutterActivity() {
         // именем вроде sdcard1.
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, STORAGE_CHANNEL)
             .setMethodCallHandler { call, result ->
-                if (call.method == "listVolumeRoots") {
-                    result.success(listVolumeRoots())
-                } else {
-                    result.notImplemented()
+                when (call.method) {
+                    "listVolumeRoots" -> result.success(listVolumeRoots())
+                    // Видео заставки (VIDEO1): папки приложения на съёмных
+                    // томах, свободное место, проверка кадра, право на удаление.
+                    "videoDirs" -> result.success(videoDirs())
+                    "freeBytes" -> result.success(freeBytes(call.argument<String>("path")))
+                    "canDelete" -> result.success(canDelete(call.argument<List<String>>("paths") ?: emptyList()))
+                    "probeVideo" -> {
+                        val path = call.argument<String>("path")
+                        // MediaMetadataRetriever читает файл и может занять секунды —
+                        // не на главном потоке.
+                        Thread {
+                            val r = probeVideo(path)
+                            runOnUiThread { result.success(r) }
+                        }.start()
+                    }
+                    else -> result.notImplemented()
                 }
             }
 
@@ -445,6 +458,84 @@ class MainActivity : FlutterActivity() {
             // Возвращаем то, что успели собрать (может быть пусто).
         }
         return removable + primary
+    }
+
+    // Папки приложения (Android/data/<пакет>/files) на СЪЁМНЫХ примонтированных
+    // томах — туда качаются видео заставки. Своя папка приложения: разрешения
+    // на запись не нужны. Пусто — карты нет.
+    private fun videoDirs(): List<String> {
+        val out = mutableListOf<String>()
+        try {
+            for (dir in getExternalFilesDirs(null)) {
+                if (dir == null) continue
+                if (Environment.getExternalStorageState(dir) != Environment.MEDIA_MOUNTED) continue
+                if (!Environment.isExternalStorageRemovable(dir)) continue
+                out.add(dir.absolutePath)
+            }
+        } catch (e: Exception) {
+            // вернём то, что успели собрать
+        }
+        return out
+    }
+
+    // Свободно байт на томе, где лежит путь; null — узнать не удалось.
+    private fun freeBytes(path: String?): Long? {
+        if (path == null) return null
+        return try {
+            android.os.StatFs(path).availableBytes
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    // Можно ли приложению удалить каждый файл. С полным доступом к файлам
+    // (MANAGE_EXTERNAL_STORAGE) — можно; без него — только если сам файл
+    // доступен на запись.
+    private fun canDelete(paths: List<String>): Map<String, Boolean> {
+        val all = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager()
+        val out = HashMap<String, Boolean>()
+        for (p in paths) {
+            out[p] = try {
+                val f = java.io.File(p)
+                f.exists() && (all || (f.canWrite() && f.parentFile?.canWrite() == true))
+            } catch (e: Exception) {
+                false
+            }
+        }
+        return out
+    }
+
+    // Открывает видео и читает кадр: файл, который так не открылся, плеер не
+    // проиграет. null — не открылся.
+    private fun probeVideo(path: String?): Map<String, Any>? {
+        if (path == null) return null
+        val r = android.media.MediaMetadataRetriever()
+        return try {
+            r.setDataSource(path)
+            val w = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull()
+            val h = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull()
+            val d = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+            val rot = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+            val frame = r.getFrameAtTime(0, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+            val ok = frame != null
+            frame?.recycle()
+            if (w == null || h == null || d == null) {
+                null
+            } else {
+                // Размер как на экране: при повороте на 90/270 стороны меняются.
+                val swap = rot == 90 || rot == 270
+                mapOf(
+                    "width" to (if (swap) h else w),
+                    "height" to (if (swap) w else h),
+                    "durationMs" to d,
+                    "frame" to ok
+                )
+            }
+        } catch (e: Exception) {
+            null
+        } finally {
+            try { r.release() } catch (e: Exception) {}
+        }
     }
 
     // Версия установленного приложения (для обновления, отката и отчёта).

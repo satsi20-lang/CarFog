@@ -1,4 +1,5 @@
 import '../brand/brand_service.dart';
+import '../video/video_service.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
@@ -183,6 +184,13 @@ class SyncService {
           await BrandService.onPoll(notifier, result.brand);
         } catch (e) {
           debugPrint('SyncService: бренд: ${e.runtimeType}');
+        }
+        // Видео заставки: сам проход идёт в фоне (скачивание может длиться
+        // часами) и опрос не задерживает.
+        try {
+          VideoService.onPoll(result.videosRev);
+        } catch (e) {
+          debugPrint('SyncService: видео: ${e.runtimeType}');
         }
       }
     } catch (e) {

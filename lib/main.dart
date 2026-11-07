@@ -1,6 +1,7 @@
 import 'screens/free_run_screen.dart';
 import 'services/free_run_service.dart';
 import 'brand/brand_service.dart';
+import 'video/video_service.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -167,6 +168,8 @@ void main() async {
 
   // Пакет бренда с диска (последний годный) — до первого кадра заставки.
   await BrandService.init(notifier);
+  // Набор видео заставки с диска и карты — до первого кадра заставки.
+  await VideoService.init(notifier);
   SyncService.start(notifier);
   LevelService.start(notifier);
 

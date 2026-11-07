@@ -1,4 +1,5 @@
 import '../brand/brand_service.dart';
+import '../video/video_service.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -169,6 +170,7 @@ class DiagnosticsService {
         'version': CloudService.appVersion,
         'hardware_profile': profile.id,
         'brand': BrandService.diagnostics(),
+        'videos': VideoService.diagnostics(),
         'start_reason': AppLog.startReason,
         'log_ready': AppLog.isReady,
       },

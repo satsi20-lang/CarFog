@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
@@ -9,6 +10,8 @@ import '../brand/brand_qr.dart';
 import '../models/app_state.dart';
 import '../services/i18n_service.dart';
 import '../services/storage_service.dart';
+import '../video/video_model.dart';
+import '../video/video_playlist.dart';
 import '../widgets/card_hint_banner.dart';
 import '../widgets/lang_switcher.dart';
 import '../widgets/portrait_ui.dart';
@@ -31,7 +34,8 @@ class _StandbyScreenState extends State<StandbyScreen> {
 
   VideoPlayerController? _controller;
   List<String> _playlist = [];
-  int _currentIndex = 0;
+  // Путь ролика, который играет сейчас (null — видео не играет).
+  String? _current;
 
   // false — заставка (лого/QR), true — идёт видео-заставка с SD-карты.
   bool _showingVideo = false;
@@ -41,8 +45,33 @@ class _StandbyScreenState extends State<StandbyScreen> {
   @override
   void initState() {
     super.initState();
-    _scanVideos();
+    // Набор от облака (VIDEO1) — слушаем: смена набора подхватывается на
+    // границе ролика, без перезапуска и без чёрного экрана.
+    VideoPlaylist.state.addListener(_onPlaylistChanged);
+    if (VideoPlaylist.state.value.managed) {
+      _playlist = VideoPlaylist.state.value.paths;
+    } else {
+      _scanVideos();
+    }
     _armIdleTimer();
+  }
+
+  void _onPlaylistChanged() {
+    final st = VideoPlaylist.state.value;
+    if (!mounted || !st.managed) return;
+    final next = st.paths;
+    if (listEquals(next, _playlist)) return;
+    setState(() => _playlist = next);
+    // Один ролик крутится плеером по кругу; как только набор изменился,
+    // зацикливание снимается — ролик доиграет и уступит следующему.
+    _syncLooping();
+  }
+
+  void _syncLooping() {
+    final c = _controller;
+    final cur = _current;
+    if (c == null || cur == null) return;
+    c.setLooping(_playlist.length == 1 && _playlist.first == cur);
   }
 
   Future<void> _scanVideos() async {
@@ -88,7 +117,10 @@ class _StandbyScreenState extends State<StandbyScreen> {
       }
     }
 
-    if (mounted) setState(() => _playlist = found);
+    // Если за время сканирования пришёл набор от облака — он главнее.
+    if (mounted && !VideoPlaylist.state.value.managed) {
+      setState(() => _playlist = found);
+    }
   }
 
   // 30 секунд без тапа на заставке — переключаемся на видео-заставку
@@ -109,8 +141,7 @@ class _StandbyScreenState extends State<StandbyScreen> {
     context.read<AppNotifier>().resetLanguage();
     if (_playlist.isEmpty) return;
     setState(() => _showingVideo = true);
-    _currentIndex = 0;
-    _playVideo(_currentIndex);
+    _playVideo(_playlist.first);
   }
 
   // Тап во время видео не уводит в выбор аромата — сначала возвращает
@@ -119,28 +150,29 @@ class _StandbyScreenState extends State<StandbyScreen> {
     _idleTimer?.cancel();
     _controller?.dispose();
     _controller = null;
+    _current = null;
     if (mounted) setState(() => _showingVideo = false);
     _armIdleTimer();
   }
 
-  // attempt считает, сколько файлов подряд не удалось воспроизвести в
+  // failures считает, сколько файлов подряд не удалось воспроизвести в
   // этом проходе — если ни один файл в плейлисте не читается, возвращаемся
   // на заставку вместо того, чтобы бесконечно перебирать по кругу.
-  Future<void> _playVideo(int index, [int attempt = 0]) async {
-    if (attempt >= _playlist.length) {
+  Future<void> _playVideo(String path, [int failures = 0]) async {
+    if (failures >= _playlist.length || _playlist.isEmpty) {
       _stopVideo();
       return;
     }
 
     _controller?.dispose();
     _controller = null;
+    _current = path;
     if (!mounted) return;
 
     // Громкость задаётся явно на каждом запуске ролика: по умолчанию 0
     // (без звука), 1 — только если включён тумблер «Звук видео ожидания».
     // Без этого video_player играет с громкостью 1.0.
     final volume = context.read<AppNotifier>().config.standbyVideoVolume;
-    final path = _playlist[index];
     final controller = VideoPlayerController.file(File(path));
     try {
       await controller.initialize();
@@ -150,56 +182,39 @@ class _StandbyScreenState extends State<StandbyScreen> {
       // битого файла.
       debugPrint('StandbyScreen: playback failed for $path: $e');
       controller.dispose();
-      final nextIndex = (index + 1) % _playlist.length;
-      _currentIndex = nextIndex;
-      await _playVideo(nextIndex, attempt + 1);
+      _advance(path, failures + 1);
       return;
     }
 
     // Один файл в плейлисте — зацикливаем его средствами самого плеера:
-    // просто и без риска гонки на границе конец/начало (см. ниже). Но
-    // ошибку во время воспроизведения (не при инициализации, а позже —
-    // например карту вынули на ходу) всё равно нужно ловить, иначе экран
-    // молча зависнет на сломанном кадре навсегда.
-    // Несколько файлов — крутим плейлист по кругу, но не через
-    // ручное отслеживание "position >= duration" в addListener: тот
-    // слушатель дёргается на каждое обновление позиции (много раз в
-    // секунду), и пока старый контроллер ещё не задиспоузился, условие
-    // окончания успевало сработать повторно — ролик мог оборваться
-    // раньше времени и просмотр падал на заставку вместо луп-показа.
-    // "_advancing" гарантирует, что переход к следующему файлу
-    // запускается ровно один раз за ролик.
-    if (_playlist.length == 1) {
-      controller.setLooping(true);
-      var failed = false;
-      controller.addListener(() {
-        if (!mounted || failed || !controller.value.hasError) return;
-        failed = true;
+    // просто и без риска гонки на границе конец/начало. Несколько — на
+    // конце ролика берём следующий по кругу (`nextAfter`). Набор мог
+    // смениться за время ролика: следующий берётся из НОВОГО набора, а если
+    // текущего в нём нет — первый (смена на границе ролика).
+    //
+    // "advancing" гарантирует, что переход к следующему файлу запускается
+    // ровно один раз за ролик: слушатель дёргается на каждое обновление
+    // позиции, и без флага условие окончания срабатывало бы повторно.
+    // Ошибку во время воспроизведения (например, карту вынули на ходу)
+    // нужно ловить всегда, иначе экран молча зависнет на сломанном кадре.
+    controller.setLooping(_playlist.length == 1 && _playlist.first == path);
+    var advancing = false;
+    controller.addListener(() {
+      if (!mounted || advancing) return;
+      if (controller.value.hasError) {
+        advancing = true;
         debugPrint(
           'StandbyScreen: playback error for $path: '
           '${controller.value.errorDescription}',
         );
-        _stopVideo();
-      });
-    } else {
-      controller.setLooping(false);
-      var advancing = false;
-      controller.addListener(() {
-        if (!mounted || advancing) return;
-        if (controller.value.hasError) {
-          advancing = true;
-          final nextIndex = (index + 1) % _playlist.length;
-          _currentIndex = nextIndex;
-          _playVideo(nextIndex, attempt + 1);
-          return;
-        }
-        if (controller.value.isCompleted) {
-          advancing = true;
-          _currentIndex = (_currentIndex + 1) % _playlist.length;
-          _playVideo(_currentIndex);
-        }
-      });
-    }
+        _advance(path, failures + 1);
+        return;
+      }
+      if (controller.value.isCompleted) {
+        advancing = true;
+        _advance(path, 0);
+      }
+    });
     await controller.setVolume(volume);
     if (!mounted) {
       controller.dispose();
@@ -208,6 +223,17 @@ class _StandbyScreenState extends State<StandbyScreen> {
     controller.play();
 
     if (mounted) setState(() => _controller = controller);
+  }
+
+  // Что играть после ролика [from]: следующий из актуального набора; набор
+  // опустел — назад на заставку.
+  void _advance(String from, int failures) {
+    final next = nextAfter(_playlist, from);
+    if (next == null) {
+      _stopVideo();
+      return;
+    }
+    _playVideo(next, failures);
   }
 
   void _onTap() {
@@ -220,6 +246,7 @@ class _StandbyScreenState extends State<StandbyScreen> {
 
   @override
   void dispose() {
+    VideoPlaylist.state.removeListener(_onPlaylistChanged);
     _idleTimer?.cancel();
     _controller?.dispose();
     super.dispose();

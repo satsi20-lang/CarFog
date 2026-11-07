@@ -1,4 +1,5 @@
 import '../brand/brand_service.dart';
+import '../video/video_model.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
@@ -186,6 +187,9 @@ class CloudPollResult {
   // Бренд из ответа device_poll: null — поля нет или оно непонятно (ничего
   // не менять); BrandDirective.builtin() — вернуть встроенный CaRFog.
   final BrandDirective? brand;
+  // Версия желаемого набора видео заставки (поле videos_rev device_poll).
+  // null — поля нет (старый сервер): видео не трогаем.
+  final int? videosRev;
   final bool configReported;
   // Время СЕРВЕРА на момент ответа (поле server_time device_poll). Срок
   // действия команд считается как server_time − created_at, а не по часам
@@ -199,6 +203,7 @@ class CloudPollResult {
     required this.commands,
     this.target,
     this.brand,
+    this.videosRev,
     this.configReported = false,
     this.serverTime,
     this.ok = false,
@@ -404,6 +409,7 @@ class SupabaseTransport implements CloudTransport {
         commands: commands,
         target: RolloutTarget.tryParse(body['target']),
         brand: BrandDirective.tryParse(body),
+        videosRev: parsePollVideosRev(body),
         configReported: config != null,
         serverTime: DateTime.tryParse(body['server_time'] as String? ?? ''),
         ok: true,
