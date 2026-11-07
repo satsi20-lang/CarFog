@@ -24,6 +24,9 @@ class CloudEventType {
   static const lowLiquid = 'low_liquid';
   static const liquidRestored = 'liquid_restored';
   static const sessionComplete = 'session_complete';
+  // Бесплатный запуск по коду (не продажа) и блокировка перебора кода.
+  static const freeRun = 'free_run';
+  static const freeRunLocked = 'free_run_locked';
   static const hardwareError = 'hardware_error';
   static const energyReading = 'energy_reading';
   static const commandExecuted = 'command_executed';

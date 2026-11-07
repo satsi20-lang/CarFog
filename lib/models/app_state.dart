@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import '../services/app_log_service.dart';
 import '../services/cloud_service.dart';
 import '../services/session_service.dart';
+import '../services/card_payment_service.dart';
 import '../services/config_service.dart';
+import '../services/free_run_service.dart';
 import '../services/modbus_service.dart';
 import 'bus_map.dart';
 import 'device_spec.dart';
@@ -53,6 +55,12 @@ class AppConfig {
   String sellerEmail;
   String sellerSite;
   String sellerLegal;
+  // Бесплатный запуск по коду (1.13.x): по умолчанию ВЫКЛЮЧЕН. Включается
+  // из облака (update_config). В настройках — только соль и хеш кода
+  // (PBKDF2); сам код нигде не хранится. См. FreeRunService.
+  bool freeRunEnabled;
+  String freeRunCodeHash;
+  String freeRunCodeSalt;
   // Роль домашнего экрана (Шаг 32, задача 3) — по умолчанию выключена,
   // включается только тумблером "Киоск-режим" в сервисном меню, чтобы
   // свежая сборка на планшете разработчика не захватывала рабочий стол.
@@ -151,6 +159,9 @@ class AppConfig {
     this.sellerEmail = '',
     this.sellerSite = '',
     this.sellerLegal = '',
+    this.freeRunEnabled = false,
+    this.freeRunCodeHash = '',
+    this.freeRunCodeSalt = '',
     this.kioskModeEnabled = false,
     this.paymentTerminalChannel = IoModuleInputs.defaultPaymentTerminalDI,
     this.paymentTerminalMode = 'edge',
@@ -238,6 +249,9 @@ class AppConfig {
     String? sellerEmail,
     String? sellerSite,
     String? sellerLegal,
+    bool? freeRunEnabled,
+    String? freeRunCodeHash,
+    String? freeRunCodeSalt,
     bool? kioskModeEnabled,
     int? paymentTerminalChannel,
     String? paymentTerminalMode,
@@ -277,6 +291,9 @@ class AppConfig {
       sellerEmail: sellerEmail ?? this.sellerEmail,
       sellerSite: sellerSite ?? this.sellerSite,
       sellerLegal: sellerLegal ?? this.sellerLegal,
+      freeRunEnabled: freeRunEnabled ?? this.freeRunEnabled,
+      freeRunCodeHash: freeRunCodeHash ?? this.freeRunCodeHash,
+      freeRunCodeSalt: freeRunCodeSalt ?? this.freeRunCodeSalt,
       kioskModeEnabled: kioskModeEnabled ?? this.kioskModeEnabled,
       paymentTerminalChannel:
           paymentTerminalChannel ?? this.paymentTerminalChannel,
@@ -387,6 +404,8 @@ class AppConfig {
   // его обратно бессмысленно и опасно), cloudAnonKey, cloudUrl.
   Map<String, dynamic> reportedSnapshot() {
     return {
+      // Только признак: ни хеш, ни соль кода в облако не уходят.
+      'free_run_enabled': FreeRunService.isEnabled(this),
       'price_cents': treatmentPriceCents,
       'flavor_prices_cents': activeFlavorPrices,
       'payment_terminal_type': paymentTerminalType,
@@ -646,6 +665,8 @@ class AppNotifier extends ChangeNotifier {
     if (fromService && !toService && !displayLangs.contains(_lang)) {
       _lang = _config.spec.displayDefaultLang;
     }
+    // «Взвод» бесплатного запуска живёт только на экране выбора аромата.
+    if (newState != AppState.selectFlavor) FreeRunService.disarm();
     debugPrint('STATE: $_state → $newState (lang=$_lang)');
     if (newState != AppState.error) _errorCode = null;
     _state = newState;
@@ -738,6 +759,32 @@ class AppNotifier extends ChangeNotifier {
       goToError('bus_unavailable');
       return;
     }
+    // Бесплатный запуск по коду: ровно один раз, без оплаты. Все проверки
+    // выше (выведен из обслуживания, блок по конфигурации, шина) уже пройдены.
+    if (FreeRunService.armed) {
+      FreeRunService.disarm();
+      if (!FreeRunService.isEnabled(config)) {
+        // Функцию выключили из облака, пока клиент выбирал аромат.
+        transition(AppState.standby);
+        return;
+      }
+      _selectedFlavor = index;
+      // Прежний итог оплаты картой к этому запуску не относится.
+      CardPaymentService.customerNotice.value = null;
+      unawaited(
+        SessionService.start(
+          flavorIndex: index,
+          flavorNameRu: config.flavorNames['ru']![index],
+          priceCents: 0,
+          paidCents: 0,
+          paymentMethod: SessionService.freePaymentMethod,
+          readStartEnergy: config.energyMeterInstalled,
+          free: true,
+        ),
+      );
+      transition(AppState.preparing);
+      return;
+    }
     _selectedFlavor = index;
     transition(AppState.payment);
   }
@@ -756,6 +803,7 @@ class AppNotifier extends ChangeNotifier {
   // ============================================================
 
   void resetSession() {
+    FreeRunService.disarm();
     _selectedFlavor = null;
     _errorCode = null;
     // Следующий клиент начинает на языке по умолчанию.

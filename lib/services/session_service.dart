@@ -26,6 +26,9 @@ const String energyCheckpointAtKey = 'energy_checkpoint_at';
 class SessionService {
   static _Session? _current;
 
+  // Метка способа «оплаты» для запуска по коду (не деньги).
+  static const String freePaymentMethod = 'free_code';
+
   // Идентификатор текущей платной сессии (попадает во все события о ней, в
   // том числе duplicate_payment). null — сессии нет.
   static String? get currentSessionId => _current?.id;
@@ -65,6 +68,9 @@ class SessionService {
     // false — счётчик энергии не установлен: не тратить шину на заведомо
     // неудачное чтение.
     bool readStartEnergy = true,
+    // Бесплатный запуск по коду: вместо session_complete уходит free_run, в
+    // выручку и статистику оплат запись не попадает, возврата по карте нет.
+    bool free = false,
   }) async {
     // Платный сеанс не может начаться, пока аппарат выведен из
     // обслуживания (задача "вывод аппарата из обслуживания", требование 8).
@@ -80,10 +86,11 @@ class SessionService {
       flavorNameRu: flavorNameRu,
       priceCents: priceCents,
       paidCents: paidCents,
-      paymentMethod: paymentMethod,
+      paymentMethod: free ? freePaymentMethod : paymentMethod,
       coinsCents: coinsCents,
       coinFailureCount: coinFailureCount,
       startedAt: DateTime.now(),
+      free: free,
     );
     _current = session;
     // Сводка цикла (температура, ТЭН, фазы) — только запись.
@@ -138,7 +145,7 @@ class SessionService {
     session.ended = true;
     _current = null;
     try {
-      onFinished?.call(session.id, completed, reason, extra);
+      if (!session.free) onFinished?.call(session.id, completed, reason, extra);
     } catch (e) {
       debugPrint('SessionService.onFinished error: $e');
     }
@@ -148,11 +155,18 @@ class SessionService {
       'session_id': session.id,
       'flavor_index': session.flavorIndex,
       'flavor': session.flavorNameRu,
-      'price_cents': session.priceCents,
-      'paid_cents': session.paidCents,
+      if (!session.free) ...{
+        'price_cents': session.priceCents,
+        'paid_cents': session.paidCents,
+      },
       'duration_s': durationS,
       'completed': completed,
-      'payment_method': session.paymentMethod,
+      if (session.free) ...{
+        'payment': session.paymentMethod,
+        'result': completed ? 'completed' : (reason ?? 'interrupted'),
+        'started_at': session.startedAt.toUtc().toIso8601String(),
+      } else
+        'payment_method': session.paymentMethod,
     };
     if (reason != null) data['reason'] = reason;
     if (session.coinsCents != null) data['coins_cents'] = session.coinsCents;
@@ -211,7 +225,10 @@ class SessionService {
       unawaited(_saveEnergyCheckpoint(endKwh));
     }
 
-    await CloudService.report(CloudEventType.sessionComplete, data: data);
+    await CloudService.report(
+      session.free ? CloudEventType.freeRun : CloudEventType.sessionComplete,
+      data: data,
+    );
   }
 
   static void _addCycleSummary(
@@ -275,6 +292,7 @@ class _Session {
   final int? coinsCents;
   final int? coinFailureCount;
   final DateTime startedAt;
+  final bool free;
   double? startEnergyKwh;
   bool ended = false;
 
@@ -288,5 +306,6 @@ class _Session {
     required this.coinsCents,
     required this.coinFailureCount,
     required this.startedAt,
+    this.free = false,
   });
 }

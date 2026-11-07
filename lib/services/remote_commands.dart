@@ -9,6 +9,7 @@ import 'app_log_service.dart';
 import 'cloud_service.dart';
 import 'config_service.dart';
 import 'diagnostics_service.dart';
+import 'free_run_service.dart';
 import 'screenshot_service.dart';
 import 'pin_policy.dart';
 import 'remote_command_guard.dart';
@@ -330,6 +331,9 @@ class RemoteCommands {
         }
       }
     }
+    // Бесплатный запуск: типы и длина hex (значения в ответ и журнал не идут).
+    final freeBad = FreeRunParams.validate(params);
+    if (freeBad != null) return freeBad;
     final type = params['paymentTerminalType'];
     if (type != null && !PaymentTerminalType.all.contains(type)) {
       return 'invalid:paymentTerminalType';
@@ -379,6 +383,9 @@ class RemoteCommands {
     }
 
     return current.copyWith(
+      freeRunEnabled: params[FreeRunParams.enabledKey] as bool?,
+      freeRunCodeHash: FreeRunParams.hex(params[FreeRunParams.hashKey], FreeRunLimits.hashHexLen),
+      freeRunCodeSalt: FreeRunParams.hex(params[FreeRunParams.saltKey], FreeRunLimits.saltHexLen),
       qrUrl: seller[SellerFields.qrUrl],
       sellerPhone: seller[SellerFields.phone],
       sellerEmail: seller[SellerFields.email],
