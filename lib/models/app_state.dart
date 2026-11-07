@@ -46,6 +46,13 @@ class AppConfig {
   String cloudAnonKey;
   String cloudToken;
   bool cloudEnabled;
+  // Данные ПРОДАВЦА и ссылка QR заставки (этап 2 брендов, SellerInfo): данные
+  // аппарата, не бренда. '' — не задано. Меняются командой update_config.
+  String qrUrl;
+  String sellerPhone;
+  String sellerEmail;
+  String sellerSite;
+  String sellerLegal;
   // Роль домашнего экрана (Шаг 32, задача 3) — по умолчанию выключена,
   // включается только тумблером "Киоск-режим" в сервисном меню, чтобы
   // свежая сборка на планшете разработчика не захватывала рабочий стол.
@@ -139,6 +146,11 @@ class AppConfig {
     this.cloudAnonKey = '',
     this.cloudToken = '',
     this.cloudEnabled = false,
+    this.qrUrl = '',
+    this.sellerPhone = '',
+    this.sellerEmail = '',
+    this.sellerSite = '',
+    this.sellerLegal = '',
     this.kioskModeEnabled = false,
     this.paymentTerminalChannel = IoModuleInputs.defaultPaymentTerminalDI,
     this.paymentTerminalMode = 'edge',
@@ -221,6 +233,11 @@ class AppConfig {
     String? cloudAnonKey,
     String? cloudToken,
     bool? cloudEnabled,
+    String? qrUrl,
+    String? sellerPhone,
+    String? sellerEmail,
+    String? sellerSite,
+    String? sellerLegal,
     bool? kioskModeEnabled,
     int? paymentTerminalChannel,
     String? paymentTerminalMode,
@@ -255,6 +272,11 @@ class AppConfig {
       cloudAnonKey: cloudAnonKey ?? this.cloudAnonKey,
       cloudToken: cloudToken ?? this.cloudToken,
       cloudEnabled: cloudEnabled ?? this.cloudEnabled,
+      qrUrl: qrUrl ?? this.qrUrl,
+      sellerPhone: sellerPhone ?? this.sellerPhone,
+      sellerEmail: sellerEmail ?? this.sellerEmail,
+      sellerSite: sellerSite ?? this.sellerSite,
+      sellerLegal: sellerLegal ?? this.sellerLegal,
       kioskModeEnabled: kioskModeEnabled ?? this.kioskModeEnabled,
       paymentTerminalChannel:
           paymentTerminalChannel ?? this.paymentTerminalChannel,

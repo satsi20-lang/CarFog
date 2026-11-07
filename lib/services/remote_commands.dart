@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import '../brand/seller_info.dart';
 import '../models/app_state.dart';
 import '../models/bus_map.dart';
 import '../models/remote_limits.dart';
@@ -364,7 +365,25 @@ class RemoteCommands {
       }
     }
 
+    // Данные продавца и ссылка QR: не прошедшее проверку поле игнорируется,
+    // остальные применяются; в журнал — имя поля, без значения.
+    final seller = <String, String>{};
+    for (final f in SellerFields.all) {
+      if (!params.containsKey(f)) continue;
+      final v = SellerInfo.sanitize(f, params[f]);
+      if (v == null) {
+        AppLog.log('RemoteCommands', 'update_config: поле $f отклонено проверкой');
+      } else {
+        seller[f] = v;
+      }
+    }
+
     return current.copyWith(
+      qrUrl: seller[SellerFields.qrUrl],
+      sellerPhone: seller[SellerFields.phone],
+      sellerEmail: seller[SellerFields.email],
+      sellerSite: seller[SellerFields.site],
+      sellerLegal: seller[SellerFields.legal],
       // Цена по умолчанию; уже заданные цены запахов не перезаписывает.
       treatmentPriceCents: (params['treatmentPriceCents'] as num?)?.toInt(),
       flavorPricesCents: prices,
