@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'dart:io';
+import 'brand/brand_colors.dart';
 import 'models/app_state.dart';
 import 'models/bus_map.dart';
 import 'models/device_spec.dart';
@@ -275,11 +276,12 @@ class DryFogApp extends StatelessWidget {
       title: 'CaRFog — Сухой туман',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        scaffoldBackgroundColor: const Color(0xFF1A1A1A),
-        colorScheme: const ColorScheme.dark(
-          primary: Color(0xFF2EC4B6),
-          surface: Color(0xFF1A1A1A),
+        scaffoldBackgroundColor: BrandColors.carfog.background,
+        colorScheme: ColorScheme.dark(
+          primary: BrandColors.carfog.primary,
+          surface: BrandColors.carfog.background,
         ),
+        extensions: const [BrandColors.carfog],
       ),
       // Корень для снимка экрана по команде capture_screen (RD1) — у обоих
       // профилей; RepaintBoundary пикселей не меняет. IXP101M1: интерфейс
