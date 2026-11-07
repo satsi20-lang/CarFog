@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import '../brand/brand_colors.dart';
 
 // Фон клиентских экранов: вертикальный градиент базовых тёмных тонов темы
 // + несколько крупных, медленно плывущих пятен дымки, подсвеченных
@@ -9,7 +10,9 @@ import 'package:flutter/material.dart';
 class FogBackground extends StatefulWidget {
   // Чем подсвечена дымка — красный на экране ошибки, тёплый на подготовке,
   // бирюза (значение по умолчанию) на остальных клиентских экранах.
-  final Color accentColor;
+  // null — акцент бренда (brand.primary); экраны с собственным цветом
+  // (ошибка, подготовка) передают его явно.
+  final Color? accentColor;
 
   // 0..1 — насколько заметна дымка. По умолчанию низкая: дымка должна
   // угадываться, а не заслонять текст. 0 полностью гасит пятна, оставляя
@@ -33,7 +36,7 @@ class FogBackground extends StatefulWidget {
 
   FogBackground({
     super.key,
-    this.accentColor = const Color(0xFF2EC4B6),
+    this.accentColor,
     this.intensity = 0.16,
     this.animated = true,
     this.paintBase = true,
@@ -92,7 +95,7 @@ class _FogBackgroundState extends State<FogBackground>
             child: CustomPaint(
               painter: _FogPainter(
                 animation: _controller,
-                color: widget.accentColor,
+                color: widget.accentColor ?? context.brand.primary,
                 intensity: widget.intensity,
               ),
               size: Size.infinite,
@@ -109,15 +112,14 @@ class _FogBaseGradient extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const DecoratedBox(
+    return DecoratedBox(
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          // Глубокий графит темы (#0A0E1A) → базовый фон приложения,
-          // чуть светлее (#1A1A1A) — оба уже используются в проекте,
-          // новых оттенков не вводим.
-          colors: [Color(0xFF0A0E1A), Color(0xFF1A1A1A)],
+          // Глубокий графит (#0A0E1A, зашит) → фон бренда (у встроенного
+          // CaRFog #1A1A1A).
+          colors: [const Color(0xFF0A0E1A), context.brand.background],
         ),
       ),
     );
