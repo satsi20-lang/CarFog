@@ -4,7 +4,8 @@
 -- (qr_url, seller_*). customer_send_command такие ключи не пропускает (только
 -- цена и длительность), поэтому нужна отдельная супервайзерская функция.
 --
--- НЕ ПРИМЕНЕНО. Применяет ассистент после отдельного «да» владельца.
+-- Применено ассистентом 2026-11-07 по «да» владельца; добавлен триггер
+-- стирания хеша/соли (см. конец файла).
 --
 -- Что в базе остаётся: хеш и соль кода лежат в таблице commands (params) —
 -- как у любой команды. Сам код сюда не попадает: хеш считает браузер
@@ -79,3 +80,25 @@ $$;
 
 revoke all on function public.supervisor_device_config_set(text, jsonb) from public, anon;
 grant execute on function public.supervisor_device_config_set(text, jsonb) to authenticated;
+
+-- Хеш и соль нужны только пока команда ждёт аппарат. Как только статус
+-- перестаёт быть pending (выполнена, отклонена, просрочена), оба ключа
+-- стираются из commands.params.
+create or replace function public._commands_scrub_secrets() returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if new.status is distinct from 'pending'
+     and new.params ?| array['free_run_code_hash','free_run_code_salt'] then
+    new.params := new.params - 'free_run_code_hash' - 'free_run_code_salt';
+  end if;
+  return new;
+end;
+$$;
+revoke all on function public._commands_scrub_secrets() from public, anon, authenticated;
+
+drop trigger if exists commands_scrub_secrets on public.commands;
+create trigger commands_scrub_secrets
+  before update on public.commands
+  for each row execute function public._commands_scrub_secrets();
