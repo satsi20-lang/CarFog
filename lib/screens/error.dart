@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../brand/brand_colors.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../services/card_payment_service.dart';
@@ -195,8 +196,8 @@ class _ErrorScreenState extends State<ErrorScreen>
                       // Error detail
                       Text(
                         _t('detail', lang, code),
-                        style: const TextStyle(
-                          color: Color(0xFF8899AA),
+                        style: TextStyle(
+                          color: context.brand.textSecondary,
                           fontSize: PUi.bodySp + 2,
                           height: 1.5,
                         ),
@@ -208,8 +209,8 @@ class _ErrorScreenState extends State<ErrorScreen>
                       // Contact staff
                       Text(
                         _t('contact', lang),
-                        style: const TextStyle(
-                          color: Color(0xFF8899AA),
+                        style: TextStyle(
+                          color: context.brand.textSecondary,
                           fontSize: PUi.minBodySp,
                           height: 1.5,
                         ),
@@ -235,7 +236,7 @@ class _ErrorScreenState extends State<ErrorScreen>
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
                                     color: notice == CardCustomerNotice.refunded
-                                        ? const Color(0xFF2EC4B6)
+                                        ? context.brand.primary
                                         : const Color(0xFFFFB020),
                                     fontSize: PUi.bodySp + 4,
                                     fontWeight: FontWeight.bold,
@@ -255,8 +256,8 @@ class _ErrorScreenState extends State<ErrorScreen>
                           children: [
                             Text(
                               _t('returning', lang),
-                              style: const TextStyle(
-                                color: Color(0xFF8899AA),
+                              style: TextStyle(
+                                color: context.brand.textSecondary,
                                 fontSize: PUi.minBodySp,
                               ),
                             ),
@@ -345,7 +346,7 @@ class _ErrorScreenState extends State<ErrorScreen>
                 Text(
                   _t('detail', lang, code),
                   style: TextStyle(
-                    color: const Color(0xFF8899AA),
+                    color: context.brand.textSecondary,
                     fontSize: m.bodySp + 2,
                     height: 1.4,
                   ),
@@ -354,7 +355,7 @@ class _ErrorScreenState extends State<ErrorScreen>
                 Text(
                   _t('contact', lang),
                   style: TextStyle(
-                    color: const Color(0xFF8899AA),
+                    color: context.brand.textSecondary,
                     fontSize: m.minBodySp,
                     height: 1.4,
                   ),
@@ -375,7 +376,7 @@ class _ErrorScreenState extends State<ErrorScreen>
                             key: const ValueKey('card_notice'),
                             style: TextStyle(
                               color: notice == CardCustomerNotice.refunded
-                                  ? const Color(0xFF2EC4B6)
+                                  ? context.brand.primary
                                   : const Color(0xFFFFB020),
                               fontSize: m.bodySp + 2,
                               fontWeight: FontWeight.bold,
@@ -413,7 +414,7 @@ class _ErrorScreenState extends State<ErrorScreen>
                         child: Text(
                           _t('returning', lang),
                           style: TextStyle(
-                            color: const Color(0xFF8899AA),
+                            color: context.brand.textSecondary,
                             fontSize: m.minBodySp,
                           ),
                         ),

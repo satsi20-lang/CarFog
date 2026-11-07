@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../brand/brand_colors.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../services/i18n_service.dart';
@@ -55,8 +56,8 @@ class SelectFlavorScreen extends StatelessWidget {
                 Text(
                   t('title'),
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: context.brand.textPrimary,
                     fontSize: PUi.titleSp,
                     fontWeight: FontWeight.bold,
                     height: 1.2,
@@ -66,8 +67,8 @@ class SelectFlavorScreen extends StatelessWidget {
                 Text(
                   t('hint'),
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.white60,
+                  style: TextStyle(
+                    color: context.brand.textPrimaryA(0x99),
                     fontSize: PUi.minBodySp,
                   ),
                 ),
@@ -96,8 +97,8 @@ class SelectFlavorScreen extends StatelessWidget {
                       AppState.standby,
                     ),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.white70,
-                      side: const BorderSide(color: Colors.white38, width: 2),
+                      foregroundColor: context.brand.textPrimaryA(0xB3),
+                      side: BorderSide(color: context.brand.textPrimaryA(0x62), width: 2),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
                       ),
@@ -324,10 +325,10 @@ class _FlavorCard extends StatelessWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         decoration: BoxDecoration(
-          color: available ? const Color(0xFF2E2E2E) : const Color(0xFF3A3A3A),
+          color: available ? context.brand.surface : const Color(0xFF3A3A3A),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: available ? const Color(0xFF2EC4B6) : Colors.grey,
+            color: available ? context.brand.primary : Colors.grey,
             width: 2,
           ),
         ),
@@ -349,7 +350,7 @@ class _FlavorCard extends StatelessWidget {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: available ? Colors.white : Colors.grey,
+                          color: available ? context.brand.textPrimary : Colors.grey,
                           fontSize: PUi.m.titleSp,
                           fontWeight: FontWeight.bold,
                           height: 1.1,
@@ -368,7 +369,7 @@ class _FlavorCard extends StatelessWidget {
                         key: const ValueKey('flavor_price'),
                         style: TextStyle(
                           color: available
-                              ? const Color(0xFF2EC4B6)
+                              ? context.brand.primary
                               : Colors.grey,
                           fontSize: PUi.m.bodySp + 4,
                           fontWeight: FontWeight.bold,

@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../brand/brand_colors.dart';
 import '../models/app_state.dart';
 import '../services/i18n_service.dart';
 import 'portrait_ui.dart';
-
-const _accent = Color(0xFF00C6B2);
 
 // Переключатель языка на экранах. langs — показываемые языки (порядок = spec):
 //   * один язык — переключателя нет;
@@ -53,18 +52,18 @@ class LangSwitcher extends StatelessWidget {
             alignment: Alignment.center,
             decoration: BoxDecoration(
               color: isActive
-                  ? _accent.withValues(alpha: 0.15)
+                  ? context.brand.primaryAlt.withValues(alpha: 0.15)
                   : Colors.transparent,
               borderRadius: BorderRadius.circular(10),
               border: Border.all(
-                color: isActive ? _accent : const Color(0xFF334455),
+                color: isActive ? context.brand.primaryAlt : const Color(0xFF334455),
                 width: isActive ? 2 : 1,
               ),
             ),
             child: Text(
               lang.toUpperCase(),
               style: TextStyle(
-                color: isActive ? _accent : const Color(0xFF8899AA),
+                color: isActive ? context.brand.primaryAlt : context.brand.textSecondary,
                 fontSize: PUi.m.langSp,
                 fontWeight: FontWeight.bold,
               ),
@@ -109,24 +108,24 @@ class _CompactLangButton extends StatelessWidget {
           minHeight: PUi.m.langH,
         ),
         decoration: BoxDecoration(
-          color: _accent.withValues(alpha: 0.15),
+          color: context.brand.primaryAlt.withValues(alpha: 0.15),
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: _accent, width: 2),
+          border: Border.all(color: context.brand.primaryAlt, width: 2),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.language, color: _accent, size: 30),
+            Icon(Icons.language, color: context.brand.primaryAlt, size: 30),
             const SizedBox(width: 8),
             Text(
               current.toUpperCase(),
               style: TextStyle(
-                color: _accent,
+                color: context.brand.primaryAlt,
                 fontSize: PUi.m.langSp,
                 fontWeight: FontWeight.bold,
               ),
             ),
-            const Icon(Icons.arrow_drop_down, color: _accent, size: 30),
+            Icon(Icons.arrow_drop_down, color: context.brand.primaryAlt, size: 30),
           ],
         ),
       ),
@@ -170,7 +169,7 @@ class _LangPickerDialogState extends State<LangPickerDialog> {
       insetPadding: const EdgeInsets.all(PUi.gutter),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: _accent, width: 2),
+        side: BorderSide(color: context.brand.primaryAlt, width: 2),
       ),
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -180,16 +179,16 @@ class _LangPickerDialogState extends State<LangPickerDialog> {
           children: [
             Row(
               children: [
-                const Icon(Icons.language, color: _accent, size: 36),
+                Icon(Icons.language, color: context.brand.primaryAlt, size: 36),
                 const Spacer(),
                 SizedBox(
                   width: PUi.langH,
                   height: PUi.langH,
                   child: IconButton(
                     key: const ValueKey('lang_picker_close'),
-                    icon: const Icon(
+                    icon: Icon(
                       Icons.close,
-                      color: Colors.white70,
+                      color: context.brand.textPrimaryA(0xB3), // white70
                       size: 36,
                     ),
                     onPressed: () => Navigator.of(context).pop(),
@@ -304,13 +303,13 @@ class _LangButton extends StatelessWidget {
       style: ElevatedButton.styleFrom(
         backgroundColor: active
             ? const Color(0xFF1F3B3A)
-            : const Color(0xFF2E2E2E),
-        foregroundColor: Colors.white,
+            : context.brand.surface,
+        foregroundColor: context.brand.textPrimary,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         minimumSize: const Size(PUi.minTouch, PUi.minTouch),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(14),
-          side: BorderSide(color: PUi.accent, width: active ? 3 : 2),
+          side: BorderSide(color: context.brand.primary, width: active ? 3 : 2),
         ),
       ),
       child: FittedBox(

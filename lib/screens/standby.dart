@@ -3,6 +3,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
+import '../brand/brand.dart';
+import '../brand/brand_colors.dart';
+import '../brand/brand_qr.dart';
 import '../models/app_state.dart';
 import '../services/i18n_service.dart';
 import '../services/storage_service.dart';
@@ -17,8 +20,8 @@ class StandbyScreen extends StatefulWidget {
   State<StandbyScreen> createState() => _StandbyScreenState();
 }
 
-const _hintStyle = TextStyle(
-  color: Colors.white,
+TextStyle _hintStyle(BuildContext context) => TextStyle(
+  color: context.brand.textPrimary,
   fontSize: PUi.bodySp,
   height: 1.4,
 );
@@ -232,6 +235,14 @@ class _StandbyScreenState extends State<StandbyScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Бренд меняется только пока аппарат на заставке (BrandService).
+    return ListenableBuilder(
+      listenable: BrandController.instance,
+      builder: (context, _) => _content(context, BrandController.instance.active),
+    );
+  }
+
+  Widget _content(BuildContext context, Brand brand) {
     final notifier = context.watch<AppNotifier>();
     final captionLangs = _captionLangs(notifier);
 
@@ -256,9 +267,9 @@ class _StandbyScreenState extends State<StandbyScreen> {
                 ),
               )
             else if (PUi.landscape)
-              _buildLandscapePlaceholder(captionLangs)
+              _buildLandscapePlaceholder(context, brand, notifier.config, captionLangs)
             else
-              _buildPlaceholder(captionLangs),
+              _buildPlaceholder(context, brand, notifier.config, captionLangs),
 
             // Переключатель языка в правом верхнем углу (один язык — нет).
             if (notifier.displayLangs.length > 1)
@@ -294,7 +305,10 @@ class _StandbyScreenState extends State<StandbyScreen> {
                     decoration: BoxDecoration(
                       color: Colors.black54,
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: PUi.accent, width: 2),
+                      border: Border.all(
+                        color: context.brand.primary,
+                        width: 2,
+                      ),
                     ),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -304,7 +318,7 @@ class _StandbyScreenState extends State<StandbyScreen> {
                             I18n.tr(l, 'standby.tap_to_start'),
                             textAlign: TextAlign.center,
                             style: TextStyle(
-                              color: Colors.white,
+                              color: context.brand.textPrimary,
                               fontSize: PUi.m.bodySp,
                               height: 1.4,
                             ),
@@ -328,7 +342,10 @@ class _StandbyScreenState extends State<StandbyScreen> {
                     decoration: BoxDecoration(
                       color: Colors.black54,
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: PUi.accent, width: 2),
+                      border: Border.all(
+                        color: context.brand.primary,
+                        width: 2,
+                      ),
                     ),
                     // Строки одна под другой: в портрете одна длинная строка
                     // на 22+ sp не помещается в ширину.
@@ -339,7 +356,7 @@ class _StandbyScreenState extends State<StandbyScreen> {
                           Text(
                             I18n.tr(l, 'standby.tap_to_start'),
                             textAlign: TextAlign.center,
-                            style: _hintStyle,
+                            style: _hintStyle(context),
                           ),
                       ],
                     ),
@@ -363,6 +380,26 @@ class _StandbyScreenState extends State<StandbyScreen> {
               ),
             ),
 
+            // «Powered by CaRFog» — маленькая подпись, зашита в приложение и
+            // остаётся при любом бренде (решение владельца 3). На видео её нет.
+            if (!_showingVideo)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: PUi.landscape ? 4 : 16,
+                child: IgnorePointer(
+                  child: Text(
+                    'Powered by CaRFog',
+                    key: const ValueKey('powered_by'),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: context.brand.textSecondary,
+                      fontSize: PUi.landscape ? 13 : 16,
+                    ),
+                  ),
+                ),
+              ),
+
             // Невидимая зона долгого нажатия — левый верхний угол
             Positioned(
               left: 0,
@@ -381,13 +418,81 @@ class _StandbyScreenState extends State<StandbyScreen> {
     );
   }
 
-  // Альбом 853x533 dp (IXP101M1): QR слева, название и подпись справа;
-  // нижняя полоса свободна под подсказку (Positioned в build).
-  Widget _buildLandscapePlaceholder(List<String> captionLangs) {
+  // Подпись под названием: слоган бренда (английский, одна строка для всех
+  // языков) или, если его нет, встроенный standby.subtitle по языкам.
+  String _subtitle(Brand brand, List<String> captionLangs, String sep) {
+    if (brand.slogan.isNotEmpty) return brand.slogan;
+    return captionLangs
+        .map((l) => I18n.tr(l, 'standby.subtitle'))
+        .toSet()
+        .join(sep);
+  }
+
+  // Контакты продавца — данные аппарата. Блок есть, только если что-то задано.
+  List<String> _contactLines(AppConfig c) => [
+    c.sellerPhone,
+    c.sellerEmail,
+    c.sellerSite,
+    c.sellerLegal,
+  ].where((v) => v.isNotEmpty).toList();
+
+  Widget _contacts(BuildContext context, AppConfig c, {required bool center}) {
+    final lines = _contactLines(c);
+    if (lines.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      key: const ValueKey('standby_contacts'),
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: center
+            ? CrossAxisAlignment.center
+            : CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final l in lines)
+            Text(
+              l,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: center ? TextAlign.center : TextAlign.start,
+              style: TextStyle(
+                color: context.brand.textPrimaryA(0xB3),
+                fontSize: PUi.m.minBodySp - 2,
+                height: 1.3,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _logo(Brand brand, double maxH, double maxW) {
+    if (brand.logoPath == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Image.file(
+        File(brand.logoPath!),
+        key: const ValueKey('standby_logo'),
+        height: maxH,
+        width: maxW,
+        fit: BoxFit.contain,
+        alignment: Alignment.centerLeft,
+        errorBuilder: (_, _, _) => const SizedBox.shrink(),
+      ),
+    );
+  }
+
+  // Альбом 853x533 dp (IXP101M1): QR слева, логотип, название и подпись
+  // справа; нижняя полоса свободна под подсказку (Positioned в build).
+  Widget _buildLandscapePlaceholder(
+    BuildContext context,
+    Brand brand,
+    AppConfig cfg,
+    List<String> captionLangs,
+  ) {
     final m = PUi.m;
     return SizedBox.expand(
       child: ColoredBox(
-        color: const Color(0xFF0B2545),
+        color: context.brand.backgroundStandby,
         child: LayoutBuilder(
           builder: (context, c) {
             final qr = (c.maxHeight * 0.5).clamp(160.0, c.maxWidth * 0.32);
@@ -400,13 +505,14 @@ class _StandbyScreenState extends State<StandbyScreen> {
               ),
               child: Row(
                 children: [
-                  Image.asset(
-                    'assets/qr_code.png',
-                    width: qr,
+                  BrandQr(
+                    brand: brand,
+                    url: cfg.qrUrl,
+                    size: qr,
                     errorBuilder: (_, _, _) => Icon(
                       Icons.local_car_wash,
                       size: qr * 0.6,
-                      color: PUi.accent,
+                      color: context.brand.primary,
                     ),
                   ),
                   const SizedBox(width: 40),
@@ -415,12 +521,13 @@ class _StandbyScreenState extends State<StandbyScreen> {
                       mainAxisAlignment: MainAxisAlignment.center,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        _logo(brand, c.maxHeight * 0.13, c.maxWidth * 0.3),
                         FittedBox(
                           fit: BoxFit.scaleDown,
                           child: Text(
-                            'CaRFog OÜ',
+                            brand.name,
                             style: TextStyle(
-                              color: PUi.accent,
+                              color: context.brand.primary,
                               fontSize: 48,
                               fontWeight: FontWeight.bold,
                             ),
@@ -428,16 +535,14 @@ class _StandbyScreenState extends State<StandbyScreen> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          captionLangs
-                              .map((l) => I18n.tr(l, 'standby.subtitle'))
-                              .toSet()
-                              .join('\n'),
+                          _subtitle(brand, captionLangs, '\n'),
                           style: TextStyle(
-                            color: Colors.white70,
+                            color: context.brand.textPrimaryA(0xB3), // white70
                             fontSize: m.minBodySp,
                             height: 1.35,
                           ),
                         ),
+                        _contacts(context, cfg, center: false),
                       ],
                     ),
                   ),
@@ -454,51 +559,66 @@ class _StandbyScreenState extends State<StandbyScreen> {
   static double _landscapeHintReserve(int lines) =>
       24 + 20 + lines * PUi.m.bodySp * 1.4 + 24;
 
-  Widget _buildPlaceholder(List<String> captionLangs) {
+  Widget _buildPlaceholder(
+    BuildContext context,
+    Brand brand,
+    AppConfig cfg,
+    List<String> captionLangs,
+  ) {
     // Портрет 720x1280 dp: крупный QR в верхней половине, название ниже;
     // низ занимает подсказка (Positioned выше). QR масштабируется по
     // ширине экрана, но не больше доступной высоты.
     return SizedBox.expand(
       child: ColoredBox(
-        color: const Color(0xFF0B2545),
+        color: context.brand.backgroundStandby,
         child: LayoutBuilder(
           builder: (context, c) {
             final qr = (c.maxWidth * 0.62).clamp(220.0, c.maxHeight * 0.4);
             return Column(
               children: [
                 const Spacer(flex: 3),
-                Image.asset(
-                  'assets/qr_code.png',
-                  width: qr,
+                BrandQr(
+                  brand: brand,
+                  url: cfg.qrUrl,
+                  size: qr,
                   errorBuilder: (_, _, _) => Icon(
                     Icons.local_car_wash,
                     size: qr * 0.6,
-                    color: PUi.accent,
+                    color: context.brand.primary,
                   ),
                 ),
                 const SizedBox(height: 40),
-                const Text(
-                  'CaRFog OÜ',
-                  style: TextStyle(
-                    color: PUi.accent,
-                    fontSize: 56,
-                    fontWeight: FontWeight.bold,
+                if (brand.logoPath != null)
+                  Center(child: _logo(brand, c.maxHeight * 0.1, c.maxWidth * 0.5)),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: PUi.gutter),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      brand.name,
+                      style: TextStyle(
+                        color: context.brand.primary,
+                        fontSize: 56,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 12),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: PUi.gutter),
                   child: Text(
-                    captionLangs
-                        .map((l) => I18n.tr(l, 'standby.subtitle'))
-                        .toSet()
-                        .join(' · '),
+                    _subtitle(brand, captionLangs, ' · '),
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white70,
+                    style: TextStyle(
+                      color: context.brand.textPrimaryA(0xB3), // white70
                       fontSize: PUi.minBodySp,
                     ),
                   ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: PUi.gutter),
+                  child: _contacts(context, cfg, center: true),
                 ),
                 const Spacer(flex: 4),
               ],

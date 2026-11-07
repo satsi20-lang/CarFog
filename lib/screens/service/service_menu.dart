@@ -6350,6 +6350,8 @@ class _JournalTabState extends State<_JournalTab> {
     'low_liquid': 'Заканчивается жидкость',
     'liquid_restored': 'Канистра заправлена',
     'session_complete': 'Сессия завершена',
+    'free_run': 'Бесплатный запуск по коду',
+    'free_run_locked': 'Бесплатный запуск: блок перебора кода',
     'hardware_error': 'Ошибка оборудования',
     'energy_reading': 'Показания энергии',
     'command_executed': 'Выполнена команда',

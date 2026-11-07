@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import '../../models/app_state.dart';
 import '../../services/app_log_service.dart';
 import '../../services/cloud_service.dart';
+import '../../services/free_run_service.dart';
+import '../free_run_screen.dart';
 import '../../services/pin_policy.dart';
 import '../../services/security_service.dart';
 import '../../widgets/lang_switcher.dart';
@@ -38,6 +40,8 @@ class _ServicePinScreenState extends State<ServicePinScreen>
   Duration _lockLeft = Duration.zero;
   Timer? _ticker;
   Timer? _idle;
+  // Блок кода бесплатного запуска (свой счётчик, к PIN не относится).
+  Duration _freeLockLeft = Duration.zero;
 
   late AnimationController _shakeController;
   late Animation<double> _shakeAnimation;
@@ -169,10 +173,14 @@ class _ServicePinScreenState extends State<ServicePinScreen>
   Future<void> _refresh() async {
     final left = await SecurityService.remainingLock();
     final attempts = await SecurityService.attemptsLeft();
+    final freeLeft = (mounted && FreeRunService.isEnabled(context.read<AppNotifier>().config))
+        ? await FreeRunService.remainingLock()
+        : Duration.zero;
     if (!mounted) return;
     setState(() {
       _lockLeft = left;
       _attemptsLeft = attempts;
+      _freeLockLeft = freeLeft;
     });
   }
 
@@ -488,6 +496,7 @@ class _ServicePinScreenState extends State<ServicePinScreen>
                     _entered = '';
                   }),
                 ),
+              ..._freeRunButton(notifier, lang),
               _linkButton(
                 _t('cancel', lang),
                 const Color(0xFF8899AA),
@@ -498,6 +507,41 @@ class _ServicePinScreenState extends State<ServicePinScreen>
         ),
       ),
     );
+  }
+
+  // Кнопка «Бесплатный запуск» под клавиатурой PIN. Есть ТОЛЬКО когда функция
+  // включена; выключена — экран побитово прежний. Во время блока кода —
+  // «Заблокировано, осталось N мин» и ввод не открывается.
+  List<Widget> _freeRunButton(AppNotifier notifier, String lang) {
+    if (_mode != _Mode.pin || !FreeRunService.isEnabled(notifier.config)) {
+      return const [];
+    }
+    final locked = _freeLockLeft > Duration.zero;
+    final mins = (_freeLockLeft.inSeconds / 60).ceil();
+    final text = locked
+        ? '${FreeRunScreen.tr('button_locked', lang)} $mins ${FreeRunScreen.tr('min', lang)}'
+        : FreeRunScreen.tr('button', lang);
+    final m = PUi.m;
+    return [
+      Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: OutlinedButton(
+          key: const Key('free_run_button'),
+          onPressed: locked ? null : () => notifier.transition(AppState.freeRunEntry),
+          style: OutlinedButton.styleFrom(
+            minimumSize: Size(m.minTouch * 4, m.minTouch),
+            side: BorderSide(color: locked ? const Color(0xFF445566) : const Color(0xFF00C6B2), width: 2),
+          ),
+          child: Text(
+            text,
+            style: TextStyle(
+              color: locked ? const Color(0xFF8899AA) : const Color(0xFF00C6B2),
+              fontSize: m.minBodySp,
+            ),
+          ),
+        ),
+      ),
+    ];
   }
 
   // Альбом 853x533 dp (IXP101M1): слева язык, заголовок, статус, точки и
@@ -645,6 +689,7 @@ class _ServicePinScreenState extends State<ServicePinScreen>
                               _entered = '';
                             }),
                           ),
+                        ..._freeRunButton(notifier, lang),
                         _linkButton(
                           _t('cancel', lang),
                           const Color(0xFF8899AA),

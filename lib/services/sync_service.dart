@@ -1,3 +1,4 @@
+import '../brand/brand_service.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
@@ -175,6 +176,15 @@ class SyncService {
       // Раскатка по целевой версии (R3): только после штатного ответа; команды
       // облака обработаны раньше и имеют приоритет.
       if (result.ok) await RolloutService.onPoll(notifier, result.target);
+      // Пакет бренда (белый лейбл): после штатного ответа; любой сбой
+      // оставляет прежний бренд и опрос не ломает.
+      if (result.ok) {
+        try {
+          await BrandService.onPoll(notifier, result.brand);
+        } catch (e) {
+          debugPrint('SyncService: бренд: ${e.runtimeType}');
+        }
+      }
     } catch (e) {
       debugPrint('SyncService._tick error: $e');
     } finally {
@@ -219,6 +229,7 @@ class SyncService {
     snapshot['adb_wifi'] = adb?.wifiDebug;
     snapshot['adb_network_detail'] = adb?.toJson();
     snapshot['rollout_target_code'] = RolloutService.targetCode;
+    snapshot.addAll(BrandService.reported());
     // Тестовая сборка без сигнала здоровья (только для проверки отката): в
     // панели должна быть видна, в боевых аппаратах всегда false.
     snapshot['skip_health_signal_build'] = UpdateLimits.skipHealthSignalBuild;

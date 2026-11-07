@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../brand/brand_colors.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import 'package:flutter/services.dart';
@@ -573,7 +574,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
     // Pre-flight не прошёл: ни монет, ни карты (ТЗ раздел 5).
     if (_machineUnavailable) {
       return Scaffold(
-        backgroundColor: const Color(0xFF1A1A1A),
+        backgroundColor: context.brand.background,
         body: FogBackground(
           child: SafeArea(
             child: Center(
@@ -583,8 +584,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   t('machine_unavailable'),
                   key: const ValueKey('machine_unavailable'),
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: context.brand.textPrimary,
                     fontSize: PUi.titleSp,
                     fontWeight: FontWeight.bold,
                   ),
@@ -607,7 +608,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
     }
 
     return Scaffold(
-      backgroundColor: const Color(0xFF1A1A1A),
+      backgroundColor: context.brand.background,
       body: FogBackground(
         child: SafeArea(
           child: Padding(
@@ -623,8 +624,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
                       Expanded(
                         child: Text(
                           t('title'),
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: TextStyle(
+                            color: context.brand.textPrimary,
                             fontSize: PUi.titleSp,
                             fontWeight: FontWeight.bold,
                           ),
@@ -641,16 +642,16 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   Text(
                     t('flavor'),
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white60,
+                    style: TextStyle(
+                      color: context.brand.textPrimaryA(0x99),
                       fontSize: PUi.minBodySp,
                     ),
                   ),
                   Text(
                     flavorName,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Color(0xFF2EC4B6),
+                    style: TextStyle(
+                      color: context.brand.primary,
                       fontSize: PUi.titleSp,
                       fontWeight: FontWeight.bold,
                     ),
@@ -659,8 +660,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   Text(
                     '${_euro(_priceCents)} €',
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: context.brand.textPrimary,
                       fontSize: 112,
                       fontWeight: FontWeight.bold,
                     ),
@@ -668,8 +669,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   Text(
                     t('price'),
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white60,
+                    style: TextStyle(
+                      color: context.brand.textPrimaryA(0x99),
                       fontSize: PUi.minBodySp,
                     ),
                   ),
@@ -689,8 +690,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
                           ? t('instruction_with_card')
                           : t('instruction'),
                       textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: Colors.white70,
+                      style: TextStyle(
+                        color: context.brand.textPrimaryA(0xB3),
                         fontSize: PUi.bodySp + 4,
                       ),
                     ),
@@ -700,9 +701,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     child: LinearProgressIndicator(
                       value: progress,
                       minHeight: 36,
-                      backgroundColor: const Color(0xFF2E2E2E),
-                      valueColor: const AlwaysStoppedAnimation<Color>(
-                        Color(0xFF2EC4B6),
+                      backgroundColor: context.brand.surface,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        context.brand.primary,
                       ),
                     ),
                   ),
@@ -712,7 +713,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     value: '${_euro(_balanceCents)} €',
                     valueColor: _balanceCents >= _priceCents
                         ? Colors.greenAccent
-                        : const Color(0xFF2EC4B6),
+                        : context.brand.primary,
                   ),
                   const SizedBox(height: 12),
                   _InfoRow(
@@ -723,8 +724,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   Text(
                     _formatTime(_secondsLeft),
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white54,
+                    style: TextStyle(
+                      color: context.brand.textPrimaryA(0x8A),
                       fontSize: 32,
                       fontWeight: FontWeight.bold,
                     ),
@@ -738,9 +739,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         key: const ValueKey('payment_cancel'),
                         onPressed: _cancel,
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.white70,
-                          side: const BorderSide(
-                            color: Colors.white38,
+                          foregroundColor: context.brand.textPrimaryA(0xB3),
+                          side: BorderSide(
+                            color: context.brand.textPrimaryA(0x62),
                             width: 2,
                           ),
                           shape: RoundedRectangleBorder(
@@ -772,7 +773,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   ) {
     final m = PUi.m;
     return Scaffold(
-      backgroundColor: const Color(0xFF1A1A1A),
+      backgroundColor: context.brand.background,
       body: FogBackground(
         child: SafeArea(
           child: Padding(
@@ -803,7 +804,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                   t('flavor'),
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
-                                    color: Colors.white60,
+                                    color: context.brand.textPrimaryA(0x99),
                                     fontSize: m.minBodySp,
                                   ),
                                 ),
@@ -813,7 +814,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
-                                    color: const Color(0xFF2EC4B6),
+                                    color: context.brand.primary,
                                     fontSize: m.titleSp,
                                     fontWeight: FontWeight.bold,
                                   ),
@@ -826,8 +827,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                   fit: BoxFit.scaleDown,
                                   child: Text(
                                     '${_euro(_priceCents)} €',
-                                    style: const TextStyle(
-                                      color: Colors.white,
+                                    style: TextStyle(
+                                      color: context.brand.textPrimary,
                                       fontSize: 88,
                                       fontWeight: FontWeight.bold,
                                       height: 1.1,
@@ -838,7 +839,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                   t('price'),
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
-                                    color: Colors.white60,
+                                    color: context.brand.textPrimaryA(0x99),
                                     fontSize: m.minBodySp,
                                   ),
                                 ),
@@ -847,8 +848,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
                             Text(
                               _formatTime(_secondsLeft),
                               textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: Colors.white54,
+                              style: TextStyle(
+                                color: context.brand.textPrimaryA(0x8A),
                                 fontSize: 28,
                                 fontWeight: FontWeight.bold,
                               ),
@@ -881,7 +882,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                             : t('instruction'),
                                         textAlign: TextAlign.center,
                                         style: TextStyle(
-                                          color: Colors.white70,
+                                          color: context.brand.textPrimaryA(0xB3),
                                           fontSize: m.bodySp + 2,
                                         ),
                                       ),
@@ -893,10 +894,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
                               child: LinearProgressIndicator(
                                 value: progress,
                                 minHeight: 24,
-                                backgroundColor: const Color(0xFF2E2E2E),
+                                backgroundColor: context.brand.surface,
                                 valueColor:
-                                    const AlwaysStoppedAnimation<Color>(
-                                      Color(0xFF2EC4B6),
+                                    AlwaysStoppedAnimation<Color>(
+                                      context.brand.primary,
                                     ),
                               ),
                             ),
@@ -906,7 +907,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                               value: '${_euro(_balanceCents)} €',
                               valueColor: _balanceCents >= _priceCents
                                   ? Colors.greenAccent
-                                  : const Color(0xFF2EC4B6),
+                                  : context.brand.primary,
                             ),
                             const SizedBox(height: 4),
                             _InfoRow(
@@ -951,25 +952,25 @@ class _CardPrompt extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = warning ? const Color(0xFFFFB020) : const Color(0xFF2EC4B6);
+    final color = warning ? const Color(0xFFFFB020) : context.brand.primary;
     return Column(
       children: [
         if (processing && PUi.landscape)
-          const SizedBox(
+          SizedBox(
             width: 56,
             height: 56,
             child: CircularProgressIndicator(
               strokeWidth: 5,
-              color: Color(0xFF2EC4B6),
+              color: context.brand.primary,
             ),
           )
         else if (processing)
-          const SizedBox(
+          SizedBox(
             width: 72,
             height: 72,
             child: CircularProgressIndicator(
               strokeWidth: 6,
-              color: Color(0xFF2EC4B6),
+              color: context.brand.primary,
             ),
           )
         else
@@ -983,7 +984,7 @@ class _CardPrompt extends StatelessWidget {
           text,
           textAlign: TextAlign.center,
           style: TextStyle(
-            color: warning ? color : Colors.white,
+            color: warning ? color : context.brand.textPrimary,
             fontSize: PUi.m.bodySp + (PUi.landscape ? 4 : 8),
             fontWeight: FontWeight.bold,
           ),
@@ -996,12 +997,13 @@ class _CardPrompt extends StatelessWidget {
 class _InfoRow extends StatelessWidget {
   final String label;
   final String value;
-  final Color valueColor;
+  // null — textPrimary бренда.
+  final Color? valueColor;
 
   const _InfoRow({
     required this.label,
     required this.value,
-    this.valueColor = Colors.white,
+    this.valueColor,
   });
 
   @override
@@ -1013,7 +1015,7 @@ class _InfoRow extends StatelessWidget {
           child: Text(
             label,
             style: TextStyle(
-              color: Colors.white60,
+              color: context.brand.textPrimaryA(0x99),
               fontSize: PUi.m.bodySp + 4,
             ),
           ),
@@ -1021,7 +1023,7 @@ class _InfoRow extends StatelessWidget {
         Text(
           value,
           style: TextStyle(
-            color: valueColor,
+            color: valueColor ?? context.brand.textPrimary,
             fontSize: PUi.m.bodySp + (PUi.landscape ? 6 : 8),
             fontWeight: FontWeight.bold,
           ),

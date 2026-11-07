@@ -1,12 +1,14 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../brand/seller_info.dart';
 import '../models/app_state.dart';
 import '../models/bus_map.dart';
 import '../models/device_spec.dart';
 import '../models/hardware_profile.dart';
 import '../models/remote_limits.dart';
 import 'app_log_service.dart';
+import 'free_run_service.dart';
 
 class ConfigService {
   static const _key = 'app_config';
@@ -51,6 +53,14 @@ class ConfigService {
     'cloudAnonKey': c.cloudAnonKey,
     'cloudToken': c.cloudToken,
     'cloudEnabled': c.cloudEnabled,
+    'qrUrl': c.qrUrl,
+    'sellerPhone': c.sellerPhone,
+    'sellerEmail': c.sellerEmail,
+    'sellerSite': c.sellerSite,
+    'sellerLegal': c.sellerLegal,
+    'freeRunEnabled': c.freeRunEnabled,
+    'freeRunCodeHash': c.freeRunCodeHash,
+    'freeRunCodeSalt': c.freeRunCodeSalt,
     'kioskModeEnabled': c.kioskModeEnabled,
     'paymentTerminalChannel': c.paymentTerminalChannel,
     'paymentTerminalMode': c.paymentTerminalMode,
@@ -159,6 +169,17 @@ class ConfigService {
       cloudAnonKey: (j['cloudAnonKey'] as String?) ?? '',
       cloudToken: (j['cloudToken'] as String?) ?? '',
       cloudEnabled: (j['cloudEnabled'] as bool?) ?? false,
+      // Данные продавца: испорченное значение в сохранённых настройках не
+      // применяется (проверка та же, что у update_config).
+      qrUrl: SellerInfo.sanitize(SellerFields.qrUrl, j['qrUrl']) ?? '',
+      sellerPhone: SellerInfo.sanitize(SellerFields.phone, j['sellerPhone']) ?? '',
+      sellerEmail: SellerInfo.sanitize(SellerFields.email, j['sellerEmail']) ?? '',
+      sellerSite: SellerInfo.sanitize(SellerFields.site, j['sellerSite']) ?? '',
+      sellerLegal: SellerInfo.sanitize(SellerFields.legal, j['sellerLegal']) ?? '',
+      // Испорченное значение — функция выключена.
+      freeRunEnabled: FreeRunParams.loadEnabled(j['freeRunEnabled'], j['freeRunCodeHash'], j['freeRunCodeSalt']),
+      freeRunCodeHash: FreeRunParams.hexOrEmpty(j['freeRunCodeHash'], FreeRunLimits.hashHexLen),
+      freeRunCodeSalt: FreeRunParams.hexOrEmpty(j['freeRunCodeSalt'], FreeRunLimits.saltHexLen),
       kioskModeEnabled: (j['kioskModeEnabled'] as bool?) ?? false,
       paymentTerminalChannel:
           (j['paymentTerminalChannel'] as int?) ??

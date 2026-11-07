@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../brand/brand_colors.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../services/i18n_service.dart';
@@ -105,13 +106,13 @@ class _FinishedScreenState extends State<FinishedScreen>
                               0xFF00C6B2,
                             ).withValues(alpha: 0.15),
                             border: Border.all(
-                              color: const Color(0xFF00C6B2),
+                              color: context.brand.primaryAlt,
                               width: 4,
                             ),
                           ),
-                          child: const Icon(
+                          child: Icon(
                             Icons.check_rounded,
-                            color: Color(0xFF00C6B2),
+                            color: context.brand.primaryAlt,
                             size: 144,
                           ),
                         ),
@@ -122,8 +123,8 @@ class _FinishedScreenState extends State<FinishedScreen>
                       // Title
                       Text(
                         _t('title', lang),
-                        style: const TextStyle(
-                          color: Colors.white,
+                        style: TextStyle(
+                          color: context.brand.textPrimary,
                           fontSize: 48,
                           fontWeight: FontWeight.bold,
                           letterSpacing: 0.5,
@@ -140,8 +141,8 @@ class _FinishedScreenState extends State<FinishedScreen>
                         ),
                         child: Text(
                           _t('subtitle', lang),
-                          style: const TextStyle(
-                            color: Color(0xFF8899AA),
+                          style: TextStyle(
+                            color: context.brand.textSecondary,
                             fontSize: PUi.bodySp + 2,
                             height: 1.5,
                           ),
@@ -156,8 +157,8 @@ class _FinishedScreenState extends State<FinishedScreen>
                         children: [
                           Text(
                             _t('returning', lang),
-                            style: const TextStyle(
-                              color: Color(0xFF8899AA),
+                            style: TextStyle(
+                              color: context.brand.textSecondary,
                               fontSize: PUi.minBodySp,
                             ),
                           ),
@@ -179,8 +180,8 @@ class _FinishedScreenState extends State<FinishedScreen>
                                 _t('countdown', lang, {
                                   'seconds': _secondsLeft,
                                 }),
-                                style: const TextStyle(
-                                  color: Color(0xFF00C6B2),
+                                style: TextStyle(
+                                  color: context.brand.primaryAlt,
                                   fontSize: 32,
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -214,12 +215,12 @@ class _FinishedScreenState extends State<FinishedScreen>
               height: 168,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: const Color(0xFF00C6B2).withValues(alpha: 0.15),
-                border: Border.all(color: const Color(0xFF00C6B2), width: 4),
+                color: context.brand.primaryAlt.withValues(alpha: 0.15),
+                border: Border.all(color: context.brand.primaryAlt, width: 4),
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.check_rounded,
-                color: Color(0xFF00C6B2),
+                color: context.brand.primaryAlt,
                 size: 100,
               ),
             ),
@@ -232,8 +233,8 @@ class _FinishedScreenState extends State<FinishedScreen>
               children: [
                 Text(
                   _t('title', lang),
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: context.brand.textPrimary,
                     fontSize: 40,
                     fontWeight: FontWeight.bold,
                     letterSpacing: 0.5,
@@ -243,7 +244,7 @@ class _FinishedScreenState extends State<FinishedScreen>
                 Text(
                   _t('subtitle', lang),
                   style: TextStyle(
-                    color: const Color(0xFF8899AA),
+                    color: context.brand.textSecondary,
                     fontSize: m.bodySp + 2,
                     height: 1.4,
                   ),
@@ -257,15 +258,15 @@ class _FinishedScreenState extends State<FinishedScreen>
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: const Color(0xFF00C6B2).withValues(alpha: 0.4),
+                          color: context.brand.primaryAlt.withValues(alpha: 0.4),
                           width: 2,
                         ),
                       ),
                       child: Center(
                         child: Text(
                           _t('countdown', lang, {'seconds': _secondsLeft}),
-                          style: const TextStyle(
-                            color: Color(0xFF00C6B2),
+                          style: TextStyle(
+                            color: context.brand.primaryAlt,
                             fontSize: 28,
                             fontWeight: FontWeight.bold,
                           ),
@@ -277,7 +278,7 @@ class _FinishedScreenState extends State<FinishedScreen>
                       child: Text(
                         _t('returning', lang),
                         style: TextStyle(
-                          color: const Color(0xFF8899AA),
+                          color: context.brand.textSecondary,
                           fontSize: m.minBodySp,
                         ),
                       ),

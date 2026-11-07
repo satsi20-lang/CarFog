@@ -1,8 +1,13 @@
+import 'screens/free_run_screen.dart';
+import 'services/free_run_service.dart';
+import 'brand/brand_service.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'dart:io';
+import 'brand/brand.dart';
+import 'brand/brand_colors.dart';
 import 'models/app_state.dart';
 import 'models/bus_map.dart';
 import 'models/device_spec.dart';
@@ -160,6 +165,8 @@ void main() async {
     unawaited(OutOfServiceService.reportRestored(restoredOutOfService));
   }
 
+  // Пакет бренда с диска (последний годный) — до первого кадра заставки.
+  await BrandService.init(notifier);
   SyncService.start(notifier);
   LevelService.start(notifier);
 
@@ -271,15 +278,24 @@ class DryFogApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Тема следует за активным брендом (меняется только на заставке).
+    return ListenableBuilder(
+      listenable: BrandController.instance,
+      builder: (context, _) => _app(BrandController.instance.active.colors),
+    );
+  }
+
+  Widget _app(BrandColors brand) {
     return MaterialApp(
       title: 'CaRFog — Сухой туман',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        scaffoldBackgroundColor: const Color(0xFF1A1A1A),
-        colorScheme: const ColorScheme.dark(
-          primary: Color(0xFF2EC4B6),
-          surface: Color(0xFF1A1A1A),
+        scaffoldBackgroundColor: brand.background,
+        colorScheme: ColorScheme.dark(
+          primary: brand.primary,
+          surface: brand.background,
         ),
+        extensions: [brand],
       ),
       // Корень для снимка экрана по команде capture_screen (RD1) — у обоих
       // профилей; RepaintBoundary пикселей не меняет. IXP101M1: интерфейс
@@ -327,7 +343,11 @@ class AppRouter extends StatelessWidget {
       case AppState.standby:
         return const StandbyScreen();
       case AppState.selectFlavor:
-        return const SelectFlavorScreen();
+        // Режим бесплатного запуска: любое касание продлевает 30 секунд ожидания.
+        return Listener(
+          onPointerDown: (_) => FreeRunService.touch(),
+          child: const SelectFlavorScreen(),
+        );
       case AppState.payment:
         return const PaymentScreen();
       case AppState.preparing:
@@ -344,6 +364,8 @@ class AppRouter extends StatelessWidget {
         return const ErrorScreen();
       case AppState.servicePinEntry:
         return const ServicePinScreen();
+      case AppState.freeRunEntry:
+        return const FreeRunScreen();
       case AppState.serviceMenu:
         return const ServiceMenuScreen();
       case AppState.outOfService:

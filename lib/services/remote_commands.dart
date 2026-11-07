@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import '../brand/seller_info.dart';
 import '../models/app_state.dart';
 import '../models/bus_map.dart';
 import '../models/remote_limits.dart';
@@ -8,6 +9,7 @@ import 'app_log_service.dart';
 import 'cloud_service.dart';
 import 'config_service.dart';
 import 'diagnostics_service.dart';
+import 'free_run_service.dart';
 import 'screenshot_service.dart';
 import 'pin_policy.dart';
 import 'remote_command_guard.dart';
@@ -329,6 +331,9 @@ class RemoteCommands {
         }
       }
     }
+    // Бесплатный запуск: типы и длина hex (значения в ответ и журнал не идут).
+    final freeBad = FreeRunParams.validate(params);
+    if (freeBad != null) return freeBad;
     final type = params['paymentTerminalType'];
     if (type != null && !PaymentTerminalType.all.contains(type)) {
       return 'invalid:paymentTerminalType';
@@ -364,7 +369,28 @@ class RemoteCommands {
       }
     }
 
+    // Данные продавца и ссылка QR: не прошедшее проверку поле игнорируется,
+    // остальные применяются; в журнал — имя поля, без значения.
+    final seller = <String, String>{};
+    for (final f in SellerFields.all) {
+      if (!params.containsKey(f)) continue;
+      final v = SellerInfo.sanitize(f, params[f]);
+      if (v == null) {
+        AppLog.log('RemoteCommands', 'update_config: поле $f отклонено проверкой');
+      } else {
+        seller[f] = v;
+      }
+    }
+
     return current.copyWith(
+      freeRunEnabled: params[FreeRunParams.enabledKey] as bool?,
+      freeRunCodeHash: FreeRunParams.hex(params[FreeRunParams.hashKey], FreeRunLimits.hashHexLen),
+      freeRunCodeSalt: FreeRunParams.hex(params[FreeRunParams.saltKey], FreeRunLimits.saltHexLen),
+      qrUrl: seller[SellerFields.qrUrl],
+      sellerPhone: seller[SellerFields.phone],
+      sellerEmail: seller[SellerFields.email],
+      sellerSite: seller[SellerFields.site],
+      sellerLegal: seller[SellerFields.legal],
       // Цена по умолчанию; уже заданные цены запахов не перезаписывает.
       treatmentPriceCents: (params['treatmentPriceCents'] as num?)?.toInt(),
       flavorPricesCents: prices,

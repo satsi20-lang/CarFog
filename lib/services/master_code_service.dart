@@ -83,6 +83,13 @@ class MasterCodeService {
     return constantTimeEquals(got, _unhex(hash));
   }
 
+  // Публичный вход для других кодов аппарата (бесплатный запуск): та же
+  // функция, те же параметры.
+  static List<int> derive(String password, List<int> salt, int iterations) =>
+      pbkdf2(password, salt, iterations);
+
+  static bool equalBytes(List<int> a, List<int> b) => constantTimeEquals(a, b);
+
   // PBKDF2-HMAC-SHA256, один блок (32 байта). Открыт для тестов
   // (контрольные векторы RFC 7914 / RFC 6070 для SHA-256).
   @visibleForTesting

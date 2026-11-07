@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../brand/brand_colors.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../services/i18n_service.dart';
@@ -58,7 +59,7 @@ class OutOfServiceScreen extends StatelessWidget {
               ),
 
               if (PUi.landscape)
-                _landscape(lang)
+                _landscape(context, lang)
               else
               Center(
                 child: SingleChildScrollView(
@@ -97,8 +98,8 @@ class OutOfServiceScreen extends StatelessWidget {
                       const SizedBox(height: 24),
                       Text(
                         I18n.tr(lang, 'out_of_service.detail'),
-                        style: const TextStyle(
-                          color: Color(0xFF8899AA),
+                        style: TextStyle(
+                          color: context.brand.textSecondary,
                           fontSize: PUi.bodySp + 2,
                           height: 1.5,
                         ),
@@ -116,7 +117,7 @@ class OutOfServiceScreen extends StatelessWidget {
   }
 
   // Альбом 853x533 dp (IXP101M1): значок слева, текст справа.
-  Widget _landscape(String lang) {
+  Widget _landscape(BuildContext context, String lang) {
     final m = PUi.m;
     return Padding(
       padding: EdgeInsets.fromLTRB(m.gutter + 24, m.langH + 24, m.gutter + 24, 16),
@@ -155,7 +156,7 @@ class OutOfServiceScreen extends StatelessWidget {
                 Text(
                   I18n.tr(lang, 'out_of_service.detail'),
                   style: TextStyle(
-                    color: const Color(0xFF8899AA),
+                    color: context.brand.textSecondary,
                     fontSize: m.bodySp + 2,
                     height: 1.4,
                   ),

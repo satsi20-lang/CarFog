@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../brand/brand_colors.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../models/bus_map.dart';
@@ -99,11 +100,6 @@ class _TreatingScreenState extends State<TreatingScreen>
       vsync: this,
       duration: const Duration(milliseconds: 500),
     );
-    _bgColorAnim = ColorTween(
-      begin: const Color(0xFF1A1A1A),
-      end: const Color(0xFFFF0000),
-    ).animate(_blinkController);
-
     // Компрессор включаем сразу — пока идёт 5-секундный отсчёт набора
     // давления на экране, реле уже физически включено.
     unawaited(ModbusService.setCompressor(true));
@@ -166,7 +162,9 @@ class _TreatingScreenState extends State<TreatingScreen>
       'reason': fault.reason,
       'treatment_planned_s': plannedS,
       'treatment_done_s': doneS,
-      'treatment_share_pct': plannedS == 0 ? 0 : (doneS * 100 / plannedS).round(),
+      'treatment_share_pct': plannedS == 0
+          ? 0
+          : (doneS * 100 / plannedS).round(),
       'power_w': ?CycleEnergyService.lastPowerW,
       'voltage_v': ?CycleEnergyService.lastVoltageV,
       'phase': _phase.name,
@@ -211,7 +209,8 @@ class _TreatingScreenState extends State<TreatingScreen>
   Future<void> _onCancel() async {
     if (_faulted || _cancelling || _phase == _Phase.shutdown) return;
     if (_cancelDialog.isOpen) return;
-    String stageNow() => _phase == _Phase.compressor ? 'compressor' : 'treating';
+    String stageNow() =>
+        _phase == _Phase.compressor ? 'compressor' : 'treating';
     final card = CardPaymentService.quoteClientCancel(stageNow());
     // Язык берётся при показе каждой строки: переключение языка во время
     // окна не закрывает его.
@@ -240,9 +239,13 @@ class _TreatingScreenState extends State<TreatingScreen>
     // обработкой); возврата после прогрева нет ни в одной из них.
     final stage = stageNow();
     if (card != null) {
-      unawaited(CardPaymentService.clientCancel(
-        card.stage == stage ? card : CardPaymentService.quoteClientCancel(stage) ?? card,
-      ));
+      unawaited(
+        CardPaymentService.clientCancel(
+          card.stage == stage
+              ? card
+              : CardPaymentService.quoteClientCancel(stage) ?? card,
+        ),
+      );
     }
     await _shutdownAll(notifier, 'treating_client_cancel');
     await SessionService.interrupt(
@@ -252,8 +255,9 @@ class _TreatingScreenState extends State<TreatingScreen>
         'stage': stage,
         'treatment_planned_s': plannedS,
         'treatment_done_s': doneS,
-        'treatment_share_pct':
-            plannedS == 0 ? 0 : (doneS * 100 / plannedS).round(),
+        'treatment_share_pct': plannedS == 0
+            ? 0
+            : (doneS * 100 / plannedS).round(),
       },
     );
     notifier.resetSession();
@@ -277,7 +281,9 @@ class _TreatingScreenState extends State<TreatingScreen>
       'phase': _phase.name,
       'treatment_planned_s': plannedS,
       'treatment_done_s': doneS,
-      'treatment_share_pct': plannedS == 0 ? 0 : (doneS * 100 / plannedS).round(),
+      'treatment_share_pct': plannedS == 0
+          ? 0
+          : (doneS * 100 / plannedS).round(),
     };
     await OutOfServiceService.trip(
       notifier,
@@ -338,7 +344,8 @@ class _TreatingScreenState extends State<TreatingScreen>
     final now = DateTime.now();
     if (temp >= HeaterThresholds.maintainHardFloorC) {
       final last = _lastHeaterToggleAt;
-      if (last != null && now.difference(last) < HeaterThresholds.maintainMinToggleInterval) {
+      if (last != null &&
+          now.difference(last) < HeaterThresholds.maintainMinToggleInterval) {
         return;
       }
     }
@@ -361,7 +368,10 @@ class _TreatingScreenState extends State<TreatingScreen>
     } else if (!wantOn) {
       // Не удалось выключить — не ждать следующего тика: форсированное
       // выключение с подтверждением (при провале — вывод из обслуживания).
-      if (await HeaterShutdownService.ensureOff('treating_thermostat', notifier: notifier)) {
+      if (await HeaterShutdownService.ensureOff(
+        'treating_thermostat',
+        notifier: notifier,
+      )) {
         _heaterOn = false;
         _monitor.heaterCommanded(false, tempC: temp);
       } else {
@@ -494,6 +504,17 @@ class _TreatingScreenState extends State<TreatingScreen>
     }
   }
 
+  // Фон мигания зависит от бренда (begin = background), а Theme.of в initState
+  // читать нельзя — строим анимацию здесь (вызывается до первого build).
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _bgColorAnim = ColorTween(
+      begin: context.brand.background,
+      end: const Color(0xFFFF0000),
+    ).animate(_blinkController);
+  }
+
   @override
   void dispose() {
     _timer?.cancel();
@@ -580,7 +601,7 @@ class _TreatingScreenState extends State<TreatingScreen>
         return Scaffold(
           backgroundColor: _isBlinking
               ? _bgColorAnim.value
-              : const Color(0xFF1A1A1A),
+              : context.brand.background,
           // paintBase: false — заливку уже даёт Scaffold.backgroundColor
           // выше (в том числе мигание последних секунд), дублировать её
           // не нужно. intensity гасится в ноль на время мигания — та
@@ -620,16 +641,16 @@ class _TreatingScreenState extends State<TreatingScreen>
                       const SizedBox(height: 12),
                       Text(
                         subtitle,
-                        style: const TextStyle(
-                          color: Colors.white60,
+                        style: TextStyle(
+                          color: context.brand.textPrimaryA(0x99),
                           fontSize: PUi.minBodySp,
                         ),
                       ),
                       const SizedBox(height: 20),
                       Text(
                         t('flavor', {'flavor': flavorName}),
-                        style: const TextStyle(
-                          color: Color(0xFF2EC4B6),
+                        style: TextStyle(
+                          color: context.brand.primary,
                           fontSize: PUi.bodySp + 4,
                           fontWeight: FontWeight.bold,
                         ),
@@ -638,8 +659,8 @@ class _TreatingScreenState extends State<TreatingScreen>
                       Center(
                         child: Text(
                           t('seconds', {'seconds': _secondsLeft}),
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: TextStyle(
+                            color: context.brand.textPrimary,
                             fontSize: 112,
                             fontWeight: FontWeight.bold,
                           ),
@@ -651,11 +672,11 @@ class _TreatingScreenState extends State<TreatingScreen>
                         child: LinearProgressIndicator(
                           value: _progress,
                           minHeight: 40,
-                          backgroundColor: const Color(0xFF2E2E2E),
+                          backgroundColor: context.brand.surface,
                           valueColor: AlwaysStoppedAnimation<Color>(
                             _phase == _Phase.treating
                                 ? const Color(0xFFFF3333)
-                                : const Color(0xFF2EC4B6),
+                                : context.brand.primary,
                           ),
                         ),
                       ),
@@ -670,7 +691,10 @@ class _TreatingScreenState extends State<TreatingScreen>
                           ),
                           const SizedBox(width: 12),
                           Expanded(
-                            child: Container(height: 3, color: Colors.white24),
+                            child: Container(
+                              height: 3,
+                              color: context.brand.textPrimaryA(0x3D),
+                            ),
                           ),
                           const SizedBox(width: 12),
                           _PhaseIndicator(
@@ -680,7 +704,10 @@ class _TreatingScreenState extends State<TreatingScreen>
                           ),
                           const SizedBox(width: 12),
                           Expanded(
-                            child: Container(height: 3, color: Colors.white24),
+                            child: Container(
+                              height: 3,
+                              color: context.brand.textPrimaryA(0x3D),
+                            ),
                           ),
                           const SizedBox(width: 12),
                           _PhaseIndicator(
@@ -697,9 +724,9 @@ class _TreatingScreenState extends State<TreatingScreen>
                           child: OutlinedButton(
                             onPressed: _onCancel,
                             style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.white70,
-                              side: const BorderSide(
-                                color: Colors.white38,
+                              foregroundColor: context.brand.textPrimaryA(0xB3),
+                              side: BorderSide(
+                                color: context.brand.textPrimaryA(0x62),
                                 width: 2,
                               ),
                               shape: RoundedRectangleBorder(
@@ -723,6 +750,7 @@ class _TreatingScreenState extends State<TreatingScreen>
       },
     );
   }
+
   // Альбом 853x533 dp (IXP101M1): слева крупный таймер и прогресс, справа
   // аромат, фазы и отмена. Мигание последних секунд — как в портрете.
   Widget _buildLandscape(
@@ -739,7 +767,7 @@ class _TreatingScreenState extends State<TreatingScreen>
       builder: (context, child) => Scaffold(
         backgroundColor: _isBlinking
             ? _bgColorAnim.value
-            : const Color(0xFF1A1A1A),
+            : context.brand.background,
         body: FogBackground(
           paintBase: false,
           intensity: _isBlinking ? 0 : 0.14,
@@ -779,8 +807,8 @@ class _TreatingScreenState extends State<TreatingScreen>
                                   fit: BoxFit.scaleDown,
                                   child: Text(
                                     t('seconds', {'seconds': _secondsLeft}),
-                                    style: const TextStyle(
-                                      color: Colors.white,
+                                    style: TextStyle(
+                                      color: context.brand.textPrimary,
                                       fontSize: 96,
                                       fontWeight: FontWeight.bold,
                                     ),
@@ -793,11 +821,11 @@ class _TreatingScreenState extends State<TreatingScreen>
                                 child: LinearProgressIndicator(
                                   value: _progress,
                                   minHeight: 28,
-                                  backgroundColor: const Color(0xFF2E2E2E),
+                                  backgroundColor: context.brand.surface,
                                   valueColor: AlwaysStoppedAnimation<Color>(
                                     _phase == _Phase.treating
                                         ? const Color(0xFFFF3333)
-                                        : const Color(0xFF2EC4B6),
+                                        : context.brand.primary,
                                   ),
                                 ),
                               ),
@@ -817,7 +845,7 @@ class _TreatingScreenState extends State<TreatingScreen>
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  color: const Color(0xFF2EC4B6),
+                                  color: context.brand.primary,
                                   fontSize: m.bodySp + 4,
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -834,7 +862,7 @@ class _TreatingScreenState extends State<TreatingScreen>
                                   Expanded(
                                     child: Container(
                                       height: 3,
-                                      color: Colors.white24,
+                                      color: context.brand.textPrimaryA(0x3D),
                                     ),
                                   ),
                                   const SizedBox(width: 8),
@@ -847,7 +875,7 @@ class _TreatingScreenState extends State<TreatingScreen>
                                   Expanded(
                                     child: Container(
                                       height: 3,
-                                      color: Colors.white24,
+                                      color: context.brand.textPrimaryA(0x3D),
                                     ),
                                   ),
                                   const SizedBox(width: 8),
@@ -897,11 +925,11 @@ class _PhaseIndicator extends StatelessWidget {
   Widget build(BuildContext context) {
     Color color;
     if (done) {
-      color = const Color(0xFF2EC4B6);
+      color = context.brand.primary;
     } else if (active) {
       color = const Color(0xFFFF3333);
     } else {
-      color = Colors.white24;
+      color = context.brand.textPrimaryA(0x3D);
     }
 
     final size = PUi.landscape ? 52.0 : 64.0;
@@ -912,8 +940,8 @@ class _PhaseIndicator extends StatelessWidget {
       child: Center(
         child: Text(
           done ? '✓' : label,
-          style: const TextStyle(
-            color: Colors.white,
+          style: TextStyle(
+            color: context.brand.textPrimary,
             fontWeight: FontWeight.bold,
             fontSize: 28,
           ),

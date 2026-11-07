@@ -30,8 +30,15 @@ void main() {
   final captured = <String, List<String>>{};
 
   // Части многоязычных строк по отдельности, отсортировано.
+  // «Powered by CaRFog» — подпись заставки с этапа 2 брендов: зашита в
+  // приложение, не переводится и в эталон 1.9.1 не входила; сам эталон не
+  // менялся, строка исключается из сравнения.
   List<String> normalized(Iterable<String> texts) =>
-      texts.expand((t) => t.split(RegExp(r'\n| · '))).toList()..sort();
+      texts
+          .where((t) => t != 'Powered by CaRFog')
+          .expand((t) => t.split(RegExp(r'\n| · ')))
+          .toList()
+        ..sort();
 
   setUpAll(() async {
     if (!capture) await I18n.load();
