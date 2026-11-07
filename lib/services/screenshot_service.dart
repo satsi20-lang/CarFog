@@ -37,7 +37,7 @@ class ScreenshotService {
 
   // Причина запрета для текущего состояния; null — снимать можно.
   static String? refusalFor(AppState state) {
-    if (state == AppState.servicePinEntry) return 'pin_screen';
+    if (state == AppState.servicePinEntry || state == AppState.freeRunEntry) return 'pin_screen';
     if (state == AppState.serviceMenu) return 'service_menu';
     if (_secretInputs > 0) return 'pin_dialog';
     return null;

@@ -1,3 +1,5 @@
+import 'screens/free_run_screen.dart';
+import 'services/free_run_service.dart';
 import 'brand/brand_service.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -341,7 +343,11 @@ class AppRouter extends StatelessWidget {
       case AppState.standby:
         return const StandbyScreen();
       case AppState.selectFlavor:
-        return const SelectFlavorScreen();
+        // Режим бесплатного запуска: любое касание продлевает 30 секунд ожидания.
+        return Listener(
+          onPointerDown: (_) => FreeRunService.touch(),
+          child: const SelectFlavorScreen(),
+        );
       case AppState.payment:
         return const PaymentScreen();
       case AppState.preparing:
@@ -358,6 +364,8 @@ class AppRouter extends StatelessWidget {
         return const ErrorScreen();
       case AppState.servicePinEntry:
         return const ServicePinScreen();
+      case AppState.freeRunEntry:
+        return const FreeRunScreen();
       case AppState.serviceMenu:
         return const ServiceMenuScreen();
       case AppState.outOfService:

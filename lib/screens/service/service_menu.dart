@@ -11,8 +11,6 @@ import '../../widgets/lang_switcher.dart';
 import '../../widgets/portrait_ui.dart';
 import 'bus_port_section.dart';
 import 'card_status_tab.dart';
-import 'free_run_tab.dart';
-import '../../services/free_run_service.dart';
 import 'mdb_bench_tab.dart';
 import 'scroll_hint_row.dart';
 import '../../models/out_of_service.dart';
@@ -1239,11 +1237,6 @@ class _ServiceMenuScreenState extends State<ServiceMenuScreen> {
         return _KioskTab();
       case 8:
         return const CardStatusTab();
-      case 10:
-        // Вкладка есть только при включённой функции; выключили — настройки.
-        return FreeRunService.isEnabled(context.read<AppNotifier>().config)
-            ? const FreeRunTab()
-            : _SettingsTab();
       default:
         return const MdbBenchTab();
     }
@@ -1266,8 +1259,6 @@ class _ServiceMenuScreenState extends State<ServiceMenuScreen> {
       t['tab_kiosk']!,
       t['tab_card']!,
       t['tab_mdb_bench']!,
-      if (FreeRunService.isEnabled(notifier.config))
-        FreeRunTab.labels['title']![lang] ?? FreeRunTab.labels['title']!['en']!,
     ];
 
     return Scaffold(

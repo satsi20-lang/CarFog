@@ -173,16 +173,40 @@ class FreeRunService {
   // ---------------- один запуск ----------------
 
   static bool _armed = false;
+  static Timer? _armTimer;
+  static void Function()? _onArmTimeout;
 
   /// Код принят: ближайший выбор аромата запустит процесс без оплаты, один раз.
   static bool get armed => _armed;
-  static void arm() => _armed = true;
-  static void disarm() => _armed = false;
+  /// [onTimeout] вызывается, если за 30 секунд без касаний аромат не выбран.
+  static void arm({void Function()? onTimeout}) {
+    _armed = true;
+    _onArmTimeout = onTimeout;
+    touch();
+  }
+
+  static void disarm() {
+    _armed = false;
+    _armTimer?.cancel();
+    _armTimer = null;
+    _onArmTimeout = null;
+  }
+
+  /// Касание экрана выбора аромата в этом режиме продлевает ожидание.
+  static void touch() {
+    if (!_armed) return;
+    _armTimer?.cancel();
+    _armTimer = Timer(FreeRunLimits.idleTimeout, () {
+      final cb = _onArmTimeout;
+      disarm();
+      cb?.call();
+    });
+  }
 
   /// true — «взвод» был и снят этим вызовом (повторно вернёт false).
   static bool consumeArm() {
     final was = _armed;
-    _armed = false;
+    disarm();
     return was;
   }
 
@@ -202,6 +226,6 @@ class FreeRunService {
   static void resetForTest() {
     clock = DateTime.now;
     reporter = (type, data) => CloudService.report(type, data: data);
-    _armed = false;
+    disarm();
   }
 }
