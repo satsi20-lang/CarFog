@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../brand/brand_colors.dart';
 import '../services/card_terminal_service.dart';
 import 'portrait_ui.dart';
 
@@ -74,7 +75,7 @@ class _CardHintBannerState extends State<CardHintBanner> {
               widget.text,
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: Colors.white,
+                color: context.brand.textPrimary,
                 fontSize: PUi.m.bodySp + 4,
                 fontWeight: FontWeight.bold,
               ),
