@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
+import '../brand/brand_colors.dart';
 import '../models/app_state.dart';
 import '../services/i18n_service.dart';
 import '../services/storage_service.dart';
@@ -17,8 +18,8 @@ class StandbyScreen extends StatefulWidget {
   State<StandbyScreen> createState() => _StandbyScreenState();
 }
 
-const _hintStyle = TextStyle(
-  color: Colors.white,
+TextStyle _hintStyle(BuildContext context) => TextStyle(
+  color: context.brand.textPrimary,
   fontSize: PUi.bodySp,
   height: 1.4,
 );
@@ -256,9 +257,9 @@ class _StandbyScreenState extends State<StandbyScreen> {
                 ),
               )
             else if (PUi.landscape)
-              _buildLandscapePlaceholder(captionLangs)
+              _buildLandscapePlaceholder(context, captionLangs)
             else
-              _buildPlaceholder(captionLangs),
+              _buildPlaceholder(context, captionLangs),
 
             // Переключатель языка в правом верхнем углу (один язык — нет).
             if (notifier.displayLangs.length > 1)
@@ -294,7 +295,10 @@ class _StandbyScreenState extends State<StandbyScreen> {
                     decoration: BoxDecoration(
                       color: Colors.black54,
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: PUi.accent, width: 2),
+                      border: Border.all(
+                        color: context.brand.primary,
+                        width: 2,
+                      ),
                     ),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -304,7 +308,7 @@ class _StandbyScreenState extends State<StandbyScreen> {
                             I18n.tr(l, 'standby.tap_to_start'),
                             textAlign: TextAlign.center,
                             style: TextStyle(
-                              color: Colors.white,
+                              color: context.brand.textPrimary,
                               fontSize: PUi.m.bodySp,
                               height: 1.4,
                             ),
@@ -328,7 +332,10 @@ class _StandbyScreenState extends State<StandbyScreen> {
                     decoration: BoxDecoration(
                       color: Colors.black54,
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: PUi.accent, width: 2),
+                      border: Border.all(
+                        color: context.brand.primary,
+                        width: 2,
+                      ),
                     ),
                     // Строки одна под другой: в портрете одна длинная строка
                     // на 22+ sp не помещается в ширину.
@@ -339,7 +346,7 @@ class _StandbyScreenState extends State<StandbyScreen> {
                           Text(
                             I18n.tr(l, 'standby.tap_to_start'),
                             textAlign: TextAlign.center,
-                            style: _hintStyle,
+                            style: _hintStyle(context),
                           ),
                       ],
                     ),
@@ -383,11 +390,14 @@ class _StandbyScreenState extends State<StandbyScreen> {
 
   // Альбом 853x533 dp (IXP101M1): QR слева, название и подпись справа;
   // нижняя полоса свободна под подсказку (Positioned в build).
-  Widget _buildLandscapePlaceholder(List<String> captionLangs) {
+  Widget _buildLandscapePlaceholder(
+    BuildContext context,
+    List<String> captionLangs,
+  ) {
     final m = PUi.m;
     return SizedBox.expand(
       child: ColoredBox(
-        color: const Color(0xFF0B2545),
+        color: context.brand.backgroundStandby,
         child: LayoutBuilder(
           builder: (context, c) {
             final qr = (c.maxHeight * 0.5).clamp(160.0, c.maxWidth * 0.32);
@@ -406,7 +416,7 @@ class _StandbyScreenState extends State<StandbyScreen> {
                     errorBuilder: (_, _, _) => Icon(
                       Icons.local_car_wash,
                       size: qr * 0.6,
-                      color: PUi.accent,
+                      color: context.brand.primary,
                     ),
                   ),
                   const SizedBox(width: 40),
@@ -420,7 +430,7 @@ class _StandbyScreenState extends State<StandbyScreen> {
                           child: Text(
                             'CaRFog OÜ',
                             style: TextStyle(
-                              color: PUi.accent,
+                              color: context.brand.primary,
                               fontSize: 48,
                               fontWeight: FontWeight.bold,
                             ),
@@ -433,7 +443,7 @@ class _StandbyScreenState extends State<StandbyScreen> {
                               .toSet()
                               .join('\n'),
                           style: TextStyle(
-                            color: Colors.white70,
+                            color: context.brand.textPrimaryA(0xB3), // white70
                             fontSize: m.minBodySp,
                             height: 1.35,
                           ),
@@ -454,13 +464,13 @@ class _StandbyScreenState extends State<StandbyScreen> {
   static double _landscapeHintReserve(int lines) =>
       24 + 20 + lines * PUi.m.bodySp * 1.4 + 24;
 
-  Widget _buildPlaceholder(List<String> captionLangs) {
+  Widget _buildPlaceholder(BuildContext context, List<String> captionLangs) {
     // Портрет 720x1280 dp: крупный QR в верхней половине, название ниже;
     // низ занимает подсказка (Positioned выше). QR масштабируется по
     // ширине экрана, но не больше доступной высоты.
     return SizedBox.expand(
       child: ColoredBox(
-        color: const Color(0xFF0B2545),
+        color: context.brand.backgroundStandby,
         child: LayoutBuilder(
           builder: (context, c) {
             final qr = (c.maxWidth * 0.62).clamp(220.0, c.maxHeight * 0.4);
@@ -473,14 +483,14 @@ class _StandbyScreenState extends State<StandbyScreen> {
                   errorBuilder: (_, _, _) => Icon(
                     Icons.local_car_wash,
                     size: qr * 0.6,
-                    color: PUi.accent,
+                    color: context.brand.primary,
                   ),
                 ),
                 const SizedBox(height: 40),
-                const Text(
+                Text(
                   'CaRFog OÜ',
                   style: TextStyle(
-                    color: PUi.accent,
+                    color: context.brand.primary,
                     fontSize: 56,
                     fontWeight: FontWeight.bold,
                   ),
@@ -494,8 +504,8 @@ class _StandbyScreenState extends State<StandbyScreen> {
                         .toSet()
                         .join(' · '),
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white70,
+                    style: TextStyle(
+                      color: context.brand.textPrimaryA(0xB3), // white70
                       fontSize: PUi.minBodySp,
                     ),
                   ),
