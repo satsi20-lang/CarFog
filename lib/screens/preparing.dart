@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import '../brand/brand_colors.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_state.dart';
@@ -533,8 +534,8 @@ class _PreparingScreenState extends State<PreparingScreen> {
                   const SizedBox(height: 12),
                   Text(
                     t('subtitle'),
-                    style: const TextStyle(
-                      color: Colors.white60,
+                    style: TextStyle(
+                      color: context.brand.textPrimaryA(0x99),
                       fontSize: PUi.minBodySp,
                     ),
                   ),
@@ -542,8 +543,8 @@ class _PreparingScreenState extends State<PreparingScreen> {
                   Center(
                     child: Text(
                       '${_currentTemp.toStringAsFixed(0)}°C',
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: context.brand.textPrimary,
                         fontSize: 128,
                         fontWeight: FontWeight.bold,
                       ),
@@ -555,7 +556,7 @@ class _PreparingScreenState extends State<PreparingScreen> {
                     child: LinearProgressIndicator(
                       value: _progress,
                       minHeight: 40,
-                      backgroundColor: const Color(0xFF2E2E2E),
+                      backgroundColor: context.brand.surface,
                       valueColor: AlwaysStoppedAnimation<Color>(
                         _progress > 0.9
                             ? Colors.redAccent
@@ -567,8 +568,8 @@ class _PreparingScreenState extends State<PreparingScreen> {
                   Center(
                     child: Text(
                       t('target', {'temp': _targetTemp.toStringAsFixed(0)}),
-                      style: const TextStyle(
-                        color: Colors.white60,
+                      style: TextStyle(
+                        color: context.brand.textPrimaryA(0x99),
                         fontSize: PUi.minBodySp,
                       ),
                     ),
@@ -591,9 +592,9 @@ class _PreparingScreenState extends State<PreparingScreen> {
                     child: OutlinedButton(
                       onPressed: _onCancel,
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFF8899AA),
-                        side: const BorderSide(
-                          color: Color(0xFF8899AA),
+                        foregroundColor: context.brand.textSecondary,
+                        side: BorderSide(
+                          color: context.brand.textSecondary,
                           width: 2,
                         ),
                         shape: RoundedRectangleBorder(
@@ -655,8 +656,8 @@ class _PreparingScreenState extends State<PreparingScreen> {
                                 fit: BoxFit.scaleDown,
                                 child: Text(
                                   '${_currentTemp.toStringAsFixed(0)}°C',
-                                  style: const TextStyle(
-                                    color: Colors.white,
+                                  style: TextStyle(
+                                    color: context.brand.textPrimary,
                                     fontSize: 96,
                                     fontWeight: FontWeight.bold,
                                   ),
@@ -669,7 +670,7 @@ class _PreparingScreenState extends State<PreparingScreen> {
                               child: LinearProgressIndicator(
                                 value: _progress,
                                 minHeight: 28,
-                                backgroundColor: const Color(0xFF2E2E2E),
+                                backgroundColor: context.brand.surface,
                                 valueColor: AlwaysStoppedAnimation<Color>(
                                   _progress > 0.9
                                       ? Colors.redAccent
@@ -684,7 +685,7 @@ class _PreparingScreenState extends State<PreparingScreen> {
                                   'temp': _targetTemp.toStringAsFixed(0),
                                 }),
                                 style: TextStyle(
-                                  color: Colors.white60,
+                                  color: context.brand.textPrimaryA(0x99),
                                   fontSize: m.minBodySp,
                                 ),
                               ),
@@ -719,8 +720,8 @@ class _PreparingScreenState extends State<PreparingScreen> {
                 LandscapeCancelButton(
                   text: t('cancel'),
                   onPressed: _onCancel,
-                  color: const Color(0xFF8899AA),
-                  borderColor: const Color(0xFF8899AA),
+                  color: context.brand.textSecondary,
+                  borderColor: context.brand.textSecondary,
                 ),
               ],
             ),
@@ -742,7 +743,7 @@ class _HintRow extends StatelessWidget {
       children: [
         Icon(
           Icons.arrow_right,
-          color: const Color(0xFF2EC4B6),
+          color: context.brand.primary,
           size: PUi.landscape ? 28 : 36,
         ),
         const SizedBox(width: 8),
@@ -750,7 +751,7 @@ class _HintRow extends StatelessWidget {
           child: Text(
             text,
             style: TextStyle(
-              color: Colors.white70,
+              color: context.brand.textPrimaryA(0xB3),
               fontSize: PUi.landscape ? PUi.m.minBodySp : PUi.minBodySp + 2,
               height: PUi.landscape ? 1.25 : 1.4,
             ),
