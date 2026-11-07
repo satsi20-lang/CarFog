@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../brand/brand_colors.dart';
 import '../models/hardware_profile.dart';
 
 // Размеры портретного макета под Syoung SY156-A510 (15,6", логические
@@ -61,14 +62,15 @@ class PortraitScroll extends StatelessWidget {
 // переключатель языка справа — контент он не перекрывает.
 class LandscapeHeader extends StatelessWidget {
   final String title;
-  final Color titleColor;
+  // null — textPrimary бренда.
+  final Color? titleColor;
   final String? subtitle;
   final Widget? trailing;
 
   const LandscapeHeader({
     super.key,
     required this.title,
-    this.titleColor = Colors.white,
+    this.titleColor,
     this.subtitle,
     this.trailing,
   });
@@ -89,7 +91,7 @@ class LandscapeHeader extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: titleColor,
+                  color: titleColor ?? context.brand.textPrimary,
                   fontSize: m.titleSp,
                   fontWeight: FontWeight.bold,
                   height: 1.2,
@@ -101,7 +103,7 @@ class LandscapeHeader extends StatelessWidget {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: Colors.white60,
+                    color: context.brand.textPrimaryA(0x99), // white60
                     fontSize: m.minBodySp,
                   ),
                 ),
@@ -118,15 +120,16 @@ class LandscapeHeader extends StatelessWidget {
 class LandscapeCancelButton extends StatelessWidget {
   final String text;
   final VoidCallback? onPressed;
-  final Color color;
-  final Color borderColor;
+  // null — производные textPrimary бренда (white70 / white38).
+  final Color? color;
+  final Color? borderColor;
 
   const LandscapeCancelButton({
     super.key,
     required this.text,
     required this.onPressed,
-    this.color = Colors.white70,
-    this.borderColor = Colors.white38,
+    this.color,
+    this.borderColor,
   });
 
   @override
@@ -136,8 +139,11 @@ class LandscapeCancelButton extends StatelessWidget {
       child: OutlinedButton(
         onPressed: onPressed,
         style: OutlinedButton.styleFrom(
-          foregroundColor: color,
-          side: BorderSide(color: borderColor, width: 2),
+          foregroundColor: color ?? context.brand.textPrimaryA(0xB3),
+          side: BorderSide(
+            color: borderColor ?? context.brand.textPrimaryA(0x62),
+            width: 2,
+          ),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),
