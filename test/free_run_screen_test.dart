@@ -1,3 +1,6 @@
+@Tags(['layout'])
+library;
+
 import 'package:dry_fog_app/models/app_state.dart';
 import 'package:dry_fog_app/models/hardware_profile.dart';
 import 'package:dry_fog_app/screens/free_run_screen.dart';
