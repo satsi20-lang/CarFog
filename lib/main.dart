@@ -1,3 +1,4 @@
+import 'brand/brand_service.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -162,6 +163,8 @@ void main() async {
     unawaited(OutOfServiceService.reportRestored(restoredOutOfService));
   }
 
+  // Пакет бренда с диска (последний годный) — до первого кадра заставки.
+  await BrandService.init(notifier);
   SyncService.start(notifier);
   LevelService.start(notifier);
 

@@ -1,3 +1,4 @@
+import '../brand/brand_service.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -167,8 +168,7 @@ class DiagnosticsService {
       'app': {
         'version': CloudService.appVersion,
         'hardware_profile': profile.id,
-        // Пакета бренда пока нет (белый лейбл — отдельная задача).
-        'brand': null,
+        'brand': BrandService.diagnostics(),
         'start_reason': AppLog.startReason,
         'log_ready': AppLog.isReady,
       },

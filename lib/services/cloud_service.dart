@@ -1,3 +1,4 @@
+import '../brand/brand_service.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
@@ -179,6 +180,9 @@ class CloudPollResult {
   final List<CloudCommand> commands;
   // Целевая версия раскатки (null — цели нет или сервер старый).
   final RolloutTarget? target;
+  // Бренд из ответа device_poll: null — поля нет или оно непонятно (ничего
+  // не менять); BrandDirective.builtin() — вернуть встроенный CaRFog.
+  final BrandDirective? brand;
   final bool configReported;
   // Время СЕРВЕРА на момент ответа (поле server_time device_poll). Срок
   // действия команд считается как server_time − created_at, а не по часам
@@ -191,6 +195,7 @@ class CloudPollResult {
   CloudPollResult({
     required this.commands,
     this.target,
+    this.brand,
     this.configReported = false,
     this.serverTime,
     this.ok = false,
@@ -395,6 +400,7 @@ class SupabaseTransport implements CloudTransport {
       return CloudPollResult(
         commands: commands,
         target: RolloutTarget.tryParse(body['target']),
+        brand: BrandDirective.tryParse(body),
         configReported: config != null,
         serverTime: DateTime.tryParse(body['server_time'] as String? ?? ''),
         ok: true,
